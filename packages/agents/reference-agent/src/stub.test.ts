@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
 
 import {
   parseMarkup,
   serializeDocument,
   validateAuthorMarkup,
-  type AgentEvent,
+  type VisitorEvent,
   type AuthorValidationResult,
   type ComponentDocument,
   type ComponentNode,
@@ -24,12 +25,7 @@ import {
   MemoryStageStore,
   bootstrapSession,
   loadSession,
-} from "../../../core/runtime/src/index.js";
-
-// Test-only source import: @facet/reference-agent does not take a production
-// dependency on @facet/assets, but the stub fixture must remain renderable by
-// the shipped default catalog.
-import { DEFAULT_CATALOG, DEFAULT_THEME } from "../../../core/assets/src/index.js";
+} from "@facet/runtime";
 import { STUB_MARKUP, createStubAgent } from "./stub.js";
 
 function validateDefaultMarkup(markup: string): AuthorValidationResult {
@@ -70,9 +66,9 @@ function buttonActions(document: ComponentDocument): readonly string[] {
 
 function event(
   eventId: string,
-  collect: AgentEvent["collect"] = {},
+  collect: VisitorEvent["collect"] = {},
   eventName = "submit",
-): AgentEvent {
+): VisitorEvent {
   return {
     eventId,
     eventName,
@@ -121,7 +117,7 @@ describe("createStubAgent", () => {
   it("authors default-catalog component markup, not the retired tree fixture", () => {
     const source = readFileSync(new URL("./stub.ts", import.meta.url), "utf8");
     expect(source).not.toContain("STUB_TREE");
-    expect(source).not.toContain("FacetTree"); // style-hard-cut: allowed-negative
+    expect(source).not.toContain("FacetTree"); // component-hard-cut: allowed-negative
     expect(source).not.toContain("validateTree");
 
     const document = acceptedDocument(STUB_MARKUP);
@@ -143,7 +139,7 @@ describe("createStubAgent", () => {
   it("renders STUB_MARKUP once through the runtime session and returns sorted collect text", async () => {
     const agent = createStubAgent();
     const session = new RecordingSession();
-    const collect: AgentEvent["collect"] = {
+    const collect: VisitorEvent["collect"] = {
       name: { kind: "value", value: "Ada" },
       token: { kind: "omitted_sensitive" },
       email: { kind: "value", value: "a@b.c" },
@@ -208,7 +204,7 @@ describe("createStubAgent", () => {
   it("keeps non-collect events deterministic and argument-aware", async () => {
     const agent = createStubAgent();
     const session = new RecordingSession();
-    const input: AgentEvent = { ...event("turn2", {}, "refresh"), arg: "north" };
+    const input: VisitorEvent = { ...event("turn2", {}, "refresh"), arg: "north" };
 
     expect(await agent.run({ event: input, session })).toEqual({ text: "stub: refresh north" });
     expect(await agent.run({ event: input, session })).toEqual({ text: "stub: refresh north" });

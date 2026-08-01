@@ -1,4 +1,4 @@
-import { serializeScreen } from "@facet/core";
+import { describeDataValue, serializeScreen } from "@facet/core";
 import type {
   ComponentDocument,
   ComponentNode,
@@ -7,10 +7,6 @@ import type {
 } from "@facet/core";
 
 import type { DataSummaryEntry, TurnObservation } from "./types.js";
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function scalarText(prop: ComponentNode["props"][string] | undefined): string | null {
   return prop?.kind === "scalar" ? prop.value : null;
@@ -33,67 +29,11 @@ function issueText(issue: SerializeIssue): string {
     : `${issue.reason}:${issue.at}.${issue.prop}`;
 }
 
-function shapeOf(value: unknown): DataSummaryEntry["shape"] {
-  if (value === null) {
-    return "null";
-  }
-  if (Array.isArray(value)) {
-    return "array";
-  }
-  if (isRecord(value)) {
-    return "object";
-  }
-  switch (typeof value) {
-    case "string":
-      return "string";
-    case "number":
-      return "number";
-    case "boolean":
-      return "boolean";
-    default:
-      return "object";
-  }
-}
-
-function fieldsOf(value: unknown): readonly string[] {
-  if (Array.isArray(value)) {
-    const fields = new Set<string>();
-    for (const item of value) {
-      if (!isRecord(item)) {
-        continue;
-      }
-      for (const key of Object.keys(item)) {
-        fields.add(key);
-      }
-    }
-    return Object.freeze([...fields].sort());
-  }
-  if (isRecord(value)) {
-    return Object.freeze(Object.keys(value).sort());
-  }
-  return Object.freeze([]);
-}
-
-function boundedCount(value: unknown): number {
-  if (Array.isArray(value) || isRecord(value)) {
-    return Object.keys(value).length === 0 ? 0 : 1;
-  }
-  return value === undefined ? 0 : 1;
-}
-
 function dataSummary(data: FacetToolSession["data"]): readonly DataSummaryEntry[] {
   return Object.freeze(
     Object.keys(data)
       .sort()
-      .map((path) => {
-        const value = data[path];
-        return Object.freeze({
-          path,
-          shape: shapeOf(value),
-          fields: fieldsOf(value),
-          count: boundedCount(value),
-        });
-      }),
+      .map((path) => describeDataValue(path, data[path], { count: "presence" })),
   );
 }
 

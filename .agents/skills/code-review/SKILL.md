@@ -45,7 +45,7 @@ packages, touched Facet invariants, test commands already run, and any relevant
 Dimension selection is fail-closed:
 
 - Run all seven dimensions for broad, multi-package, runtime, renderer,
-  protocol, bridge, quickstart, security, concurrency, or public API changes.
+  protocol, transport, quickstart, security, concurrency, or public API changes.
 - Always include `test-gaps` for behavior changes.
 - For docs/process-only changes, run at least `consistency` and `test-gaps`.
 - If you skip a dimension, record the concrete reason. A missing reason is a

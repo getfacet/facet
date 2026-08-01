@@ -50,6 +50,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Badge, Metric, Text } from "./content.js";
 import { Button, Field, Table } from "./interactive.js";
+import { errorsDuring } from "../../../../../test-support/errors-during.js";
 
 afterEach(cleanup);
 
@@ -169,40 +170,6 @@ function elementsOf(container: HTMLElement): readonly Element[] {
   return [container, ...container.querySelectorAll("*")].flatMap((element) =>
     element === container ? [...container.children] : [element],
   );
-}
-
-/**
- * Every error that escaped the component while `run` executed.
- *
- * A React event handler that throws does **not** unwind the `fireEvent` call
- * that triggered it. React catches the error at the dispatch boundary and hands
- * it to the environment through `reportError`, which jsdom turns into a window
- * `error` event. So `expect(() => fireEvent.change(…)).not.toThrow()` passes
- * even when the handler threw, and the failure surfaces only as the test
- * runner's exit code — a suite that reported `23 passed` would still be red for
- * a reason no assertion names.
- *
- * Listening for the report is what makes the escape an assertion. The event is
- * cancelled once observed, so an error this helper is deliberately provoking
- * does not also count as an unhandled error against the run.
- */
-function errorsDuring(run: () => void): readonly string[] {
-  const escaped: string[] = [];
-  const record = (event: ErrorEvent): void => {
-    escaped.push(event.error instanceof Error ? event.error.message : String(event.message));
-    event.preventDefault();
-  };
-  window.addEventListener("error", record);
-  try {
-    run();
-  } catch (error) {
-    // The synchronous path, for completeness: a throw that does reach the
-    // caller is the same failure, and belongs in the same list.
-    escaped.push(error instanceof Error ? error.message : String(error));
-  } finally {
-    window.removeEventListener("error", record);
-  }
-  return escaped;
 }
 
 /** Every attribute value carried by `element`, excluding the named attributes. */

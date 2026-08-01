@@ -1,15 +1,15 @@
-import type { AgentEvent, FacetToolSession } from "@facet/core";
+import type { VisitorEvent, FacetToolSession } from "@facet/core";
 
 import { Stage } from "./stage.js";
 
 interface FacetRunContext {
-  readonly event: AgentEvent;
+  readonly event: VisitorEvent;
   readonly session: FacetToolSession;
 }
 
 export interface InProcessFacetAgent {
   run(context: {
-    readonly event: AgentEvent;
+    readonly event: VisitorEvent;
     readonly session: FacetToolSession;
   }): Promise<{ readonly text: string | null }>;
 }

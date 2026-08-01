@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { BOUNDS } from "./bounds.js";
-import { validateAgentEvent } from "./event.js";
-import type { AgentEvent, AgentEventValidationResult } from "./event.js";
+import { validateVisitorEvent } from "./event.js";
+import type { VisitorEvent, VisitorEventValidationResult } from "./event.js";
 
 /**
  * The complete declared member set, sorted. D-07 counts the payload body as six
@@ -26,7 +26,7 @@ const DECLARED_KEYS: readonly string[] = [
 /** The same set minus the one optional member. */
 const REQUIRED_KEYS: readonly string[] = DECLARED_KEYS.filter((key) => key !== "arg");
 
-/** `ViewSnapshot` and every field it carried are deleted by D-07. */ // style-hard-cut: allowed-negative
+/** `ViewSnapshot` and every field it carried are deleted by D-07. */ // component-hard-cut: allowed-negative
 const DELETED_VIEW_SNAPSHOT_KEYS: readonly string[] = ["colorMode", "sort", "toggled", "viewport"];
 
 /** The exact key set of a rejection — one structured error, never a list. */
@@ -55,8 +55,8 @@ function event(overrides: Record<string, unknown> = {}): Record<string, unknown>
   };
 }
 
-function accept(value: unknown): AgentEvent {
-  const result = validateAgentEvent(value);
+function accept(value: unknown): VisitorEvent {
+  const result = validateVisitorEvent(value);
   if (!result.ok) {
     throw new Error(`expected acceptance, got ${result.code} at ${result.at}: ${result.detail}`);
   }
@@ -64,12 +64,12 @@ function accept(value: unknown): AgentEvent {
 }
 
 function rejection(value: unknown): string {
-  const result = validateAgentEvent(value);
+  const result = validateVisitorEvent(value);
   return result.ok ? "accepted" : result.code;
 }
 
 function rejectionAt(value: unknown): string {
-  const result = validateAgentEvent(value);
+  const result = validateVisitorEvent(value);
   return result.ok ? "accepted" : result.at;
 }
 
@@ -90,7 +90,7 @@ function textOf(length: number): string {
   return "v".repeat(length);
 }
 
-describe("AgentEvent payload shape (D-07)", () => {
+describe("VisitorEvent payload shape (D-07)", () => {
   it("accepts a well-formed event and carries exactly the declared fields", () => {
     const accepted = accept(event());
     expect(sortedKeys(accepted)).toEqual(REQUIRED_KEYS);
@@ -157,7 +157,7 @@ describe("AgentEvent payload shape (D-07)", () => {
     (key) => {
       const value: Record<string, unknown> = event();
       delete value[key];
-      expect(validateAgentEvent(value).ok).toBe(false);
+      expect(validateVisitorEvent(value).ok).toBe(false);
     },
   );
 });
@@ -233,7 +233,7 @@ describe("eventId format", () => {
     for (const digitLeading of [BARE_ULID, "4f47ac10-b58c-c000-8000-000000000000", "7"]) {
       expect(accept(event({ eventId: digitLeading })).eventId).toBe(digitLeading);
       for (const named of ["eventName", "sourceNodeId", "screen"]) {
-        expect(validateAgentEvent(event({ [named]: digitLeading })).ok).toBe(false);
+        expect(validateVisitorEvent(event({ [named]: digitLeading })).ok).toBe(false);
         expect(rejectionAt(event({ [named]: digitLeading }))).toBe(named);
       }
     }
@@ -241,7 +241,7 @@ describe("eventId format", () => {
     // still forbidden for an id.
     for (const shared of ["", "a:b", "user.name", "__proto__", " lead"]) {
       expect(rejection(event({ eventId: shared }))).toBe("invalid_event_id");
-      expect(validateAgentEvent(event({ eventName: shared })).ok).toBe(false);
+      expect(validateVisitorEvent(event({ eventName: shared })).ok).toBe(false);
     }
   });
 
@@ -330,7 +330,7 @@ describe("collect entries (D-08)", () => {
     { label: "a null entry", entry: null },
     { label: "an array entry", entry: [] },
   ])("rejects $label", ({ entry }) => {
-    expect(validateAgentEvent(event({ collect: { amount: entry } })).ok).toBe(false);
+    expect(validateVisitorEvent(event({ collect: { amount: entry } })).ok).toBe(false);
   });
 
   it("rejects an unknown key on a collect entry — the entry form is closed", () => {
@@ -453,12 +453,12 @@ describe("B-22/B-23 are single-sourced", () => {
 
   it("exposes exactly one validator, so renderer collection and server /event agree", async () => {
     const module: Record<string, unknown> = await import("./event.js");
-    expect(Object.keys(module).sort()).toEqual(["validateAgentEvent"]);
-    expect(typeof module["validateAgentEvent"]).toBe("function");
+    expect(Object.keys(module).sort()).toEqual(["validateVisitorEvent"]);
+    expect(typeof module["validateVisitorEvent"]).toBe("function");
   });
 });
 
-describe("validateAgentEvent totality", () => {
+describe("validateVisitorEvent totality", () => {
   const throwingGetter: Record<string, unknown> = {};
   Object.defineProperty(throwingGetter, "eventId", {
     enumerable: true,
@@ -499,15 +499,15 @@ describe("validateAgentEvent totality", () => {
       })(),
     },
   ])("never throws for $label", ({ value }) => {
-    let result: AgentEventValidationResult | undefined;
+    let result: VisitorEventValidationResult | undefined;
     expect(() => {
-      result = validateAgentEvent(value);
+      result = validateVisitorEvent(value);
     }).not.toThrow();
     expect(result?.ok).toBe(false);
   });
 
   it("carries exactly one structured error, never an aggregated list", () => {
-    const result = validateAgentEvent({ eventId: "e-1", eventName: "!", screen: "!" });
+    const result = validateVisitorEvent({ eventId: "e-1", eventName: "!", screen: "!" });
     expect(result.ok).toBe(false);
     expect(sortedKeys(result)).toEqual(REJECTION_KEYS);
     if (result.ok) {
@@ -520,22 +520,22 @@ describe("validateAgentEvent totality", () => {
   });
 
   it("accepts a valid event, so the rejection assertions above are not vacuous", () => {
-    const result = validateAgentEvent(event({ arg: "monthly" }));
+    const result = validateVisitorEvent(event({ arg: "monthly" }));
     expect(result.ok).toBe(true);
     expect(sortedKeys(result)).toEqual(["event", "ok"]);
   });
 
   it("returns the same first failure for the same input on every run", () => {
     const value = event({ eventName: "!", screen: "!", stageRevision: -1 });
-    const first = validateAgentEvent(value);
-    const second = validateAgentEvent({ ...value });
+    const first = validateVisitorEvent(value);
+    const second = validateVisitorEvent({ ...value });
     expect(first).toEqual(second);
   });
 
   it("does not mutate the value it was given", () => {
     const value = event({ collect: { amount: { kind: "value", value: "12" } } });
     const before = JSON.stringify(value);
-    validateAgentEvent(value);
+    validateVisitorEvent(value);
     expect(JSON.stringify(value)).toBe(before);
     expect(Object.isFrozen(value)).toBe(false);
   });

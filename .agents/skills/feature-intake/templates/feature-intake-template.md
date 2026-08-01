@@ -28,11 +28,11 @@
 ## Input/Output Examples
 
 ### Example 1 (Normal)
-- Input: [e.g. the agent emits `render <tree>` / the user clicks a button]
+- Input: [e.g. the agent emits `render_page markup` / the user clicks a button]
 - Output: [what appears / what the agent receives]
 
 ### Example 2 (Edge/Error)
-- Input: [malformed tree / rapid clicks / offline agent / empty field]
+- Input: [malformed markup / rapid clicks / offline agent / empty field]
 - Output: [fail-safe behavior — degrade to plain, never crash]
 
 ## Constraints (What Not to Do)

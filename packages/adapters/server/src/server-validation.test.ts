@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { BOUNDS, deriveMessageId } from "@facet/core";
 import type { ConversationMessage } from "@facet/core";
 import type { ConversationRecord, Sink } from "@facet/runtime";
-import { agentEvent, postEvent, postMessage, start } from "./server.test-support.js";
+import { visitorEvent, postEvent, postMessage, start } from "./server.test-support.js";
 import { isControlBody, normalizeEventBody, normalizeMessageBody } from "./server-validation.js";
 
 class RecordingSink implements Sink {
@@ -25,18 +25,18 @@ afterEach(async () => {
   active = undefined;
 });
 
-describe("server AgentEvent validation", () => {
+describe("server VisitorEvent validation", () => {
   it("accepts an event without arg and preserves exact absence", () => {
-    const result = normalizeEventBody({ sessionKey: "s1", event: agentEvent() });
+    const result = normalizeEventBody({ sessionKey: "s1", event: visitorEvent() });
 
     expect(result?.event.eventId).toBe("event1");
     expect("arg" in (result?.event ?? {})).toBe(false);
   });
 
   it("rejects retired visitorId aliases for event and message bodies", () => {
-    expect(normalizeEventBody({ visitorId: "s1", event: agentEvent() })).toBeUndefined();
+    expect(normalizeEventBody({ visitorId: "s1", event: visitorEvent() })).toBeUndefined();
     expect(
-      normalizeEventBody({ visitor: { visitorId: "s1" }, event: agentEvent() }),
+      normalizeEventBody({ visitor: { visitorId: "s1" }, event: visitorEvent() }),
     ).toBeUndefined();
     expect(
       normalizeMessageBody({
@@ -66,11 +66,13 @@ describe("server AgentEvent validation", () => {
       ]),
     );
 
-    expect(normalizeEventBody({ sessionKey: "s1", event: agentEvent({ collect }) })).toBeDefined();
+    expect(
+      normalizeEventBody({ sessionKey: "s1", event: visitorEvent({ collect }) }),
+    ).toBeDefined();
     expect(
       normalizeEventBody({
         sessionKey: "s1",
-        event: agentEvent({
+        event: visitorEvent({
           collect: { ...collect, overflow: { kind: "value", value: "no" } },
         }),
       }),
@@ -84,20 +86,20 @@ describe("server AgentEvent validation", () => {
     expect(
       normalizeEventBody({
         sessionKey: "s1",
-        event: agentEvent({ arg: atLimit, collect: { name: { kind: "value", value: atLimit } } }),
+        event: visitorEvent({ arg: atLimit, collect: { name: { kind: "value", value: atLimit } } }),
       }),
     ).toBeDefined();
     expect(
-      normalizeEventBody({ sessionKey: "s1", event: agentEvent({ arg: pastLimit }) }),
+      normalizeEventBody({ sessionKey: "s1", event: visitorEvent({ arg: pastLimit }) }),
     ).toBeUndefined();
     expect(
       normalizeEventBody({
         sessionKey: "s1",
-        event: agentEvent({ collect: { name: { kind: "value", value: pastLimit } } }),
+        event: visitorEvent({ collect: { name: { kind: "value", value: pastLimit } } }),
       }),
     ).toBeUndefined();
     expect(
-      normalizeEventBody({ sessionKey: "s1", event: { ...agentEvent(), arg: 1 } }),
+      normalizeEventBody({ sessionKey: "s1", event: { ...visitorEvent(), arg: 1 } }),
     ).toBeUndefined();
   });
 });
@@ -143,6 +145,30 @@ describe("server external agent control validation", () => {
         },
       }),
     ).toBe(false);
+  });
+
+  it("accepts a non-empty transport correlation id and rejects malformed ones", () => {
+    const body = {
+      kind: "agent_control",
+      eventId: "event1",
+      correlationId: "remote-1",
+      outcome: {
+        stageRevision: 0,
+        patches: [],
+        conversation: {
+          kind: "conversation",
+          messageId: deriveMessageId("event1", "assistant"),
+          turnId: "event1",
+          role: "assistant",
+          text: "done",
+          at: 1,
+        },
+      },
+    };
+
+    expect(isControlBody(body)).toBe(true);
+    expect(isControlBody({ ...body, correlationId: "" })).toBe(false);
+    expect(isControlBody({ ...body, correlationId: 7 })).toBe(false);
   });
 });
 
@@ -212,9 +238,9 @@ describe("server visitor-message validation", () => {
     });
     active = server;
 
-    const first = postEvent(base, "s1", agentEvent({ eventId: "event1" }));
+    const first = postEvent(base, "s1", visitorEvent({ eventId: "event1" }));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const second = await postEvent(base, "s1", agentEvent({ eventId: "event2" }));
+    const second = await postEvent(base, "s1", visitorEvent({ eventId: "event2" }));
     release();
 
     expect(second.status).toBe(409);

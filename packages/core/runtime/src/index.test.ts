@@ -73,10 +73,10 @@ describe("@facet/runtime barrel", () => {
     expect(pkg.exports).toEqual({ ".": "./src/index.ts" });
     expect(Object.keys(runtime).sort()).toEqual([...VALUE_EXPORTS].sort());
     expect("publishData" in runtime).toBe(false);
-    expect("FileAssets" in runtime).toBe(false); // style-hard-cut: allowed-negative
-    expect("MemoryAssets" in runtime).toBe(false); // style-hard-cut: allowed-negative
-    expect("loadAssets" in runtime).toBe(false); // style-hard-cut: allowed-negative
-    expect("AssetsStore" in runtime).toBe(false); // style-hard-cut: allowed-negative
+    expect("FileAssets" in runtime).toBe(false); // component-hard-cut: allowed-negative
+    expect("MemoryAssets" in runtime).toBe(false); // component-hard-cut: allowed-negative
+    expect("loadAssets" in runtime).toBe(false); // component-hard-cut: allowed-negative
+    expect("AssetsStore" in runtime).toBe(false); // component-hard-cut: allowed-negative
   });
 
   it("keeps Node built-ins outside the root barrel graph", () => {

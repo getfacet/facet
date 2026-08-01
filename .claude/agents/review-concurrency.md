@@ -6,7 +6,7 @@ tools: Read, Grep, Glob, Bash
 
 You review Facet for **concurrency** problems. Read `docs/REVIEW-RULES.md`.
 
-The runtime and bridge handle many events concurrently. Hunt for:
+The runtime and reference transports handle many events concurrently. Hunt for:
 
 - **Races** — two events for the same `(agent, visitor)` mutating the same stage
   (runtime `handle` read-modify-write), same-visitor `--resume` collisions, the

@@ -41,9 +41,11 @@
  */
 
 import type { ComponentMountProps, ComponentNode, ComponentSpec, DataModel } from "@facet/core";
-import { BOUNDS, resolveBinding } from "@facet/core";
+import { BOUNDS, parseAuthoredNumber, resolveBinding } from "@facet/core";
 import { createContext, createElement, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
+
+import { isRecord as isSafeRecord, readOwn } from "./safe-read.js";
 
 /**
  * The props a mounted component receives, named from the mount contract rather
@@ -121,9 +123,6 @@ type PropSchemas = ComponentSpec["props"];
 
 type PropSchema = PropSchemas[string];
 
-/** Mirrors `document-validation.ts`: one spelling per number, no exponents. */
-const NUMERIC_LITERAL = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
-
 const TRUE_LITERAL = "true";
 
 const FALSE_LITERAL = "false";
@@ -131,38 +130,26 @@ const FALSE_LITERAL = "false";
 /** The exact lowercase framework event-argument convention (D-07). */
 const ARG_PROP = "arg";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Reads one own property without ever throwing, so a hostile getter is inert. */
-function readOwn(container: Record<string, unknown>, key: string): unknown {
-  if (!Object.prototype.hasOwnProperty.call(container, key)) {
-    return undefined;
-  }
-  try {
-    return container[key];
-  } catch {
-    return undefined;
-  }
-}
-
 /** The spec's declared prop schemas, read defensively from an unvalidated spec. */
 function declaredProps(spec: ComponentSpec): Readonly<Record<string, unknown>> {
-  if (!isRecord(spec)) {
+  if (!isReadableRecord(spec)) {
     return {};
   }
   const props = readOwn(spec, "props");
-  return isRecord(props) ? props : {};
+  return isSafeRecord(props) ? props : {};
 }
 
 /** The node's stored props, read defensively from an unvalidated document. */
 function storedProps(node: ComponentNode): Readonly<Record<string, unknown>> {
-  if (!isRecord(node)) {
+  if (!isReadableRecord(node)) {
     return {};
   }
   const props = readOwn(node, "props");
-  return isRecord(props) ? props : {};
+  return isSafeRecord(props) ? props : {};
+}
+
+function isReadableRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Own enumerable string keys, without ever throwing. */
@@ -180,7 +167,7 @@ function ownKeys(container: object): readonly string[] {
  * rather than being assumed well-formed.
  */
 function readSchema(schema: unknown): PropSchema | null {
-  if (!isRecord(schema)) {
+  if (!isSafeRecord(schema)) {
     return null;
   }
   const type = readOwn(schema, "type");
@@ -264,11 +251,8 @@ function agreeScalar(text: string, schema: PropSchema): ResolvedValue | null {
       }
       return text === FALSE_LITERAL ? false : null;
     case "number": {
-      if (!NUMERIC_LITERAL.test(text)) {
-        return null;
-      }
-      const amount = Number(text);
-      if (!Number.isFinite(amount) || !agreesWithNumericDomain(amount, schema)) {
+      const amount = parseAuthoredNumber(text);
+      if (amount === null || !agreesWithNumericDomain(amount, schema)) {
         return null;
       }
       return amount;
@@ -338,7 +322,7 @@ type ValueOutcome =
  * the closed scheme vocabulary, whose targets are open.
  */
 function resolveValue(stored: unknown, schema: PropSchema, model: DataModel): ValueOutcome {
-  if (!isRecord(stored)) {
+  if (!isSafeRecord(stored)) {
     return { ok: false, reason: "invalid_value" };
   }
   const kind = readOwn(stored, "kind");
@@ -508,7 +492,7 @@ function collect(
   props: Record<string, ResolvedValue>,
   issues: BindingIssue[],
 ): void {
-  const data = isRecord(model) ? model : {};
+  const data = isSafeRecord(model) ? model : {};
 
   for (const name of [...ownKeys(schemas)].sort()) {
     const outcome = resolveDeclared(name, schemas, stored, data);

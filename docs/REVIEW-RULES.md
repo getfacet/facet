@@ -81,7 +81,8 @@ escape its parent without an explicit bounded scroll region is at least P1.
 - **edge** — parser/catalog/document/data error handling, renderer subtree
   isolation, empty/malformed input, lifecycle/cleanup.
 - **security** — the "safe by construction" claims, untrusted input (LLM output,
-  client-supplied `visitorId`, `--dangerously-skip-permissions`), injection, CORS.
+  client-supplied `sessionKey`, `--dangerously-skip-permissions`), injection,
+  CORS.
 - **concurrency** — races (same-visitor events, runtime stage), TurnGate
   single-flight/dedupe/fencing/deadline release, CAS/outbox ordering, timeouts,
   resource leaks.
@@ -113,30 +114,37 @@ a provider key is a failure whenever that tier is required by the changed
 surface. Optional owner-run visual journeys may report a deliberate skip when
 their optional capability is unavailable.
 
-Run the canonical mechanical gate with `pnpm verify`. It runs typecheck, tests,
-lint, format-check, and build, followed by these repository checks in order:
+Run the canonical mechanical gate with `pnpm verify`. It runs these commands in
+order:
 
-1. `node --test scripts/check-docs.test.mjs`
-2. `node scripts/check-docs.mjs`
-3. `node --test scripts/check-package-layout.test.mjs`
-4. `node scripts/check-package-layout.mjs`
-5. `node --test scripts/check-style-hard-cut.test.mjs`
-6. `node scripts/check-style-hard-cut.mjs`
-7. `node scripts/check-source-nuls.mjs`
+1. `pnpm typecheck`
+2. `pnpm test`
+3. `pnpm lint`
+4. `pnpm format:check`
+5. `pnpm build`
+6. `node --test scripts/check-docs.test.mjs`
+7. `node scripts/check-docs.mjs`
+8. `node --test scripts/check-package-layout.test.mjs`
+9. `node scripts/check-package-layout.mjs`
+10. `node --test scripts/check-component-hard-cut.test.mjs`
+11. `node scripts/check-component-hard-cut.mjs`
+12. `node --test scripts/package-smoke.test.mjs`
+13. `node --test scripts/gate-profiles.test.mjs`
+14. `node scripts/check-source-nuls.mjs`
 
 The first documentation command pins the checker; the second validates
 current-document links and anchors plus explicitly marked concrete
 TypeScript/TSX snippets. Review evidence must show that both commands ran in
 that order and report the full check's PASS/FAIL result. A scoped documentation
 check helps diagnosis but does not replace the full check. The package-layout
-test/check pair and the source NUL scan are likewise part of `pnpm verify`, not
-optional follow-ups.
+test/check pair, package-smoke inventory regression, gate-profile regression,
+and source NUL scan are likewise part of `pnpm verify`, not optional follow-ups.
 
-The style-system regression suite runs immediately before the scanner. Shipping
-source, docs, package READMEs, fixtures, and current changesets must contain no
-retired symbol, data, or functional-tier claim. Ephemeral plans live only under
-the gitignored `.agents/work/<slug>/` path and are outside repository
-documentation. A committed root `specs/`, `docs/specs/`, or `docs/comparisons/`
-path is a layout failure. Only an intentional negative in a test or fixture may
-use the scanner's exact annotation; annotations cannot waive production code or
-documentation.
+The component-markup hard-cut regression suite runs immediately before the
+scanner. Shipping source, docs, package READMEs, fixtures, and current
+changesets must contain no retired symbol, data, or functional-tier claim.
+Ephemeral plans live only under the gitignored `.agents/work/<slug>/` path and
+are outside repository documentation. A committed root `specs/`, `docs/specs/`,
+or `docs/comparisons/` path is a layout failure. Only an intentional negative in
+a test or fixture may use the scanner's exact annotation; annotations cannot
+waive production code or documentation.

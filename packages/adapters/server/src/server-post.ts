@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { AgentControlFrame, AgentEvent, ConversationMessage } from "@facet/core";
+import type { AgentControlFrame, VisitorEvent, ConversationMessage } from "@facet/core";
 import type { FacetRuntime } from "@facet/runtime";
 import type { AgentChannel } from "./agent-channel.js";
 import { emitFacetServerObservation, type FacetServerObserver } from "./observer.js";
@@ -19,7 +19,7 @@ export interface PostHandlerDeps {
 async function runEvent(
   deps: PostHandlerDeps,
   sessionKey: string,
-  event: AgentEvent,
+  event: VisitorEvent,
   visitorMessage?: ConversationMessage,
 ): Promise<{ readonly status: number; readonly body: unknown }> {
   await deps.ensureSession(sessionKey);
@@ -108,7 +108,15 @@ export function handleControl(
         res.end();
         return;
       }
-      channel.resolve(body as AgentControlFrame);
+      const accepted = channel.resolve(body as AgentControlFrame);
+      if (!accepted) {
+        writeJson(res, 409, {
+          ok: false,
+          code: "unknown_control_event",
+          detail: "No pending agent turn matches this control frame.",
+        });
+        return;
+      }
       res.writeHead(202);
       res.end();
     })

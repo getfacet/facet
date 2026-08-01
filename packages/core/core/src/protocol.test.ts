@@ -10,13 +10,13 @@ import { BOUNDS } from "./bounds.js";
 import { deriveMessageId, truncateConversationText } from "./conversation.js";
 import type { ConversationMessage } from "./conversation.js";
 import type { ComponentDocument } from "./document.js";
-import type { AgentEvent } from "./event.js";
+import type { VisitorEvent } from "./event.js";
 import { MAX_PATCH_OPS, applyPatch } from "./patch.js";
 import type { JsonPatchOperation } from "./patch.js";
 import { collectTurnOutcome, iterateTurnOutcome, validateTurnOutcome } from "./protocol.js";
 import type {
   AgentControlFrame,
-  AgentEventFrame,
+  VisitorEventFrame,
   FacetAgent,
   FacetTransport,
   PatchFrame,
@@ -35,7 +35,7 @@ import type { FacetStage } from "./stage.js";
  *    runtime assertions actually call. A helper only compiles if the contract it
  *    annotates holds, and calling it proves the fixture is real rather than a
  *    comment. Same idiom as `mount-contract.test.ts`.
- * 2. The deletions — `kind: "say"`, `kind: "reset"` and every `view` member — // style-hard-cut: allowed-negative
+ * 2. The deletions — `kind: "say"`, `kind: "reset"` and every `view` member — // component-hard-cut: allowed-negative
  *    are asserted **mechanically, twice**: once over the module's own source and
  *    once over the declaration `tsc` emits for it. A source-only scan would miss
  *    a member reintroduced through a type-only import, because that import is
@@ -110,7 +110,7 @@ function emitDeclaration(): string {
 const DELETED_VOCABULARY: readonly { readonly what: string; readonly pattern: RegExp }[] = [
   { what: 'the "say" message', pattern: /say/i },
   { what: 'the "reset" message (D-02)', pattern: /reset/i },
-  { what: "ViewSnapshot and every view member", pattern: /view/i }, // style-hard-cut: allowed-negative
+  { what: "ViewSnapshot and every view member", pattern: /view/i }, // component-hard-cut: allowed-negative
 ];
 
 function expectNoDeletedVocabulary(where: string, source: string): void {
@@ -214,13 +214,13 @@ describe("the protocol module's deletions", () => {
       .sort();
     expect(exported).toEqual([
       "AgentControlFrame",
-      "AgentEventFrame",
       "FacetAgent",
       "FacetTransport",
       "PatchFrame",
       "ServerFrame",
       "TurnOutcome",
       "TurnOutcomeValidationResult",
+      "VisitorEventFrame",
       "collectTurnOutcome",
       "iterateTurnOutcome",
       "validateTurnOutcome",
@@ -243,10 +243,10 @@ describe("the protocol module's deletions", () => {
       .filter((name) => name.length > 0)
       .sort();
     expect(imported).toEqual([
-      "AgentEvent",
       "ConversationMessage",
       "JsonPatchOperation",
       "StageRevision",
+      "VisitorEvent",
     ]);
   });
 
@@ -748,7 +748,7 @@ describe("FacetTransport", () => {
 });
 
 describe("the agent link", () => {
-  const event: AgentEvent = Object.freeze({
+  const event: VisitorEvent = Object.freeze({
     eventId: "e-01HZXQ7M9C",
     eventName: "refresh",
     sourceNodeId: "n4",
@@ -757,12 +757,25 @@ describe("the agent link", () => {
     collect: {},
   });
 
-  const eventFrame: AgentEventFrame = { kind: "agent_event", event };
+  const eventFrame: VisitorEventFrame = { kind: "visitor_event", event };
 
   it("carries the event whole, restating neither its id nor its revision", () => {
     expect(sortedKeys(eventFrame)).toEqual(["event", "kind"]);
     expect(eventFrame.event.eventId).toBe("e-01HZXQ7M9C");
     expect(eventFrame.event.stageRevision).toBe(7);
+  });
+
+  it("can carry a transport correlation id without rewriting the visitor event", () => {
+    const correlated: VisitorEventFrame = {
+      kind: "visitor_event",
+      correlationId: "remote-1",
+      timeoutMs: 28_000,
+      event,
+    };
+
+    expect(correlated.event.eventId).toBe("e-01HZXQ7M9C");
+    expect(correlated.correlationId).toBe("remote-1");
+    expect(correlated.timeoutMs).toBe(28_000);
   });
 
   it("answers one event with one control frame carrying one outcome", async () => {
@@ -779,9 +792,12 @@ describe("the agent link", () => {
     const control: AgentControlFrame = {
       kind: "agent_control",
       eventId: eventFrame.event.eventId,
+      correlationId: "remote-1",
       outcome: await agent.handleEvent(eventFrame),
     };
     expect(control.outcome.stageRevision).toBe(8);
+    expect(control.eventId).toBe("e-01HZXQ7M9C");
+    expect(control.correlationId).toBe("remote-1");
     expect(collectTurnOutcome(control.outcome).map((frame) => frame.kind)).toEqual([
       "patch",
       "conversation",

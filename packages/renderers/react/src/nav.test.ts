@@ -12,7 +12,7 @@
  * module's own import list is asserted too — nothing that could build or apply
  * a patch is even in scope here.
  *
- * **Only the two schemes exist.** `local:toggle` is refused by name, an // style-hard-cut: allowed-negative
+ * **Only the two schemes exist.** `local:toggle` is refused by name, an // component-hard-cut: allowed-negative
  * unscheme'd string is not an action, and an `agent:` reference is explicitly
  * *not* navigation — it is handed back for the caller to forward, never acted
  * on here (DC-024).
@@ -234,6 +234,28 @@ describe("the declared screens are read from the document", () => {
       expect(entryScreen(input as ComponentDocument)).toBeNull();
       expect(resolveScreen(input as ComponentDocument, "details")).toBeNull();
     }
+  });
+
+  it("treats hostile screen arrays as an empty screen list", () => {
+    const revoked = Proxy.revocable<string[]>([], {});
+    revoked.revoke();
+    const hostileIterator = ["n1"];
+    Object.defineProperty(hostileIterator, Symbol.iterator, {
+      value: (): never => {
+        throw new Error("hostile iterator");
+      },
+    });
+
+    expect(() =>
+      listScreens({ entry: "overview", screens: revoked.proxy, nodes: { n1: screen("overview") } }),
+    ).not.toThrow();
+    expect(
+      listScreens({
+        entry: "overview",
+        screens: hostileIterator,
+        nodes: { n1: screen("overview") },
+      }),
+    ).toEqual([{ name: "overview", nodeId: "n1" }]);
   });
 
   it("falls back to the first declared screen when the entry names nothing", () => {
@@ -606,7 +628,7 @@ describe("navigation emits no patch", () => {
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "nav.ts"), "utf8");
     const code = stripComments(source);
 
-    expect(importedFrom(code)).toEqual(["@facet/core", "react"]);
+    expect(importedFrom(code)).toEqual(["./safe-read.js", "@facet/core", "react"]);
     for (const forbidden of ["applyPatch", "JsonPatchOperation", "PatchFrame", "op:", '"add"']) {
       expect(code).not.toContain(forbidden);
     }

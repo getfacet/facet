@@ -7,7 +7,7 @@ import process from "node:process";
 import test from "node:test";
 import { URL } from "node:url";
 
-import { scanHardCut } from "./check-style-hard-cut.mjs";
+import { scanHardCut } from "./check-component-hard-cut.mjs";
 
 const ROOT_DIRECTORIES = ["packages", "apps", "labs", "docs", "scripts", ".changeset"];
 
@@ -35,15 +35,18 @@ async function writeFixture(cwd, relativePath, contents) {
 }
 
 function allowedAnnotation() {
-  return ["style-hard-cut", "allowed-negative"].join(": ");
+  return ["component-hard-cut", "allowed-negative"].join(": ");
 }
 
 function hardCutResidueSamples() {
   const joined = (...parts) => parts.join("");
   return [
     joined("Br", "ick"),
+    joined("Br", "icks"),
     joined("Pat", "tern"),
+    joined("Pat", "terns"),
     joined("Pre", "set"),
+    joined("Pre", "sets"),
     ["STAGE", "SPEC"].join("_"),
     joined("Facet", "Tree"),
     joined("Assets", "Store"),
@@ -251,7 +254,7 @@ test("flags retired residue in documentation scope and token-count-limit languag
     cwd,
     "docs/old-quickstart.md",
     [
-      "The deleted package @facet/bridge is still named here.", // style-hard-cut: allowed-negative
+      "The deleted package @facet/bridge is still named here.", // component-hard-cut: allowed-negative
       `The retired evidence path ${deletedApp} is still named here.`,
       "The old Lab evidence check used check-lab-gates.",
       "This text still describes a token-count limit.",
@@ -261,7 +264,7 @@ test("flags retired residue in documentation scope and token-count-limit languag
   await writeFixture(
     cwd,
     "packages/example/example/README.md",
-    "This README still mentions Overlay and pnpm --filter @facet/lab.\n", // style-hard-cut: allowed-negative
+    "This README still mentions Overlay and pnpm --filter @facet/lab.\n", // component-hard-cut: allowed-negative
   );
   await writeFixture(
     cwd,
@@ -417,16 +420,16 @@ test("allows only the locked superseded concept names under the Direction header
       "",
       "## Superseded decisions",
       "",
-      "- `Overlay` as a general authored overlap primitive", // style-hard-cut: allowed-negative
-      "- `local:` browser action routing", // style-hard-cut: allowed-negative
+      "- `Overlay` as a general authored overlap primitive", // component-hard-cut: allowed-negative
+      "- `local:` browser action routing", // component-hard-cut: allowed-negative
       "- markup-template components as an authoring surface",
-      "- catalog-in-AssetsStore as the catalog source of truth", // style-hard-cut: allowed-negative
+      "- catalog-in-AssetsStore as the catalog source of truth", // component-hard-cut: allowed-negative
       "- Lab-first evidence as the public hard gate",
       "",
       "## Still invalid",
       "",
-      "- Deleted package @facet/bridge remains invalid here.", // style-hard-cut: allowed-negative
-      "- Old get_pattern tool text remains invalid here.", // style-hard-cut: allowed-negative
+      "- Deleted package @facet/bridge remains invalid here.", // component-hard-cut: allowed-negative
+      "- Old get_pattern tool text remains invalid here.", // component-hard-cut: allowed-negative
       "",
     ].join("\n"),
   );
@@ -495,7 +498,7 @@ test("does not scan deleted apps and keeps ripgrep/portable roots aligned", asyn
   await writeFixture(cwd, `${deletedApp}/src/legacy.ts`, legacy);
 
   const ripgrepResult = scanHardCut({ cwd, mode: "production" });
-  const scanner = new URL("./check-style-hard-cut.mjs", import.meta.url);
+  const scanner = new URL("./check-component-hard-cut.mjs", import.meta.url);
   const portableResult = spawnSync(process.execPath, [scanner.pathname, "--production"], {
     cwd,
     encoding: "utf8",
@@ -539,7 +542,7 @@ test("does not expose excluded playground session contents in CLI diagnostics", 
     `const legacy = "${hardCutResidueSamples()[0]} ${sessionSecret}";\n`,
   );
 
-  const scanner = new URL("./check-style-hard-cut.mjs", import.meta.url);
+  const scanner = new URL("./check-component-hard-cut.mjs", import.meta.url);
   const result = spawnSync(process.execPath, [scanner.pathname], {
     cwd,
     encoding: "utf8",
@@ -559,7 +562,7 @@ test("falls back to portable search when default rg is unavailable", async (t) =
     `${hardCutResidueSamples()[0]}\n`,
   );
 
-  const scanner = new URL("./check-style-hard-cut.mjs", import.meta.url);
+  const scanner = new URL("./check-component-hard-cut.mjs", import.meta.url);
   const result = spawnSync(process.execPath, [scanner.pathname, "--production"], {
     cwd,
     encoding: "utf8",
@@ -606,10 +609,10 @@ test("production mode excludes current docs while all mode includes them", async
 test("does not match the scanner's own pattern construction", async (t) => {
   const cwd = await makeFixture(t);
   const scannerSource = await readFile(
-    new URL("./check-style-hard-cut.mjs", import.meta.url),
+    new URL("./check-component-hard-cut.mjs", import.meta.url),
     "utf8",
   );
-  await writeFixture(cwd, "scripts/check-style-hard-cut.mjs", scannerSource);
+  await writeFixture(cwd, "scripts/check-component-hard-cut.mjs", scannerSource);
 
   const result = scanHardCut({ cwd });
 
@@ -625,7 +628,7 @@ test("escapes terminal control characters in CLI diagnostics", async (t) => {
     `const legacy = "${hardCutResidueSamples()[0]}"; // ${escape}]52;clipboard payload\u0007\n`,
   );
 
-  const scanner = new URL("./check-style-hard-cut.mjs", import.meta.url);
+  const scanner = new URL("./check-component-hard-cut.mjs", import.meta.url);
   const result = spawnSync(process.execPath, [scanner.pathname], {
     cwd,
     encoding: "utf8",
@@ -647,7 +650,7 @@ test("escapes terminal control characters in CLI search errors", async (t) => {
   );
   await chmod(fakeSearch, 0o755);
 
-  const scanner = new URL("./check-style-hard-cut.mjs", import.meta.url);
+  const scanner = new URL("./check-component-hard-cut.mjs", import.meta.url);
   const result = spawnSync(process.execPath, [scanner.pathname], {
     cwd,
     encoding: "utf8",

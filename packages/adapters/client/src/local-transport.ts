@@ -1,4 +1,4 @@
-import type { AgentEvent, ConversationMessage, FacetTransport, ServerFrame } from "@facet/core";
+import type { VisitorEvent, ConversationMessage, FacetTransport, ServerFrame } from "@facet/core";
 
 type RuntimeHandleResult =
   | readonly ServerFrame[]
@@ -9,7 +9,7 @@ type RuntimeHandleResult =
 interface RuntimeLike {
   handle(input: {
     readonly sessionKey: string;
-    readonly event: AgentEvent;
+    readonly event: VisitorEvent;
   }): Promise<RuntimeHandleResult>;
 }
 
@@ -26,7 +26,7 @@ function framesFrom(result: RuntimeHandleResult): readonly ServerFrame[] {
 }
 
 /**
- * In-process transport over any runtime-like object that can accept an AgentEvent
+ * In-process transport over any runtime-like object that can accept a VisitorEvent
  * and return ServerFrame values. Structural by design: production code imports
  * only `@facet/core`, never the runtime package.
  */
@@ -39,8 +39,8 @@ export class LocalTransport implements FacetTransport {
     private readonly sessionKey: string,
   ) {}
 
-  send(event: AgentEvent): void {
-    void this.runtime
+  send(event: VisitorEvent): Promise<void> {
+    return this.runtime
       .handle({ sessionKey: this.sessionKey, event })
       .then((result) => {
         for (const frame of framesFrom(result)) {
@@ -49,6 +49,7 @@ export class LocalTransport implements FacetTransport {
       })
       .catch((error: unknown) => {
         console.error("[facet] local transport failed:", error);
+        throw error;
       });
   }
 

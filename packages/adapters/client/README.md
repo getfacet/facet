@@ -17,9 +17,11 @@ components, or authorize stage writes.
 ## Transports
 
 - `SseTransport(baseUrl, sessionKey)` subscribes to server frames over SSE and
-  posts visitor events to the reference server in order.
-- `LocalTransport(runtime, sessionKey)` calls a runtime-like `handle` method and
-  delivers the returned frames to subscribers.
+  posts visitor events, plus quickstart visitor messages, to the reference
+  server in one ordered queue.
+- `LocalTransport(runtime, sessionKey)` calls a runtime-like `handle` method,
+  delivers the returned frames to subscribers, and resolves `send` after that
+  delivery finishes.
 - `browserVisitorId()` creates a random browser session key for local/public
   anonymous pages.
 - `persistScreen()` and `loadPersistedScreen()` store only the last screen name
@@ -27,7 +29,7 @@ components, or authorize stage writes.
   persisted.
 
 ```ts check-docs
-import type { AgentEvent, ServerFrame } from "@facet/core";
+import type { VisitorEvent, ServerFrame } from "@facet/core";
 import {
   browserVisitorId,
   loadPersistedScreen,
@@ -45,7 +47,7 @@ const unsubscribe = transport.subscribe((frame: ServerFrame) => {
 
 persistScreen("quickstart", { screen });
 
-const event: AgentEvent = {
+const event: VisitorEvent = {
   eventId: "visit-1",
   eventName: "visit",
   sourceNodeId: "root",
@@ -54,13 +56,19 @@ const event: AgentEvent = {
   collect: {},
 };
 
-transport.send(event);
+void transport.send(event);
+void transport.sendMessage({
+  messageId: "message-1",
+  text: "Hello",
+  screen,
+  stageRevision: 0,
+});
 unsubscribe();
 ```
 
 ## Event boundary
 
-Visitor events are closed `AgentEvent` objects: stable `eventId`, authored
+Visitor events are closed `VisitorEvent` objects: stable `eventId`, authored
 `eventName`, `sourceNodeId`, `screen`, echoed `stageRevision`, optional `arg`,
 and an explicit `collect` map. Collected fields either carry a value or a stated
 absence reason. Extra keys and invalid names are rejected by the shared Core

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyPatch } from "@facet/core";
 import type {
-  AgentEvent,
+  VisitorEvent,
   ConversationMessage,
   FacetStage,
   PatchFrame,
@@ -15,6 +15,7 @@ class FakeEventSource {
   static instances: FakeEventSource[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((message: MessageEvent<string>) => void) | null = null;
+  onerror: (() => void) | null = null;
   closed = false;
 
   constructor(readonly url: string) {
@@ -33,7 +34,7 @@ class FakeEventSource {
 const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 202 })));
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-function event(overrides: Partial<AgentEvent> = {}): AgentEvent {
+function event(overrides: Partial<VisitorEvent> = {}): VisitorEvent {
   return Object.freeze({
     eventId: "event1",
     eventName: "submit",
@@ -83,10 +84,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("SseTransport", () => {
-  it("subscribes to the session stream and posts AgentEvent without a visitor wrapper", async () => {
+  it("subscribes to the session stream and posts VisitorEvent without a visitor wrapper", async () => {
     const transport = new SseTransport("http://s", "session/a");
     transport.subscribe(() => {});
     transport.send(event());
@@ -102,6 +104,115 @@ describe("SseTransport", () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
     expect(url).toBe("http://s/event");
     expect(JSON.parse(init.body)).toEqual({ sessionKey: "session/a", event: event() });
+  });
+
+  it("posts visitor messages through the same ordered send queue as events", async () => {
+    const transport = new SseTransport("http://s", "session/a");
+    transport.subscribe(() => {});
+    const eventSent = transport.send(event({ eventId: "visit" }));
+    const messageSent = transport.sendMessage({
+      messageId: "msg-1",
+      text: "hello",
+      screen: "home",
+      stageRevision: 0,
+    });
+
+    FakeEventSource.instances[0]?.onopen?.();
+    await expect(Promise.all([eventSent, messageSent])).resolves.toEqual([undefined, undefined]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const first = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
+    const second = fetchMock.mock.calls[1] as unknown as [string, { body: string }];
+    expect(first[0]).toBe("http://s/event");
+    expect(JSON.parse(first[1].body)).toEqual({
+      sessionKey: "session/a",
+      event: event({ eventId: "visit" }),
+    });
+    expect(second[0]).toBe("http://s/message");
+    expect(JSON.parse(second[1].body)).toEqual({
+      sessionKey: "session/a",
+      messageId: "msg-1",
+      text: "hello",
+      screen: "home",
+      stageRevision: 0,
+    });
+  });
+
+  it("rejects the oldest queued send on overflow and flushes the bounded queue in order", async () => {
+    const transport = new SseTransport("http://s", "session/a");
+    transport.subscribe(() => {});
+    const firstSend = transport.send(event({ eventId: "event0" }));
+    const firstRejected = expect(firstSend).rejects.toThrow("send queue full");
+    const sends = [
+      firstSend,
+      ...Array.from({ length: 100 }, (_unused, index) =>
+        transport.send(event({ eventId: `event${index + 1}` })),
+      ),
+    ];
+
+    await firstRejected;
+    FakeEventSource.instances[0]?.onopen?.();
+    await expect(Promise.all(sends.slice(1))).resolves.toEqual(
+      Array.from({ length: 100 }, () => undefined),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(100);
+    const sentEventIds = fetchMock.mock.calls.map((call) => {
+      const [, init] = call as unknown as [string, { readonly body: string }];
+      return (JSON.parse(init.body) as { readonly event: VisitorEvent }).event.eventId;
+    });
+    expect(sentEventIds).toEqual(
+      Array.from({ length: 100 }, (_unused, index) => `event${index + 1}`),
+    );
+  });
+
+  it("rejects queued sends when the stream disconnects before opening", async () => {
+    const transport = new SseTransport("http://s", "session/a");
+    const unsubscribe = transport.subscribe(() => {});
+    const pending = transport.send(event());
+
+    FakeEventSource.instances[0]?.onerror?.();
+
+    await expect(pending).rejects.toThrow("transport disconnected");
+    expect(fetchMock).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  it("rejects queued sends when the stream never opens", async () => {
+    vi.useFakeTimers();
+    const transport = new SseTransport("http://s", "session/a");
+    transport.subscribe(() => {});
+    const pending = transport.send(event());
+    const rejected = expect(pending).rejects.toThrow("transport open timed out");
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    await rejected;
+    expect(FakeEventSource.instances[0]?.closed).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a failed POST and continues later queued sends in order", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 500 }))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }));
+    const transport = new SseTransport("http://s", "session/a");
+    transport.subscribe(() => {});
+    FakeEventSource.instances[0]?.onopen?.();
+
+    const failed = transport.send(event({ eventId: "event1" }));
+    const recovered = transport.send(event({ eventId: "event2" }));
+
+    await expect(failed).rejects.toThrow("POST /event failed: 500");
+    await expect(recovered).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const sentEventIds = fetchMock.mock.calls.map((call) => {
+      const [, init] = call as unknown as [string, { readonly body: string }];
+      return (JSON.parse(init.body) as { readonly event: VisitorEvent }).event.eventId;
+    });
+    expect(sentEventIds).toEqual(["event1", "event2"]);
   });
 
   it("collapses duplicate conversation frames by messageId while preserving patch frames", () => {
@@ -168,17 +279,19 @@ describe("SseTransport", () => {
     ).toEqual(serverStage);
   });
 
-  it("ignores malformed frames and stops direct sends on unsubscribe", () => {
+  it("ignores malformed frames and rejects direct sends on unsubscribe", async () => {
     const received: ServerFrame[] = [];
     const transport = new SseTransport("http://s", "session1");
     const unsubscribe = transport.subscribe((frame) => received.push(frame));
     FakeEventSource.instances[0]?.onopen?.();
     FakeEventSource.instances[0]?.emit("not-json");
     unsubscribe();
-    transport.send(event({ eventId: "late" }));
 
     expect(FakeEventSource.instances[0]?.closed).toBe(true);
     expect(received).toEqual([]);
+    await expect(transport.send(event({ eventId: "late" }))).rejects.toThrow(
+      "transport disconnected",
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -26,7 +26,7 @@ Workflow({ name: 'code-review', args: { scope: 'diff', base: 'main' } })
   consistency, test-gaps`. Omit to let the workflow's Scope phase scale the
   fan-out to the change.
 - `hint`: free text to narrow/redirect scope (e.g. a PR number or "focus on the
-  bridge queue").
+  transport queue").
 - `votes`: verifier panel size for high-severity findings (default `3`).
 - `thorough`: `true` runs the full vote panel on **every** finding (not just
   P0/P1).

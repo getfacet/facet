@@ -30,6 +30,9 @@
     "@facet/core": "workspace:*",
     "@facet/runtime": "workspace:*"
   },
+  "devDependencies": {
+    "@facet/assets": "workspace:*"
+  },
   "files": [
     "dist"
   ],

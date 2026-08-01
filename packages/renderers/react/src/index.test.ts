@@ -31,7 +31,7 @@ const RETIRED_SYMBOLS = [
   "DEFAULT_THEME",
   "BrickRenderer",
   "PatternRenderer",
-  "ViewSnapshot", // style-hard-cut: allowed-negative
+  "ViewSnapshot", // component-hard-cut: allowed-negative
   "viewSnapshot",
 ];
 

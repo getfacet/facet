@@ -123,7 +123,6 @@ export const REFERENCE_AGENT_STOP_REASONS = [
   "provider_error",
   "retry_exhausted",
   "sink_error",
-  "unresolved_buffer",
   "empty_turn",
 ] as const;
 

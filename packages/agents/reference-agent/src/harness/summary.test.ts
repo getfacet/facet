@@ -20,7 +20,7 @@ const VALID_INPUT = {
   pageDecisions: "created home + confirm screens; theme calm",
   collectedData: "name=Ada",
   pending: "awaiting date choice",
-  attempts: "one failed set_node on missing id", // style-hard-cut: allowed-negative
+  attempts: "one failed set_node on missing id", // component-hard-cut: allowed-negative
   omitted: "nothing dropped",
 } as const;
 

@@ -6,12 +6,12 @@
  * code and never the retired tree model. It has no network, randomness, or
  * clock read, so the same event sequence produces deep-equal turn text.
  */
-import { type AgentEvent, type FacetToolSession } from "@facet/core";
+import { type VisitorEvent, type FacetToolSession } from "@facet/core";
 
-type CollectedEntry = AgentEvent["collect"][string];
+type CollectedEntry = VisitorEvent["collect"][string];
 
 interface RuntimeStubContext {
-  readonly event: AgentEvent;
+  readonly event: VisitorEvent;
   readonly session: FacetToolSession;
 }
 
@@ -60,7 +60,7 @@ function describeCollectedEntry(entry: CollectedEntry): string {
   }
 }
 
-function describeEvent(event: AgentEvent): string {
+function describeEvent(event: VisitorEvent): string {
   const pairs = Object.keys(event.collect)
     .sort()
     .map(

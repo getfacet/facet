@@ -59,8 +59,8 @@ approved cleanup scope and run the refactor hard gate:
 (`packages/tools/quickstart`, `packages/adapters/server`,
 `packages/adapters/client`, `packages/adapters/agent-client`,
 `packages/core/runtime`, `packages/renderers/react`
-renderer/useFacet/ChatDock paths, or `packages/core/core`
-patch/protocol/stage vocabulary) or the owner requests it.
+renderer/useFacet paths, or `packages/core/core` patch/protocol/stage
+vocabulary) or the owner requests it.
 
 Bias toward a few high-value consolidations (real duplication, a misplaced
 module, a dead file) over cosmetic churn — every proposed move must reduce drift

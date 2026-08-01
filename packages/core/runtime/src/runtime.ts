@@ -1,7 +1,7 @@
 import {
   deriveMessageId,
   truncateConversationText,
-  type AgentEvent,
+  type VisitorEvent,
   type AuthorErrorCode,
   type AuthorValidationResult,
   type ConversationMessage,
@@ -39,7 +39,7 @@ export type RuntimeSink = Pick<Sink, "record" | "history">;
 
 export interface RuntimeAgent {
   run(context: {
-    readonly event: AgentEvent;
+    readonly event: VisitorEvent;
     readonly session: FacetToolSession;
   }): Promise<{ readonly text: string | null } | string | null | undefined>;
 }
@@ -67,7 +67,7 @@ export interface RuntimeOptions {
 
 export interface RuntimeEventInput {
   readonly sessionKey: string;
-  readonly event: AgentEvent;
+  readonly event: VisitorEvent;
   readonly visitorMessage?: ConversationMessage;
 }
 

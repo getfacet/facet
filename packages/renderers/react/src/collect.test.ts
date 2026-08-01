@@ -24,7 +24,7 @@
  * **Whatever the sources say, the payload validates.** The strongest available
  * statement about a builder feeding a validated boundary is that its output is
  * accepted by that boundary, so the hostile sweep at the end embeds each built
- * payload in an otherwise well-formed event and runs `validateAgentEvent` over
+ * payload in an otherwise well-formed event and runs `validateVisitorEvent` over
  * it. `B-22` and `B-23` are read from `BOUNDS` on both sides, so the pair cannot
  * drift into two numbers.
  *
@@ -33,7 +33,7 @@
  * carries the jsdom docblock instead.
  */
 
-import { BOUNDS, validateAgentEvent } from "@facet/core";
+import { BOUNDS, validateVisitorEvent } from "@facet/core";
 import { describe, expect, it } from "vitest";
 
 import type { CollectReader, CollectSource } from "./collect.js";
@@ -118,6 +118,24 @@ describe("parseCollectNames", () => {
     expect(parseCollectNames(pastLimit).names).toEqual([]);
     expect(parseCollectNames(pastLimit).issues[0]?.code).toBe("invalid_collect_name");
   });
+
+  it("bounds corrupt collect lists without materializing every token", () => {
+    const authored = names(100_000).join(" ");
+    const parsed = parseCollectNames(authored);
+
+    expect(parsed.names).toHaveLength(BOUNDS.collectFieldsPerEvent + 1);
+    expect(parsed.names).toEqual([...names(BOUNDS.collectFieldsPerEvent + 1)]);
+    expect(parsed.issues).toEqual([]);
+  });
+
+  it("bounds a huge malformed collect token without echoing it", () => {
+    const parsed = parseCollectNames("x".repeat(100_000));
+
+    expect(parsed.names).toEqual([]);
+    expect(parsed.issues).toHaveLength(1);
+    expect(parsed.issues[0]?.code).toBe("invalid_collect_name");
+    expect(JSON.stringify(parsed)).not.toContain("x".repeat(BOUNDS.identifierChars + 2));
+  });
 });
 
 describe("buildCollectPayload", () => {
@@ -142,7 +160,7 @@ describe("buildCollectPayload", () => {
     );
 
     expect(built.collect).toEqual({});
-    expect(validateAgentEvent(eventAround({ ...built.collect })).ok).toBe(true);
+    expect(validateVisitorEvent(eventAround({ ...built.collect })).ok).toBe(true);
   });
 
   it("states an unavailable source instead of dropping the key", () => {
@@ -200,7 +218,7 @@ describe("buildCollectPayload", () => {
     expect(built.issues[0]?.at).toBe("collect.long");
     // Truncating instead would hand the agent a plausible wrong value, which is
     // worse than a stated absence; the payload still has to validate.
-    expect(validateAgentEvent(eventAround({ ...built.collect })).ok).toBe(true);
+    expect(validateVisitorEvent(eventAround({ ...built.collect })).ok).toBe(true);
   });
 
   it("carries B-22 fields and reports the overflow past it", () => {
@@ -220,7 +238,20 @@ describe("buildCollectPayload", () => {
     // The kept set is the authored prefix, so the same list always sends the
     // same fields.
     expect(Object.keys(pastLimit.collect)).toEqual([...names(BOUNDS.collectFieldsPerEvent)]);
-    expect(validateAgentEvent(eventAround({ ...pastLimit.collect })).ok).toBe(true);
+    expect(validateVisitorEvent(eventAround({ ...pastLimit.collect })).ok).toBe(true);
+  });
+
+  it("keeps a corrupt huge collect list to the B-22 payload prefix", () => {
+    const table: Record<string, CollectSource> = {};
+    for (const name of names(BOUNDS.collectFieldsPerEvent + 1)) {
+      table[name] = { kind: "value", value: name };
+    }
+
+    const built = buildCollectPayload(names(100_000).join(" "), readerOver(table));
+
+    expect(Object.keys(built.collect)).toEqual([...names(BOUNDS.collectFieldsPerEvent)]);
+    expect(built.issues.map((issue) => issue.code)).toEqual(["too_many_collect_fields"]);
+    expect(validateVisitorEvent(eventAround({ ...built.collect })).ok).toBe(true);
   });
 
   it("states an absence when the source itself throws", () => {
@@ -292,7 +323,7 @@ describe("buildCollectPayload", () => {
 
     for (const list of lists) {
       const built = buildCollectPayload(list, read);
-      const result = validateAgentEvent(eventAround({ ...built.collect }));
+      const result = validateVisitorEvent(eventAround({ ...built.collect }));
 
       expect(result.ok, `list ${String(typeof list)} produced a rejected payload`).toBe(true);
       expect(JSON.stringify(built)).not.toContain(SECRET);

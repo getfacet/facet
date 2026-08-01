@@ -1,8 +1,7 @@
 import {
-  BOUNDS,
   deriveMessageId,
   validateCatalog,
-  type AgentEvent,
+  type VisitorEvent,
   type AuthorValidationResult,
   type ComponentDocument,
   type ConversationMessage,
@@ -21,7 +20,9 @@ import {
   createReferenceAgentWithDependencies,
   type ReferenceAgentOptions,
 } from "./agent.js";
+import { normalizeBudget } from "./harness/budget.js";
 import { REFERENCE_AGENT_FALLBACK_TEXT } from "./harness/loop.js";
+import type { ConversationSummary, SummarizerRequest } from "./harness/summary.js";
 import type {
   ProviderStep,
   ProviderTurn,
@@ -30,7 +31,7 @@ import type {
   ToolSpec,
 } from "./provider.js";
 
-const EVENT: AgentEvent = {
+const EVENT: VisitorEvent = {
   eventId: "turn1",
   eventName: "submit",
   sourceNodeId: "cta",
@@ -73,6 +74,10 @@ class MutableSession implements FacetToolSession {
     this.data = { ...this.data, [path.join(".")]: value };
     return { ok: true, chars: JSON.stringify(value).length };
   }
+}
+
+class RetiredVisitorAliasSession extends MutableSession {
+  readonly visitor = Object.freeze({ visitorId: "v1" });
 }
 
 interface MockProvider extends ReferenceProvider {
@@ -156,11 +161,11 @@ describe("createReferenceAgent", () => {
     expect(provider.toolsByAttempt[0]?.some((tool) => tool.name === "say")).toBe(false);
   });
 
-  it("accepts a zero-message provider stop as no runtime conversation", async () => {
+  it("returns the safe fallback for a zero-message provider stop", async () => {
     const agent = makeAgent({ provider: providerOf(step("")) });
 
     await expect(agent.run({ event: EVENT, session: new MutableSession() })).resolves.toEqual({
-      text: null,
+      text: REFERENCE_AGENT_FALLBACK_TEXT,
     });
   });
 
@@ -180,13 +185,14 @@ describe("createReferenceAgent", () => {
   });
 
   it("deterministically truncates an over-bound assistant response before returning text", async () => {
-    const long = "x".repeat(BOUNDS.conversationMessageChars + 10);
+    const budget = normalizeBudget({});
+    const long = "x".repeat(budget.maxFinalTextChars + 10);
     const agent = makeAgent({ provider: providerOf(step(long)) });
 
     const result = await agent.run({ event: EVENT, session: new MutableSession() });
 
-    expect(result.text).toHaveLength(BOUNDS.conversationMessageChars);
-    expect(result.text?.endsWith("…")).toBe(true);
+    expect(result.text).toHaveLength(budget.maxFinalTextChars);
+    expect(result.text).toBe("x".repeat(budget.maxFinalTextChars));
   });
 });
 
@@ -217,6 +223,30 @@ describe("createReferenceAgentWithDependencies", () => {
     const text = providerMessagesText(provider.turns[0]?.messages ?? []);
     expect(text).toContain("previous visitor context");
     expect(text).toContain("previous assistant context");
+    expect(text).toContain("CURRENT FACET OBSERVATION");
+  });
+
+  it("does not derive conversation history from retired visitorId session aliases", async () => {
+    const sink = new MemorySink();
+    await sink.record("quickstart:v1", message("turn-0", "visitor", "previous visitor context"));
+    const provider = providerOf(step("Done."));
+    const agent = createReferenceAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      budget: {
+        maxHistoryTurns: 10,
+        maxHistoryChars: 10_000,
+        maxContextChars: 20_000,
+      },
+    });
+
+    await expect(
+      agent.run({ event: EVENT, session: new RetiredVisitorAliasSession() }),
+    ).resolves.toEqual({ text: "Done." });
+
+    const text = providerMessagesText(provider.turns[0]?.messages ?? []);
+    expect(text).not.toContain("previous visitor context");
     expect(text).toContain("CURRENT FACET OBSERVATION");
   });
 
@@ -271,6 +301,54 @@ describe("createReferenceAgentWithDependencies", () => {
     expect(JSON.stringify(stored)).toContain("messageIdCoverage");
     expect(JSON.stringify(stored)).toContain(deriveMessageId("turn-2", "visitor"));
   });
+
+  it("passes the factory summarizer into in-turn transcript compaction", async () => {
+    const sink = new MemorySink();
+    const summaryStore = new MemorySummaryStore();
+    const provider = providerOf(
+      step("render", [
+        call("c1", "render_page", {
+          markup: '<Screen name="home"><Text value="First" /></Screen>',
+        }),
+      ]),
+      step("read", [call("c2", "read_screen", { screen: "home" })]),
+      step("Done."),
+    );
+    const requests: SummarizerRequest[] = [];
+    const summarizer = vi.fn(async (request: SummarizerRequest): Promise<ConversationSummary> => {
+      requests.push(request);
+      return summary("factory transcript summary");
+    });
+    const agent = createReferenceAgentWithDependencies(
+      {
+        provider,
+        sink,
+        agentId: "quickstart",
+        summaryStore,
+        guide: "Build a concise page.",
+        budget: {
+          maxContextChars: 4_000,
+          maxHistoryTurns: 2,
+          maxHistoryChars: 10_000,
+          compactionTriggerRatio: 0.01,
+          compactionTargetRatio: 0.005,
+          minRecentStepsVerbatim: 1,
+          compactionCooldownSteps: 0,
+          retryBackoffMs: 0,
+        },
+      },
+      { summarizerFactory: () => summarizer },
+    );
+
+    await expect(
+      agent.run({ event: EVENT, session: new MutableSession({ sessionKey: "quickstart:v1" }) }),
+    ).resolves.toEqual({ text: "Done." });
+
+    const finalAttemptText = providerMessagesText(provider.turns.at(-1)?.messages ?? []);
+    expect(requests.filter((request) => request.kind === "transcript")).toHaveLength(1);
+    expect(finalAttemptText).toContain("factory transcript summary");
+    expect(finalAttemptText).not.toContain("summarized-unavailable");
+  });
 });
 
 function providerMessagesText(messages: readonly ProviderTurn["messages"][number][]): string {
@@ -303,6 +381,18 @@ function message(
     role,
     text,
     at: 0,
+  };
+}
+
+function summary(marker: string): ConversationSummary {
+  return {
+    version: 1,
+    visitor: marker,
+    pageDecisions: "updated via dependency summarizer",
+    collectedData: "none",
+    pending: "none",
+    attempts: "none",
+    omitted: "older tool transcript",
   };
 }
 

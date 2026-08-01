@@ -75,7 +75,7 @@ For every grouped package manifest under
 1. Record `name`, `exports`, `publishConfig.exports`, `bin`, `files`,
    `sideEffects`, and `build`.
 2. Read the package barrel (`src/index.ts`, plus secondary barrels such as
-   `@facet/runtime/node`).
+   `@facet/assets/react`).
 3. Compare exported symbols/files with package docs and intended package role in
    `AGENTS.md`.
 4. Treat internally-unused exports as **public API candidates**, not dead code,
@@ -261,5 +261,5 @@ flow, not the feature flow:
    (`packages/tools/quickstart`, `packages/adapters/server`,
    `packages/adapters/client`, `packages/adapters/agent-client`,
    `packages/core/runtime`, `packages/renderers/react`
-   renderer/useFacet/ChatDock paths, or `packages/core/core`
-   patch/protocol/stage vocabulary) or the owner requests it.
+   renderer/useFacet paths, or `packages/core/core` patch/protocol/stage
+   vocabulary) or the owner requests it.

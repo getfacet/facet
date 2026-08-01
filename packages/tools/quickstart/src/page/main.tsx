@@ -13,8 +13,9 @@ import { createRoot } from "react-dom/client";
 import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
 import { DEFAULT_REGISTRY } from "@facet/assets/react";
 import { browserVisitorId, SseTransport } from "@facet/client";
+import { validateVisitorText } from "@facet/core";
 import type {
-  AgentEvent,
+  VisitorEvent,
   ComponentDocument,
   ConversationMessage,
   FacetStage,
@@ -88,10 +89,27 @@ function resolvedBootstrap(): AcceptedBootstrap {
 
 function nextEventId(prefix: string): string {
   localEventId += 1;
-  return `${prefix}-${Date.now().toString(36)}-${localEventId}`;
+  return `${prefix}-${randomEventSuffix()}-${localEventId}`;
 }
 
-function visitorEvent(eventName: string, screen: string, stageRevision: StageRevision): AgentEvent {
+function randomEventSuffix(): string {
+  const cryptoProvider = globalThis.crypto;
+  if (typeof cryptoProvider?.randomUUID === "function") {
+    return cryptoProvider.randomUUID();
+  }
+  if (typeof cryptoProvider?.getRandomValues === "function") {
+    const bytes = new Uint8Array(8);
+    cryptoProvider.getRandomValues(bytes);
+    return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function visitorEvent(
+  eventName: string,
+  screen: string,
+  stageRevision: StageRevision,
+): VisitorEvent {
   return Object.freeze({
     eventId: nextEventId(eventName),
     eventName,
@@ -102,52 +120,44 @@ function visitorEvent(eventName: string, screen: string, stageRevision: StageRev
   });
 }
 
-function postMessage(
-  sessionKey: string,
-  message: ConversationMessage,
-  stageRevision: number,
-): void {
-  void fetch("/message", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionKey,
-      messageId: message.turnId,
-      text: message.text,
-      screen: "home",
-      stageRevision,
-    }),
-  }).catch((error: unknown) => {
-    console.error("[facet] message send failed:", error);
-  });
-}
-
 function Page(): ReactNode {
   const sessionKey = useMemo(() => browserVisitorId(), []);
   const initialDocument = useMemo(readInitialDocument, []);
   const bootstrap = useMemo(resolvedBootstrap, []);
   const transport = useMemo(() => new SseTransport("", sessionKey), [sessionKey]);
   const [draft, setDraft] = useState("");
+  const [initialPending, setInitialPending] = useState(false);
   const stageRevisionRef = useRef<StageRevision>(0);
   const visitSent = useRef(false);
 
-  const sendAgentEvent = useCallback(
-    (event: AgentEvent): void => {
-      transport.send(event);
-    },
+  const sendVisitorEvent = useCallback(
+    (event: VisitorEvent): Promise<void> =>
+      transport.send(event).catch((error: unknown) => {
+        console.error("[facet] event send failed:", error);
+        throw error;
+      }),
     [transport],
   );
   const sendVisitorMessage = useCallback(
-    (message: ConversationMessage): void => {
-      postMessage(sessionKey, message, stageRevisionRef.current);
-    },
-    [sessionKey],
+    (message: ConversationMessage): Promise<void> =>
+      transport
+        .sendMessage({
+          messageId: message.turnId,
+          text: message.text,
+          screen: "home",
+          stageRevision: stageRevisionRef.current,
+        })
+        .catch((error: unknown) => {
+          console.error("[facet] message send failed:", error);
+          throw error;
+        }),
+    [transport],
   );
 
   const facet = useFacetWithStableInitialStage(
     transport,
     initialDocument,
-    sendAgentEvent,
+    sendVisitorEvent,
     sendVisitorMessage,
   );
 
@@ -165,13 +175,21 @@ function Page(): ReactNode {
       return;
     }
     visitSent.current = true;
-    transport.send(
-      visitorEvent(
-        "visit",
-        facet.stage.document?.entry ?? initialDocument?.entry ?? "home",
-        facet.transition.stageRevision,
-      ),
-    );
+    setInitialPending(true);
+    void transport
+      .send(
+        visitorEvent(
+          "visit",
+          facet.stage.document?.entry ?? initialDocument?.entry ?? "home",
+          facet.transition.stageRevision,
+        ),
+      )
+      .catch((error: unknown) => {
+        console.error("[facet] initial visit send failed:", error);
+      })
+      .finally(() => {
+        setInitialPending(false);
+      });
   }, [
     facet.stage.document?.entry,
     facet.transition.stageRevision,
@@ -181,6 +199,14 @@ function Page(): ReactNode {
 
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
+    const draftIsValid = validateVisitorText(draft);
+    if (!draftIsValid) {
+      facet.sendMessage(draft);
+      return;
+    }
+    if (facet.pending || initialPending) {
+      return;
+    }
     facet.sendMessage(draft);
     setDraft("");
   };
@@ -212,7 +238,11 @@ function Page(): ReactNode {
             onChange={(event) => setDraft(event.currentTarget.value)}
             style={styles.messageInput}
           />
-          <button type="submit" disabled={facet.pending} style={styles.messageButton}>
+          <button
+            type="submit"
+            disabled={facet.pending || initialPending}
+            style={styles.messageButton}
+          >
             Send
           </button>
         </form>
@@ -224,8 +254,8 @@ function Page(): ReactNode {
 function useFacetWithStableInitialStage(
   transport: SseTransport,
   initialDocument: ComponentDocument | undefined,
-  onAgentEvent: (event: AgentEvent) => void,
-  onVisitorMessage: (message: ConversationMessage) => void,
+  onVisitorEvent: (event: VisitorEvent) => Promise<void>,
+  onVisitorMessage: (message: ConversationMessage) => Promise<void>,
 ) {
   const initialStage = useMemo(
     (): FacetStage | undefined =>
@@ -237,7 +267,7 @@ function useFacetWithStableInitialStage(
   return useFacet({
     transport,
     ...(initialStage === undefined ? {} : { initialStage }),
-    onAgentEvent,
+    onVisitorEvent,
     onVisitorMessage,
   });
 }

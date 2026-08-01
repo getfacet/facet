@@ -1,4 +1,4 @@
-import type { AgentEvent, ConversationMessage, FacetToolSession } from "@facet/core";
+import type { VisitorEvent, ConversationMessage, FacetToolSession } from "@facet/core";
 
 import type { TurnMessage } from "../provider.js";
 import { formatCurrentStageForPrompt, type StageSummaryOptions } from "./stage-summary.js";
@@ -42,7 +42,7 @@ export function describeEvent(raw: unknown): string {
 }
 
 export function buildInitialMessages(
-  event: AgentEvent,
+  event: VisitorEvent,
   session: FacetToolSession,
   history: readonly ConversationMessage[],
   limit: number,

@@ -16,11 +16,11 @@ be injected. Test that claim, and the trust boundaries around it:
   renderer fail-safe behavior reject or isolate unsafe stored input? Is any
   string-valued URL/action prop rendered or dispatched without the declared
   schema and sanitizer path?
-- **Trust boundaries** — client-supplied `visitorId` is trusted as-is (a session
-  key): is that a leak where the data is sensitive? The server trusts the
-  connected agent; the bridge runs the brain with `--dangerously-skip-permissions`
-  and `bypassPermissions` — is that scoped safely (local-only, no untrusted input
-  reaching it)?
+- **Trust boundaries** — client-supplied `sessionKey` is trusted as-is: is that
+  a leak where the data is sensitive? The reference transport
+  trusts the connected agent; any local brain runner using
+  `--dangerously-skip-permissions` or `bypassPermissions` must be scoped safely
+  (local-only, no untrusted input reaching it).
 - **Transport** — CORS (`Access-Control-Allow-Origin: *`), SSE endpoints, the
   `/agent/*` control channel — can a third party drive someone's link?
 - **Secrets** — any key/token logged, written to disk, or committed.

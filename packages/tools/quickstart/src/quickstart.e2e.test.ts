@@ -4,7 +4,7 @@
  *
  * This test intentionally speaks the post-cut protocol: sessionKey, stage-rooted
  * PatchFrame, ConversationMessage, initialMarkup, and no retired reset/say,
- * visitorId, FacetTree, Pattern, or --assets surfaces. // style-hard-cut: allowed-negative
+ * visitorId, FacetTree, Pattern, or --assets surfaces. // component-hard-cut: allowed-negative
  */
 import { createHash } from "node:crypto";
 import { connect } from "node:net";
@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { defineAgent } from "@facet/agent";
 import { DEFAULT_THEME } from "@facet/assets";
 import type {
-  AgentEvent,
+  VisitorEvent,
   ComponentDocument,
   ComponentNode,
   ConversationMessage,
@@ -205,12 +205,12 @@ function textValues(document: ComponentDocument): readonly string[] {
     .map((node) => scalarProp(node, "value") ?? "");
 }
 
-function agentEvent(
+function visitorEvent(
   eventId: string,
   eventName = "visit",
-  collect: AgentEvent["collect"] = {},
+  collect: VisitorEvent["collect"] = {},
   arg?: string,
-): AgentEvent {
+): VisitorEvent {
   return {
     eventId,
     eventName,
@@ -222,7 +222,7 @@ function agentEvent(
   };
 }
 
-function postEvent(base: string, sessionKey: string, event: AgentEvent): Promise<Response> {
+function postEvent(base: string, sessionKey: string, event: VisitorEvent): Promise<Response> {
   return fetch(`${base}/event`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -353,7 +353,7 @@ describe("quickstart E2E — static shell + proxy plumbing", () => {
   });
 
   it("refuses a cross-origin POST /event but allows same-origin sessionKey events", async () => {
-    const body = JSON.stringify({ sessionKey: "csrf", event: agentEvent("csrf-event") });
+    const body = JSON.stringify({ sessionKey: "csrf", event: visitorEvent("csrf-event") });
     const cross = await fetch(`${base}/event`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Origin: "http://evil.example" },
@@ -409,7 +409,7 @@ describe("quickstart E2E — stub flow through the proxy", () => {
       const post = await postEvent(
         base,
         sessionKey,
-        agentEvent("submit-turn", "submit", {
+        visitorEvent("submit-turn", "submit", {
           name: { kind: "value", value: "Ada" },
           email: { kind: "value", value: "a@b.c" },
         }),
@@ -462,7 +462,7 @@ describe("quickstart E2E — stub flow through the proxy", () => {
     let era: string;
     try {
       await stream1.next(1); // initial rehydrate
-      await postEvent(base, sessionKey, agentEvent("resume-one", "refresh"));
+      await postEvent(base, sessionKey, visitorEvent("resume-one", "refresh"));
       const firstTurn = await stream1.next(2); // first event seeds the document, then replies
       const stamped = firstTurn.filter((frame) => frame.id !== undefined);
       lastId = stamped[stamped.length - 1]?.id ?? "";
@@ -473,7 +473,10 @@ describe("quickstart E2E — stub flow through the proxy", () => {
       await stream1.close();
     }
 
-    await postEvent(base, sessionKey, { ...agentEvent("resume-two", "refresh"), stageRevision: 1 });
+    await postEvent(base, sessionKey, {
+      ...visitorEvent("resume-two", "refresh"),
+      stageRevision: 1,
+    });
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     const resumed = await readEvents(
@@ -493,8 +496,8 @@ describe("quickstart E2E — stub flow through the proxy", () => {
     try {
       await alpha.next(1);
       await beta.next(1);
-      await postEvent(base, "e2e-alpha", agentEvent("alpha-turn", "refresh", {}, "north"));
-      await postEvent(base, "e2e-beta", agentEvent("beta-turn", "refresh", {}, "south"));
+      await postEvent(base, "e2e-alpha", visitorEvent("alpha-turn", "refresh", {}, "north"));
+      await postEvent(base, "e2e-beta", visitorEvent("beta-turn", "refresh", {}, "south"));
       expect(conversationTexts(await alpha.next(2))).toEqual(["stub: refresh north"]);
       expect(conversationTexts(await beta.next(2))).toEqual(["stub: refresh south"]);
     } finally {
@@ -514,7 +517,7 @@ describe("quickstart E2E — stub flow through the proxy", () => {
     const response = await fetch(`${base}/record`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionKey: "record-retired", event: agentEvent("record") }),
+      body: JSON.stringify({ sessionKey: "record-retired", event: visitorEvent("record") }),
     });
     expect(response.status).toBe(404);
     await response.text();
@@ -582,7 +585,7 @@ describe("quickstart E2E — initialMarkup seeding", () => {
       const stream = await openStream(seeded.url, "seed-visible");
       try {
         await stream.next(1);
-        const post = await postEvent(seeded.url, "seed-visible", agentEvent("seed-turn"));
+        const post = await postEvent(seeded.url, "seed-visible", visitorEvent("seed-turn"));
         expect(post.status).toBe(202);
         expect(conversationTexts(await stream.next(1))).toEqual(["noop"]);
       } finally {
@@ -606,9 +609,9 @@ describe("quickstart E2E — CLI default seed and barrel surface", () => {
       expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(84);
 
       const seedText = JSON.stringify(inline);
-      expect(seedText).toHaveLength(12_481);
+      expect(seedText).toHaveLength(12_483);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "6047953818b3062387d1a189d4ba7106f6e200502060bcb7b3a8eb7ce13ee159",
+        "3990dcdd1b25f6d8e7e149060409e523d37bde2b2faaab9a530c969a2a57504d",
       );
       for (const tag of [
         "Screen",

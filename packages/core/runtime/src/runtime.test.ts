@@ -8,7 +8,7 @@ import {
   validateTheme,
 } from "@facet/core";
 import type {
-  AgentEvent,
+  VisitorEvent,
   CasOutcome,
   ComponentDocument,
   DataPath,
@@ -57,7 +57,7 @@ function catalogRecord(): Record<string, unknown> {
         whenToUse: "Short visible text.",
         props: {
           value: { type: "string", bindable: true, guidance: "Text to show." },
-          arg: { type: "string", guidance: "Argument emitted with an agent event." },
+          arg: { type: "string", guidance: "Argument emitted with a visitor event." },
         },
         acceptsChildren: false,
       },
@@ -124,7 +124,7 @@ function textValues(document: ComponentDocument | null): readonly string[] {
     .map((prop) => (prop?.kind === "scalar" ? prop.value : ""));
 }
 
-function agentEvent(eventId = "event1", stageRevision = 0): AgentEvent {
+function visitorEvent(eventId = "event1", stageRevision = 0): VisitorEvent {
   return {
     eventId,
     eventName: "submit",
@@ -284,7 +284,7 @@ describe("FacetRuntime", () => {
       },
     });
 
-    const result = await runtime.handle({ sessionKey: "session-a", event: agentEvent() });
+    const result = await runtime.handle({ sessionKey: "session-a", event: visitorEvent() });
 
     expect(result.outcome).toBe("accepted");
     expect(events).toEqual(["1:patch", "2:conversation"]);
@@ -334,7 +334,7 @@ describe("FacetRuntime", () => {
       },
     });
 
-    const result = await runtime.handle({ sessionKey: "session-a", event: agentEvent() });
+    const result = await runtime.handle({ sessionKey: "session-a", event: visitorEvent() });
     const restored = await store.get("session-a");
 
     expect(result.outcome).toBe("accepted");
@@ -354,7 +354,7 @@ describe("FacetRuntime", () => {
       deliver: async () => {},
     });
 
-    const result = await runtime.handle({ sessionKey: "session-a", event: agentEvent() });
+    const result = await runtime.handle({ sessionKey: "session-a", event: visitorEvent() });
     const after = await store.get("session-a");
 
     expect(result.outcome).toBe("accepted");
@@ -392,12 +392,12 @@ describe("FacetRuntime", () => {
 
     const result = await runtime.handle({
       sessionKey: "session-a",
-      event: agentEvent("stale-event", 0),
+      event: visitorEvent("stale-event", 0),
       visitorMessage: visitorRecord("stale-event"),
     });
     const retry = await runtime.handle({
       sessionKey: "session-a",
-      event: agentEvent("stale-event", 0),
+      event: visitorEvent("stale-event", 0),
       visitorMessage: visitorRecord("stale-event", "retry"),
     });
 
@@ -427,12 +427,12 @@ describe("FacetRuntime", () => {
 
     const result = await runtime.handle({
       sessionKey: "session-a",
-      event: agentEvent("msg1"),
+      event: visitorEvent("msg1"),
       visitorMessage: visitorRecord("msg1"),
     });
     const duplicate = await runtime.handle({
       sessionKey: "session-a",
-      event: agentEvent("msg1"),
+      event: visitorEvent("msg1"),
       visitorMessage: visitorRecord("msg1", "retry"),
     });
 
@@ -469,11 +469,11 @@ describe("FacetRuntime", () => {
       deliver: async () => {},
     });
 
-    const first = runtime.handle({ sessionKey: "session-a", event: agentEvent("event1") });
+    const first = runtime.handle({ sessionKey: "session-a", event: visitorEvent("event1") });
     await startedPromise;
     const busy = await runtime.handle({
       sessionKey: "session-a",
-      event: agentEvent("msg2"),
+      event: visitorEvent("msg2"),
       visitorMessage: visitorRecord("msg2"),
     });
     release();
@@ -502,7 +502,7 @@ describe("FacetRuntime", () => {
       diagnostics: seen.sink,
     });
 
-    const result = await runtime.handle({ sessionKey: "session-a", event: agentEvent() });
+    const result = await runtime.handle({ sessionKey: "session-a", event: visitorEvent() });
     const restored = await store.get("session-a");
 
     expect(result.outcome).toBe("accepted");
@@ -563,7 +563,7 @@ describe("FacetRuntime", () => {
 
     const result = await runtime.handle({
       sessionKey: "session-a",
-      event: agentEvent("event2", 0),
+      event: visitorEvent("event2", 0),
     });
 
     expect(result.outcome).toBe("accepted");
@@ -627,7 +627,7 @@ describe("FacetRuntime", () => {
       now: () => now,
     });
 
-    const result = await runtime.handle({ sessionKey: "session-a", event: agentEvent() });
+    const result = await runtime.handle({ sessionKey: "session-a", event: visitorEvent() });
 
     expect(result.outcome).toBe("accepted");
     expect(toolRejected).toBe(true);
@@ -695,7 +695,7 @@ describe("FacetRuntime", () => {
       now: () => now,
     });
 
-    const result = await runtime.handle({ sessionKey: "session-a", event: agentEvent() });
+    const result = await runtime.handle({ sessionKey: "session-a", event: visitorEvent() });
 
     expect(result.outcome).toBe("accepted");
     expect(delivered).toEqual(["1:patch"]);

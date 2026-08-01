@@ -49,6 +49,7 @@
  */
 
 import { BOUNDS } from "./bounds.js";
+import { isArrayValue, isPlainObject } from "./json-shape.js";
 import type { DataPath } from "./identifiers.js";
 
 /**
@@ -140,45 +141,6 @@ function readOwn(container: object, key: string): unknown {
     return (container as Record<string, unknown>)[key];
   } catch {
     return READ_FAILED;
-  }
-}
-
-/**
- * Whether `value` is an array.
- *
- * `Array.isArray` is not total: on a revoked `Proxy` it throws
- * `TypeError: Cannot perform 'IsArray' on a proxy that has been revoked`. Since
- * the in-process publish paths hand real JS objects in, an unguarded call here
- * would let that `TypeError` escape the one write entrypoint — the very failure
- * the structural precondition exists to prevent. A value whose array-ness
- * cannot be established is not an array.
- */
-function isArrayValue(value: unknown): value is readonly unknown[] {
-  try {
-    return Array.isArray(value);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Whether `value` is a plain JSON object — not an array, Date, Map or instance.
- *
- * Total for the same reason `isArrayValue` is: `Object.getPrototypeOf` also
- * throws on a revoked proxy, and a proxy may install a `getPrototypeOf` trap
- * that throws. Such a value classifies as neither an array nor a plain object,
- * which makes it non-serializable — the correct outcome, since it is not JSON
- * data and nothing can be read out of it.
- */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  try {
-    if (typeof value !== "object" || value === null || isArrayValue(value)) {
-      return false;
-    }
-    const prototype: unknown = Object.getPrototypeOf(value);
-    return prototype === Object.prototype || prototype === null;
-  } catch {
-    return false;
   }
 }
 

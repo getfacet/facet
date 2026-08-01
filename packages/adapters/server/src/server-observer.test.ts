@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { ConversationRecord, Sink } from "@facet/runtime";
 import type { FacetServerObservation } from "./observer.js";
-import { agentEvent, postEvent, start } from "./server.test-support.js";
+import { visitorEvent, postEvent, start } from "./server.test-support.js";
 
 class FailingSink implements Sink {
   async record(): Promise<{
@@ -36,7 +36,7 @@ describe("FacetServerObserver", () => {
     });
     active = server;
 
-    const response = await postEvent(base, "s1", agentEvent());
+    const response = await postEvent(base, "s1", visitorEvent());
 
     expect(response.status).toBe(202);
     expect(seen.map((event) => event.kind)).toContain("accepted-frame");
@@ -67,9 +67,9 @@ describe("FacetServerObserver", () => {
     });
     active = server;
 
-    const first = postEvent(base, "s1", agentEvent({ eventId: "event1" }));
+    const first = postEvent(base, "s1", visitorEvent({ eventId: "event1" }));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const second = await postEvent(base, "s1", agentEvent({ eventId: "event2" }));
+    const second = await postEvent(base, "s1", visitorEvent({ eventId: "event2" }));
     release();
     await first;
 

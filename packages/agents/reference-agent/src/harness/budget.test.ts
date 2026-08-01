@@ -275,7 +275,6 @@ describe("ReferenceAgentStopReason", () => {
       "provider_error",
       "retry_exhausted",
       "sink_error",
-      "unresolved_buffer",
       "empty_turn",
     ] as const satisfies readonly ReferenceAgentStopReason[];
 
@@ -287,7 +286,6 @@ describe("ReferenceAgentStopReason", () => {
       provider_error: true,
       retry_exhausted: true,
       sink_error: true,
-      unresolved_buffer: true,
       empty_turn: true,
     } satisfies Record<ReferenceAgentStopReason, true>;
 

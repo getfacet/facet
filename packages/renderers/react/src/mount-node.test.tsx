@@ -5,14 +5,14 @@
  *
  * Six claims carry this file.
  *
- * **Six structural causes, one outcome.** A corrupt node, a dangling
+ * **Structural corruptions, one outcome.** A corrupt node, a dangling
  * reference, an unknown runtime tag, a reference cycle, a subtree deeper
  * than `B-03`, and an exact lowercase resolved `arg` past `B-23` all replace
- * the **root of that subtree** with the corrupt-subtree neutral state, and the
- * six outcomes are compared to each other for byte equality rather than merely
+ * the **root of that subtree** with the corrupt-subtree neutral state, and their
+ * outcomes are compared to each other for byte equality rather than merely
  * asserted one at a time (DC-013). If any cause
  * took a different path — a blank region, a different marker, a whole-tree
- * replacement — the comparison fails. Which of the six happened is therefore
+ * replacement — the comparison fails. Which corruption happened is therefore
  * not recoverable from the page, and neither is the persisted input.
  *
  * **And the node-scoped form hides.** `resolveProps` reports a **node-scoped**
@@ -101,6 +101,7 @@ import { createFieldStore } from "./field-store.js";
 import { deriveResetToken, MountNode } from "./mount-node.js";
 import type { ModalMountRequest, MountContext } from "./mount-node.js";
 import type { ComponentRegistry } from "./registry.js";
+import { errorsDuring } from "../../../../test-support/errors-during.js";
 
 afterEach(cleanup);
 
@@ -428,34 +429,6 @@ function withSilencedReactReport<Result>(run: () => Result): Result {
   }
 }
 
-/**
- * Every error that escaped the component while `run` executed.
- *
- * A React event handler that throws does **not** unwind the `fireEvent` call
- * that triggered it: React catches the error at its dispatch boundary and hands
- * it to the environment, which jsdom surfaces as a window `error` event. So
- * `expect(() => fireEvent.click(…)).not.toThrow()` passes even when the handler
- * threw. Listening for the report is what makes the escape an assertion. A
- * synchronous throw that does reach the caller is the same failure and joins the
- * same list.
- */
-function errorsDuring(run: () => void): readonly string[] {
-  const escaped: string[] = [];
-  const record = (event: ErrorEvent): void => {
-    escaped.push(event.error instanceof Error ? event.error.message : String(event.message));
-    event.preventDefault();
-  };
-  window.addEventListener("error", record);
-  try {
-    run();
-  } catch (error) {
-    escaped.push(error instanceof Error ? error.message : String(error));
-  } finally {
-    window.removeEventListener("error", record);
-  }
-  return escaped;
-}
-
 /** The single corrupt-subtree element in a container, or a failure if there is not exactly one. */
 function theCorruptElement(container: HTMLElement): Element {
   const found = container.querySelectorAll(CORRUPT);
@@ -501,6 +474,23 @@ describe("MountNode — mounting a registered implementation", () => {
 
     expect([...container.querySelectorAll('[data-testid="text"]')].map((el) => el.textContent)) //
       .toEqual(["first", "second", "third"]);
+  });
+
+  it("mounts children by index rather than through a hostile iterator", () => {
+    const children = ["n2"];
+    Object.defineProperty(children, Symbol.iterator, {
+      value: (): never => {
+        throw new Error("hostile iterator");
+      },
+    });
+    const { container } = mount(
+      document_({
+        n1: { tag: "Screen", props: { name: scalar("home") }, children },
+        n2: node("Text", { value: scalar("child") }),
+      }),
+    );
+
+    expect(container.querySelector('[data-testid="text"]')?.textContent).toBe("child");
   });
 
   it("wraps every mounted implementation in a containment element carrying isolation alone", () => {
@@ -930,10 +920,10 @@ describe("Mounted — a session whose catalog declares no Modal", () => {
 });
 
 /**
- * The six structural causes, each with a healthy sibling beside it.
+ * The structural corruption causes, each with a healthy sibling beside it.
  *
  * Every fixture puts the fault under `n2` and a valid `Text` under `n3`, so one
- * shape of assertion covers all six: exactly one corrupt-subtree element, the
+ * shape of assertion covers all of them: exactly one corrupt-subtree element, the
  * sibling still rendered, and the whole tree still standing.
  */
 const CAUSES: readonly {
@@ -948,6 +938,18 @@ const CAUSES: readonly {
       n2: { tag: "Stack", props: {}, children: "n3" } as unknown as ComponentNode,
       n3: SIBLING,
     }),
+  },
+  {
+    name: "a node with unreadable children",
+    document: (() => {
+      const revoked = Proxy.revocable<string[]>([], {});
+      revoked.revoke();
+      return document_({
+        n1: screen(["n2", "n3"]),
+        n2: { tag: "Stack", props: {}, children: revoked.proxy } as unknown as ComponentNode,
+        n3: SIBLING,
+      });
+    })(),
   },
   {
     name: "a dangling reference",
@@ -1018,7 +1020,7 @@ describe("mountOrFallback — the deterministic corrupt-subtree path (DC-013)", 
     });
   }
 
-  it("produces one byte-identical outcome for all six causes", () => {
+  it("produces one byte-identical outcome for every corrupt cause", () => {
     const rendered = CAUSES.map((cause) => {
       const view = mount(cause.document);
       const html = theCorruptElement(view.container).outerHTML;
@@ -1026,7 +1028,7 @@ describe("mountOrFallback — the deterministic corrupt-subtree path (DC-013)", 
       return html;
     });
 
-    // Not six assertions that each looks right — one assertion that they are
+    // Not separate assertions that each looks right — one assertion that they are
     // the same string. Which cause occurred is not recoverable from the page.
     expect(new Set(rendered).size).toBe(1);
     expect(rendered[0]).toContain('data-facet-neutral-state="corrupt-subtree"');

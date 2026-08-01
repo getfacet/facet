@@ -17,42 +17,18 @@ import { fileURLToPath, URL } from "node:url";
 import test from "node:test";
 
 import { normalizeRepoPath } from "./check-package-layout.mjs";
+import {
+  EXPECTED_DEPENDENCIES as PACKAGE_DEPENDENCIES,
+  EXPECTED_GROUPS,
+  EXPECTED_PACKAGES as PACKAGE_PATHS,
+  PUBLIC_PACKAGE_COUNT,
+  WORKSPACE_COUNT,
+} from "./package-topology.mjs";
 
 const SCRIPT_PATH = fileURLToPath(new URL("./check-package-layout.mjs", import.meta.url));
 const SCRIPT_SOURCE = readFileSync(SCRIPT_PATH, "utf8");
-const PACKAGE_PATHS = Object.freeze({
-  "@facet/core": "packages/core/core",
-  "@facet/runtime": "packages/core/runtime",
-  "@facet/assets": "packages/core/assets",
-  "@facet/react": "packages/renderers/react",
-  "@facet/agent-tools": "packages/agents/agent-tools",
-  "@facet/agent": "packages/agents/agent",
-  "@facet/reference-agent": "packages/agents/reference-agent",
-  "@facet/server": "packages/adapters/server",
-  "@facet/client": "packages/adapters/client",
-  "@facet/agent-client": "packages/adapters/agent-client",
-  "@facet/quickstart": "packages/tools/quickstart",
-});
-const PACKAGE_DEPENDENCIES = Object.freeze({
-  "@facet/core": [],
-  "@facet/runtime": ["@facet/core"],
-  "@facet/assets": ["@facet/core"],
-  "@facet/react": ["@facet/core"],
-  "@facet/agent-tools": ["@facet/core"],
-  "@facet/agent": ["@facet/core"],
-  "@facet/reference-agent": ["@facet/agent", "@facet/agent-tools", "@facet/core", "@facet/runtime"],
-  "@facet/server": ["@facet/core", "@facet/runtime"],
-  "@facet/client": ["@facet/core"],
-  "@facet/agent-client": ["@facet/core"],
-  "@facet/quickstart": [
-    "@facet/agent",
-    "@facet/assets",
-    "@facet/core",
-    "@facet/reference-agent",
-    "@facet/runtime",
-    "@facet/server",
-  ],
-});
+const TOPOLOGY_PATH = fileURLToPath(new URL("./package-topology.mjs", import.meta.url));
+const TOPOLOGY_SOURCE = readFileSync(TOPOLOGY_PATH, "utf8");
 const PACKAGE_EXPORTS = Object.freeze({
   "@facet/assets": [".", "./react"],
 });
@@ -125,6 +101,7 @@ function makeFixture(t) {
   mkdirSync(join(cwd, "scripts"), { recursive: true });
   writeFileSync(join(cwd, ".gitignore"), ".agents/work/\n");
   writeFileSync(join(cwd, "scripts/check-package-layout.mjs"), SCRIPT_SOURCE);
+  writeFileSync(join(cwd, "scripts/package-topology.mjs"), TOPOLOGY_SOURCE);
   writeFileSync(join(cwd, "AGENTS.md"), "# Facet\n");
   symlinkSync("AGENTS.md", join(cwd, "CLAUDE.md"));
 
@@ -194,7 +171,12 @@ test("reports the eleven-package, twelve-workspace, five-group topology", (t) =>
   const result = runCheck(fixture);
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /11 public packages, 12 workspaces, 5 role groups/);
+  assert.match(
+    result.stdout,
+    new RegExp(
+      `${String(PUBLIC_PACKAGE_COUNT)} public packages, ${String(WORKSPACE_COUNT)} workspaces, ${String(EXPECTED_GROUPS.length)} role groups`,
+    ),
+  );
 });
 
 test("rejects tsconfig alias drift, both extra and missing aliases", (t) => {
@@ -308,7 +290,7 @@ test("rejects agent-tools source importing agent without a manifest edge", (t) =
   assert.match(result.stderr, /@facet\/agent/);
 });
 
-test("rejects a node builtin import in a browser-facing root graph", (t) => {
+test("rejects a node builtin import in the react renderer root graph", (t) => {
   const fixture = makeFixture(t);
   writeFileSync(join(fixture.cwd, "packages/renderers/react/src/index.ts"), 'import "node:fs";\n');
 
@@ -316,6 +298,29 @@ test("rejects a node builtin import in a browser-facing root graph", (t) => {
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /node builtin import reachable from @facet\/react/);
+});
+
+test("rejects a node builtin import in the browser client root graph", (t) => {
+  const fixture = makeFixture(t);
+  writeFileSync(join(fixture.cwd, "packages/adapters/client/src/index.ts"), 'import "node:fs";\n');
+
+  const result = runCheck(fixture);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /node builtin import reachable from @facet\/client/);
+});
+
+test("rejects a node builtin import in the assets react browser entry graph", (t) => {
+  const fixture = makeFixture(t);
+  writeFileSync(
+    join(fixture.cwd, "packages/core/assets/src/react.tsx"),
+    'import "node:fs";\nimport "react";\nexport {};\n',
+  );
+
+  const result = runCheck(fixture);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /node builtin import reachable from @facet\/assets\/react/);
 });
 
 test("rejects an induced workspace dependency cycle", (t) => {

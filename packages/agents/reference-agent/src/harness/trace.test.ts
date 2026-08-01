@@ -1,13 +1,13 @@
 import {
   deriveMessageId,
-  type AgentEvent,
+  type VisitorEvent,
   type ConversationMessage,
   type FacetToolSession,
 } from "@facet/core";
+import { DEFAULT_CATALOG } from "@facet/assets";
 import type { Sink, SummaryStore } from "@facet/runtime";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_CATALOG } from "../../../../core/assets/src/index.js";
 import type { TurnMessage } from "../provider.js";
 import { runBackgroundCompaction } from "./background-compaction.js";
 import { normalizeBudget, type ReferenceAgentBudget } from "./budget.js";
@@ -444,7 +444,7 @@ describe("reference-agent trace contract", () => {
     await runBackgroundCompaction({
       system: "System prompt.",
       budget,
-      event: agentEvent(),
+      event: visitorEvent(),
       session: emptySession(),
       sink: sinkWith(history),
       historyKey: "quickstart:v1",
@@ -477,7 +477,7 @@ describe("reference-agent trace contract", () => {
 
     const first = await assembleProviderContext({
       system: "System prompt.",
-      event: agentEvent(),
+      event: visitorEvent(),
       session: emptySession(),
       sink: sinkWith(history),
       historyKey: "quickstart:v1",
@@ -487,7 +487,7 @@ describe("reference-agent trace contract", () => {
     });
     const second = await assembleProviderContext({
       system: "System prompt.",
-      event: agentEvent(),
+      event: visitorEvent(),
       session: emptySession(),
       sink: sinkWith(history),
       historyKey: "quickstart:v1",
@@ -535,7 +535,7 @@ describe("reference-agent trace contract", () => {
 
     const first = await assembleProviderContext({
       system: "System prompt.",
-      event: agentEvent(),
+      event: visitorEvent(),
       session: emptySession(),
       sink: sinkWith(history),
       historyKey: "quickstart:v1",
@@ -545,7 +545,7 @@ describe("reference-agent trace contract", () => {
     });
     const second = await assembleProviderContext({
       system: "System prompt.",
-      event: agentEvent(),
+      event: visitorEvent(),
       session: emptySession(),
       sink: sinkWith(history),
       historyKey: "quickstart:v1",
@@ -679,7 +679,7 @@ function emptySession(): FacetToolSession {
   };
 }
 
-function agentEvent(): AgentEvent {
+function visitorEvent(): VisitorEvent {
   return {
     eventId: "evt-1",
     eventName: "submit",

@@ -2,21 +2,21 @@ import {
   deriveMessageId,
   parseMarkup,
   validateAuthorMarkup,
-  type AgentEvent,
+  type VisitorEvent,
   type ComponentDocument,
   type ConversationMessage,
   type FacetToolSession,
 } from "@facet/core";
 import type { Sink, SummaryStore } from "@facet/runtime";
+import { DEFAULT_CATALOG } from "@facet/assets";
 import { describe, expect, it } from "vitest";
 
 import { normalizeBudget } from "./budget.js";
 import { assembleProviderContext } from "./context.js";
 import { summaryPayload, type ConversationSummary } from "./summary.js";
 import type { TurnMessage } from "../provider.js";
-import { DEFAULT_CATALOG } from "../../../../core/assets/src/index.js";
 
-const EVENT: AgentEvent = {
+const EVENT: VisitorEvent = {
   eventId: "evt-1",
   eventName: "submit",
   sourceNodeId: "cta",

@@ -19,7 +19,7 @@ import {
 } from "./executor-reads.js";
 import { executePublishData, type PublishDataResult } from "./executor-publish.js";
 import type { PublishExecutorInput } from "./executor-publish.js";
-import type { FacetToolName } from "./specs.js";
+import { facetToolInputKeys, type FacetToolName } from "./specs.js";
 import type {
   InsertSubtreeInput,
   ReadComponentSpecInput,
@@ -95,9 +95,8 @@ function ownField(
 }
 
 function requireExactObject(
-  name: string,
+  name: FacetToolName,
   input: unknown,
-  expectedKeys: readonly string[],
 ): { readonly ok: true; readonly input: object } | ToolInputReject {
   if (typeof input !== "object" || input === null) {
     return invalidInput(name, "expected an object with exactly the declared schema keys.");
@@ -106,6 +105,7 @@ function requireExactObject(
   if (keys === null) {
     return invalidInput(name, "expected an object with exactly the declared schema keys.");
   }
+  const expectedKeys = facetToolInputKeys(name);
   const expected = new Set(expectedKeys);
   const missing = expectedKeys.filter((key) => !keys.includes(key));
   const extra = keys.filter((key) => !expected.has(key));
@@ -146,7 +146,7 @@ function readRequiredField(
 }
 
 function renderPageInput(input: unknown): RenderPageInput | ToolInputReject {
-  const checked = requireExactObject("render_page", input, ["markup"]);
+  const checked = requireExactObject("render_page", input);
   if (!checked.ok) {
     return checked;
   }
@@ -158,7 +158,7 @@ function targetedMarkupInput(
   name: "insert_subtree" | "replace_subtree" | "update_node",
   input: unknown,
 ): InsertSubtreeInput | ReplaceSubtreeInput | UpdateNodeInput | ToolInputReject {
-  const checked = requireExactObject(name, input, ["targetId", "markup"]);
+  const checked = requireExactObject(name, input);
   if (!checked.ok) {
     return checked;
   }
@@ -174,7 +174,7 @@ function targetedMarkupInput(
 }
 
 function removeSubtreeInput(input: unknown): RemoveSubtreeInput | ToolInputReject {
-  const checked = requireExactObject("remove_subtree", input, ["targetId"]);
+  const checked = requireExactObject("remove_subtree", input);
   if (!checked.ok) {
     return checked;
   }
@@ -183,7 +183,7 @@ function removeSubtreeInput(input: unknown): RemoveSubtreeInput | ToolInputRejec
 }
 
 function tagInput(input: unknown): ReadComponentSpecInput | ToolInputReject {
-  const checked = requireExactObject("read_component_spec", input, ["tag"]);
+  const checked = requireExactObject("read_component_spec", input);
   if (!checked.ok) {
     return checked;
   }
@@ -192,7 +192,7 @@ function tagInput(input: unknown): ReadComponentSpecInput | ToolInputReject {
 }
 
 function readScreenInput(input: unknown): ReadScreenInput | ToolInputReject {
-  const checked = requireExactObject("read_screen", input, ["screen"]);
+  const checked = requireExactObject("read_screen", input);
   if (!checked.ok) {
     return checked;
   }
@@ -201,7 +201,7 @@ function readScreenInput(input: unknown): ReadScreenInput | ToolInputReject {
 }
 
 function readDataInput(input: unknown): ReadDataInput | ToolInputReject {
-  const checked = requireExactObject("read_data", input, ["path"]);
+  const checked = requireExactObject("read_data", input);
   if (!checked.ok) {
     return checked;
   }
@@ -210,7 +210,7 @@ function readDataInput(input: unknown): ReadDataInput | ToolInputReject {
 }
 
 function publishInput(input: unknown): PublishExecutorInput | ToolInputReject {
-  const checked = requireExactObject("publish_data", input, ["path", "value"]);
+  const checked = requireExactObject("publish_data", input);
   if (!checked.ok) {
     return checked;
   }

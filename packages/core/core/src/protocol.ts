@@ -42,7 +42,7 @@
 
 import { deriveMessageId, truncateConversationText } from "./conversation.js";
 import type { ConversationMessage } from "./conversation.js";
-import type { AgentEvent } from "./event.js";
+import type { VisitorEvent } from "./event.js";
 import { MAX_PATCH_OPS } from "./patch.js";
 import type { JsonPatchOperation } from "./patch.js";
 import type { StageRevision } from "./revision.js";
@@ -96,28 +96,38 @@ export interface FacetTransport {
  *
  * The frame is an envelope and nothing more. The id that keys single-flight
  * dedupe and the revision the browser had folded when the visitor acted are
- * `frame.event.eventId` and `frame.event.stageRevision` — they are **not**
- * hoisted onto the envelope, because a hoisted copy is a second answer to "which
- * turn is this?", and the two answers only have to disagree once.
+ * `frame.event.eventId` and `frame.event.stageRevision`. A server may include
+ * `correlationId` when it needs a transport-local key that is distinct from the
+ * visitor-minted event id, for example to keep concurrent redeliveries separate
+ * without rewriting the public event payload. A server may also include
+ * `timeoutMs` so an external agent can stop provider work before the transport
+ * has already settled the pending turn.
  */
-export interface AgentEventFrame {
-  readonly kind: "agent_event";
+export interface VisitorEventFrame {
+  readonly kind: "visitor_event";
+  /** Optional transport-local id the agent must echo on `AgentControlFrame`. */
+  readonly correlationId?: string;
+  /** Optional relative turn budget, in milliseconds, for external agent work. */
+  readonly timeoutMs?: number;
   /** The validated interaction, as `event.ts` declares it. */
-  readonly event: AgentEvent;
+  readonly event: VisitorEvent;
 }
 
 /**
  * What the agent sends back: one turn's complete result, addressed to the event
  * that caused it.
  *
- * `eventId` is correlation, not a copy of the payload — the outcome carries no
- * event, so naming the turn here is the only way the link can attribute a result
- * and drop a redelivery of one it already applied.
+ * `eventId` is the visitor-minted event id the outcome belongs to. When the
+ * inbound `VisitorEventFrame` carried a `correlationId`, the agent echoes that
+ * transport-local key too so the link can distinguish concurrent deliveries of
+ * the same visitor event id.
  */
 export interface AgentControlFrame {
   readonly kind: "agent_control";
-  /** The `eventId` of the `AgentEventFrame` this answers. */
+  /** The original `frame.event.eventId` this answers. */
   readonly eventId: string;
+  /** Optional transport-local id from `VisitorEventFrame.correlationId`. */
+  readonly correlationId?: string;
   /** Everything the turn produced. */
   readonly outcome: TurnOutcome;
 }
@@ -151,7 +161,10 @@ export interface TurnOutcome {
  * is the agent's whole job, and it is deliberately outside the framework.
  */
 export interface FacetAgent {
-  handleEvent(frame: AgentEventFrame): Promise<TurnOutcome>;
+  handleEvent(
+    frame: VisitorEventFrame,
+    context?: { readonly signal: AbortSignal },
+  ): Promise<TurnOutcome>;
 }
 
 /**

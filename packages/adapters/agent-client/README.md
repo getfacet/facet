@@ -51,11 +51,14 @@ connection.close();
 
 ## Turn correlation
 
-The server streams `AgentEventFrame` values. The client runs the supplied agent,
+The server streams `VisitorEventFrame` values. The client runs the supplied agent,
 validates its `TurnOutcome`, derives a deterministic fallback message on
 failure, and posts an `AgentControlFrame` addressed to the original `eventId`.
-Invalid outcomes degrade to a safe assistant message instead of partial stage
-mutation.
+When the server includes an opaque `correlationId`, the client echoes it without
+rewriting `frame.event.eventId`. Invalid outcomes degrade to a safe assistant
+message instead of partial stage mutation. A server-provided `timeoutMs` aborts
+the local turn before the pending server turn expires, and the client bounds
+concurrent provider work plus queued visitor events.
 
 ## Reconnect behavior
 

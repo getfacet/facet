@@ -33,7 +33,7 @@ safe. Mark others `N/A`.
 
 ## Fail-safe & Boundary Checklist
 - Malformed / empty / null input: [behavior]
-- Deeply nested / cyclic tree: [behavior]
+- Deeply nested markup: [behavior]
 - Offline agent / rapid events / racing agent turn: [behavior]
 
 ## Risk Register (resolves every RISK-* from Stage 0)
@@ -62,7 +62,7 @@ ownership, preserves package boundaries, or improves testability.
 | `packages/...` | [file:line, line count, or scaffold evidence] | [preserve / sibling-helper / role-directory / package-shared / public-surface / no-split] | [barrel/private] | [allowed imports] | [test files] | [why] |
 
 ## Shared Preflight (once, main agent)
-- Runtime: [what must be healthy — e.g. `pnpm i` done, playground buildable]
+- Runtime: [what must be healthy — e.g. `pnpm i` done, quickstart buildable]
 - Verify baseline: `pnpm typecheck && pnpm test && pnpm lint` green before start
 
 ## Work Units

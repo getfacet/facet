@@ -1,5 +1,5 @@
 /**
- * The agent event — the complete payload an authored `agent:` interaction sends.
+ * The visitor event — the complete payload an authored `agent:` interaction sends.
  *
  * The payload is **exactly its declared fields** (D-07): the client-stable
  * `eventId` that keys single-flight dedupe, the `eventName` the author wrote,
@@ -26,7 +26,7 @@
  * drift the retired pair of per-side constants allowed. No limit is restated
  * here as a literal.
  *
- * `validateAgentEvent` is **total**: it never throws, for any input of any type
+ * `validateVisitorEvent` is **total**: it never throws, for any input of any type
  * — a non-object, a value with a throwing getter, a proxy that refuses its own
  * keys, a cyclic `collect`. It returns the first failure in a fixed order, so
  * the same input always yields the same rejection.
@@ -52,7 +52,7 @@ import { isFacetIdentifier } from "./identifiers.js";
  * a digit, so a bare ULID or UUID is legal — bounded by B-06, and free of `:`.
  * No minting layer owes it a prefix.
  */
-export interface AgentEvent {
+export interface VisitorEvent {
   /**
    * Client-stable and client-minted; the same id is deduplicated, never re-run.
    * An opaque token, not an authored name: a bare ULID or UUID is legal, a `:`
@@ -81,7 +81,7 @@ export interface AgentEvent {
 }
 
 /**
- * What `validateAgentEvent` answers: the accepted event, or the first failure —
+ * What `validateVisitorEvent` answers: the accepted event, or the first failure —
  * its code, the location it names, and one line of detail.
  *
  * Both branches are spelled out here rather than assembled from named halves,
@@ -89,8 +89,8 @@ export interface AgentEvent {
  * writes a fixture rejection has to be able to **name** its type, and a
  * signature naming a type the consumer cannot import is not a contract.
  */
-export type AgentEventValidationResult =
-  | { readonly ok: true; readonly event: AgentEvent }
+export type VisitorEventValidationResult =
+  | { readonly ok: true; readonly event: VisitorEvent }
   | {
       readonly ok: false;
       readonly code: string;
@@ -103,10 +103,10 @@ export type AgentEventValidationResult =
  * It is **derived from** the public result rather than being its source, so the
  * two cannot drift and the private name never reaches an emitted signature.
  */
-type EventRejection = Extract<AgentEventValidationResult, { readonly ok: false }>;
+type EventRejection = Extract<VisitorEventValidationResult, { readonly ok: false }>;
 
 /** One entry of the collect map, derived from the public contract for the same reason. */
-type CollectedEntry = AgentEvent["collect"][string];
+type CollectedEntry = VisitorEvent["collect"][string];
 
 const EVENT_KEYS: readonly string[] = [
   "eventId",
@@ -121,7 +121,7 @@ const EVENT_KEYS: readonly string[] = [
 /**
  * The closed entry vocabulary: a collected value, or a stated reason there is
  * none. Derived from the public contract, so a kind cannot be admitted here
- * without appearing in `AgentEvent` too.
+ * without appearing in `VisitorEvent` too.
  */
 const ENTRY_KINDS: readonly CollectedEntry["kind"][] = [
   "value",
@@ -185,7 +185,7 @@ function firstUnknownKey(
  * present, so a consumer cannot widen a payload after the boundary accepted it,
  * and an absent `arg` stays absent rather than becoming an explicit `undefined`.
  */
-export function validateAgentEvent(value: unknown): AgentEventValidationResult {
+export function validateVisitorEvent(value: unknown): VisitorEventValidationResult {
   try {
     return validateEvent(value);
   } catch {
@@ -193,13 +193,13 @@ export function validateAgentEvent(value: unknown): AgentEventValidationResult {
   }
 }
 
-function validateEvent(value: unknown): AgentEventValidationResult {
+function validateEvent(value: unknown): VisitorEventValidationResult {
   if (!isRecord(value)) {
-    return reject("event_not_an_object", "", "An agent event must be a plain object.");
+    return reject("event_not_an_object", "", "A visitor event must be a plain object.");
   }
   const unknownKey = firstUnknownKey(value, EVENT_KEYS);
   if (unknownKey !== undefined) {
-    return reject("unknown_event_key", unknownKey, "The agent event form is closed.");
+    return reject("unknown_event_key", unknownKey, "The visitor event form is closed.");
   }
 
   const eventId = readEventId(value);
@@ -318,7 +318,7 @@ function validateArg(
 
 function validateCollect(
   value: unknown,
-): { readonly ok: true; readonly collect: AgentEvent["collect"] } | EventRejection {
+): { readonly ok: true; readonly collect: VisitorEvent["collect"] } | EventRejection {
   if (!isRecord(value)) {
     return reject(
       "invalid_collect",

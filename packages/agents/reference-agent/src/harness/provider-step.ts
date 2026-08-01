@@ -1,4 +1,11 @@
-import type { ProviderStep, ProviderTurn, ReferenceProvider, ToolSpec } from "../provider.js";
+import type {
+  ProviderStep,
+  ProviderTurn,
+  ProviderUsage,
+  ReferenceProvider,
+  ToolCall,
+  ToolSpec,
+} from "../provider.js";
 import {
   classifyProviderFailure,
   type ReferenceAgentBudget,
@@ -45,8 +52,13 @@ export async function runProviderStep(options: ProviderRunOptions): Promise<Prov
 
     try {
       if (signalAborted(options.signal)) return abortedProviderResult(options.trace);
-      const step = await runProviderAttempt(options);
+      const rawStep: unknown = await runProviderAttempt(options);
       if (signalAborted(options.signal)) return abortedProviderResult(options.trace);
+      const step = normalizeProviderStep(rawStep, options.budget.maxToolCallsPerStep + 1);
+      if (step === undefined) {
+        emitMalformedProviderStepTrace(options.trace);
+        return { status: "error", stopReason: "provider_error" };
+      }
       return { status: "ok", step };
     } catch (error) {
       const classification = classifyProviderFailure(error);
@@ -93,6 +105,123 @@ function runProviderAttempt(options: ProviderRunOptions): Promise<ProviderStep> 
 function abortedProviderResult(trace: ReferenceAgentTrace | undefined): ProviderRunResult {
   emitReferenceAgentTrace(trace, { type: "turn_error", reason: "abort", retryable: true });
   return { status: "error", stopReason: "provider_error" };
+}
+
+function emitMalformedProviderStepTrace(trace: ReferenceAgentTrace | undefined): void {
+  emitReferenceAgentTrace(trace, {
+    type: "turn_error",
+    reason: "malformed_response",
+    retryable: false,
+  });
+}
+
+function normalizeProviderStep(raw: unknown, maxToolCallsToRead: number): ProviderStep | undefined {
+  if (!isRecord(raw)) return undefined;
+  const text = readOwn(raw, "text");
+  if (text === undefined || text.present === false || typeof text.value !== "string") {
+    return undefined;
+  }
+
+  const toolCallsValue = readOwn(raw, "toolCalls");
+  if (
+    toolCallsValue === undefined ||
+    toolCallsValue.present === false ||
+    !Array.isArray(toolCallsValue.value)
+  ) {
+    return undefined;
+  }
+  const toolCalls = normalizeToolCalls(toolCallsValue.value, maxToolCallsToRead);
+  if (toolCalls === undefined) return undefined;
+
+  const usage = normalizeProviderUsage(readOptionalOwn(raw, "usage"));
+  const providerState = readOwn(raw, "providerState");
+  if (providerState === undefined) return undefined;
+
+  return {
+    text: text.value,
+    toolCalls,
+    ...(usage === undefined ? {} : { usage }),
+    ...(providerState.present ? { providerState: providerState.value } : {}),
+  };
+}
+
+function normalizeToolCalls(
+  rawCalls: readonly unknown[],
+  maxToolCallsToRead: number,
+): readonly ToolCall[] | undefined {
+  const limit = Math.min(rawCalls.length, maxToolCallsToRead);
+  const toolCalls: ToolCall[] = [];
+  for (let index = 0; index < limit; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(rawCalls, index)) return undefined;
+    const call = normalizeToolCall(rawCalls[index]);
+    if (call === undefined) return undefined;
+    toolCalls.push(call);
+  }
+  return toolCalls;
+}
+
+function normalizeToolCall(raw: unknown): ToolCall | undefined {
+  if (!isRecord(raw)) return undefined;
+  const id = readOwn(raw, "id");
+  const name = readOwn(raw, "name");
+  const input = readOwn(raw, "input");
+  if (
+    id === undefined ||
+    id.present === false ||
+    typeof id.value !== "string" ||
+    id.value.length === 0 ||
+    name === undefined ||
+    name.present === false ||
+    typeof name.value !== "string" ||
+    name.value.length === 0 ||
+    input === undefined ||
+    input.present === false
+  ) {
+    return undefined;
+  }
+  return { id: id.value, name: name.value, input: input.value };
+}
+
+function normalizeProviderUsage(raw: unknown): ProviderUsage | undefined {
+  if (!isRecord(raw)) return undefined;
+  const inputTokens = readFiniteNumber(raw, "inputTokens");
+  const outputTokens = readFiniteNumber(raw, "outputTokens");
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  return {
+    ...(inputTokens === undefined ? {} : { inputTokens }),
+    ...(outputTokens === undefined ? {} : { outputTokens }),
+  };
+}
+
+function readFiniteNumber(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): number | undefined {
+  const field = readOwn(record, key);
+  return field?.present === true && typeof field.value === "number" && Number.isFinite(field.value)
+    ? field.value
+    : undefined;
+}
+
+function readOptionalOwn(record: Readonly<Record<string, unknown>>, key: string): unknown {
+  const field = readOwn(record, key);
+  return field?.present === true ? field.value : undefined;
+}
+
+function readOwn(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): { readonly present: true; readonly value: unknown } | { readonly present: false } | undefined {
+  try {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) return { present: false };
+    return { present: true, value: Reflect.get(record, key) };
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null;
 }
 
 function signalAborted(signal: AbortSignal | undefined): boolean {

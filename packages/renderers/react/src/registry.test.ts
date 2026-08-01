@@ -41,7 +41,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
 import type { ComponentRegistry } from "./registry.js";
-import { createRegistry } from "./registry.js";
+import { createRegistry, snapshotRegistryForTags } from "./registry.js";
 import * as registryModule from "./registry.js";
 
 /**
@@ -64,7 +64,9 @@ function writeTag(
 }
 
 /** Narrows to the accepted branch, failing the test rather than the type system. */
-function accepted(result: ReturnType<typeof createRegistry>): ComponentRegistry {
+function accepted(
+  result: ReturnType<typeof createRegistry> | ReturnType<typeof snapshotRegistryForTags>,
+): ComponentRegistry {
   if (!result.ok) {
     throw new Error(`expected an accepted registry, got ${result.code} at ${result.at}`);
   }
@@ -307,15 +309,59 @@ describe("createRegistry retains nothing between calls", () => {
     // The structural half of "no global": every runtime export is a function, so
     // the module has nowhere to keep session state. The key list is pinned as
     // well, because widening a module's surface should be a deliberate act —
-    // `freezeRegistry` is the materializer `bootstrap.ts` shares so the two
-    // cannot drift into two ideas of what a frozen registry is, and it is
-    // **off-barrel**: the Barrel Export Contract publishes `createRegistry` and
-    // the `ComponentRegistry` type from this module and nothing else.
+    // `freezeRegistry` and `snapshotRegistryForTags` are the internal helpers
+    // `bootstrap.ts` shares so the two cannot drift into two ideas of what a
+    // frozen registry or exact tag-list snapshot is, and both are **off-barrel**:
+    // the Barrel Export Contract publishes `createRegistry` and the
+    // `ComponentRegistry` type from this module and nothing else.
     // `ComponentRegistry` is a type and is erased, so it is absent by
     // construction.
-    expect(Object.keys(registryModule).sort()).toEqual(["createRegistry", "freezeRegistry"]);
+    expect(Object.keys(registryModule).sort()).toEqual([
+      "createRegistry",
+      "freezeRegistry",
+      "snapshotRegistryForTags",
+    ]);
     for (const value of Object.values(registryModule)) {
       expect(typeof value).toBe("function");
+    }
+  });
+});
+
+describe("snapshotRegistryForTags shares bootstrap's registry snapshot", () => {
+  it("copies exactly the catalog tag list into a frozen null-prototype record", () => {
+    const screen = stub("Screen");
+    const modal = stub("Modal");
+    const host: Record<string, MountedComponent<ReactNode, ReactNode>> = {
+      Screen: screen,
+      Modal: modal,
+    };
+
+    const registry = accepted(snapshotRegistryForTags(host, ["Screen", "Modal"]));
+    host["Screen"] = stub("replacement");
+
+    expect(Object.keys(registry)).toEqual(["Screen", "Modal"]);
+    expect(Object.getPrototypeOf(registry)).toBeNull();
+    expect(Object.isFrozen(registry)).toBe(true);
+    expect(registry["Screen"]).toBe(screen);
+    expect(registry["Modal"]).toBe(modal);
+  });
+
+  it("reports exact tag-list mismatches at registry tag locations", () => {
+    const missing = snapshotRegistryForTags({ Screen: stub("Screen") }, ["Screen", "Modal"]);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.code).toBe("missing_implementation");
+      expect(missing.at).toBe("registry.Modal");
+    }
+
+    const surplus = snapshotRegistryForTags(
+      { Screen: stub("Screen"), Modal: stub("Modal"), Text: stub("Text") },
+      ["Screen", "Modal"],
+    );
+    expect(surplus.ok).toBe(false);
+    if (!surplus.ok) {
+      expect(surplus.code).toBe("uncatalogued_implementation");
+      expect(surplus.at).toBe("registry.Text");
     }
   });
 });

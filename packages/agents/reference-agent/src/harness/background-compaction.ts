@@ -1,4 +1,4 @@
-import type { AgentEvent, ConversationMessage, FacetToolSession } from "@facet/core";
+import type { VisitorEvent, ConversationMessage, FacetToolSession } from "@facet/core";
 import type { Sink, SummaryStore } from "@facet/runtime";
 
 import { redactSensitiveText } from "../prompt/messages.js";
@@ -77,7 +77,7 @@ interface ProjectedSummary {
 export interface BackgroundCompactionOptions {
   readonly system: string;
   readonly budget: ReferenceAgentBudget;
-  readonly event: AgentEvent;
+  readonly event: VisitorEvent;
   readonly session: FacetToolSession;
   readonly sink: Pick<Sink, "history">;
   readonly historyKey?: string | undefined;
@@ -87,11 +87,6 @@ export interface BackgroundCompactionOptions {
   readonly trace?: ReferenceAgentTrace | undefined;
   readonly abortSignal?: AbortSignal | undefined;
   readonly contextWindowChars?: number | undefined;
-  /** Transitional fields accepted until the WU-74 caller rewires to historyKey/contextWindowChars. */
-  readonly provider?: unknown;
-  readonly agentId?: string | undefined;
-  readonly visitorId?: string | undefined;
-  readonly contextWindowTokens?: number | undefined;
 }
 
 function isAborted(signal: AbortSignal | undefined): boolean {
@@ -100,14 +95,6 @@ function isAborted(signal: AbortSignal | undefined): boolean {
 
 function resolveHistoryKey(options: BackgroundCompactionOptions): string | undefined {
   if (options.historyKey !== undefined && options.historyKey.length > 0) return options.historyKey;
-  if (
-    options.agentId !== undefined &&
-    options.agentId.length > 0 &&
-    options.visitorId !== undefined &&
-    options.visitorId.length > 0
-  ) {
-    return `${options.agentId}:${options.visitorId}`;
-  }
   return undefined;
 }
 
@@ -169,10 +156,7 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
 
   if (isWithinMinGainCooldown(key, history.length, budget.compactionCooldownSteps)) return;
 
-  const budgetChars = effectiveCharBudget(
-    budget,
-    options.contextWindowChars ?? options.contextWindowTokens,
-  );
+  const budgetChars = effectiveCharBudget(budget, options.contextWindowChars);
   const priorProjection: ProjectedSummary | undefined =
     previous !== undefined
       ? { summary: previous, generation: previousGeneration, coveredThrough: previousCovered }

@@ -259,4 +259,70 @@ describe("read executors", () => {
     expect(session.data).toBe(before.data);
     expect(session.stageRevision).toBe(before.stageRevision);
   });
+
+  it("projects hostile object read values without throwing or mutating state", async () => {
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys(): never {
+          throw new Error("hostile ownKeys trap");
+        },
+      },
+    );
+    const data: DataModel = { payload: hostile };
+    const session = new StubSession(data);
+    const before = {
+      document: session.document,
+      data: session.data,
+      stageRevision: session.stageRevision,
+    };
+
+    const result = await executeReadData({ path: "payload" }, session);
+
+    expect(result).toEqual({
+      ok: true,
+      path: "payload",
+      value: {},
+      count: 0,
+      truncated: true,
+      stageRevision: 3,
+    });
+    expect(session.document).toBe(before.document);
+    expect(session.data).toBe(before.data);
+    expect(session.stageRevision).toBe(before.stageRevision);
+  });
+
+  it("treats accessor-backed data path members as absent without invoking getters", async () => {
+    let getterCalls = 0;
+    const payload = {};
+    Object.defineProperty(payload, "secret", {
+      enumerable: true,
+      get(): never {
+        getterCalls += 1;
+        throw new Error("getter should not run");
+      },
+    });
+    const data: DataModel = { payload };
+    const session = new StubSession(data);
+    const before = {
+      document: session.document,
+      data: session.data,
+      stageRevision: session.stageRevision,
+    };
+
+    const result = await executeReadData({ path: "payload.secret" }, session);
+
+    expect(result).toEqual({
+      ok: true,
+      path: "payload.secret",
+      value: null,
+      count: 0,
+      truncated: false,
+      stageRevision: 3,
+    });
+    expect(getterCalls).toBe(0);
+    expect(session.document).toBe(before.document);
+    expect(session.data).toBe(before.data);
+    expect(session.stageRevision).toBe(before.stageRevision);
+  });
 });

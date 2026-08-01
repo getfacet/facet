@@ -163,7 +163,7 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
     expect(bundleText).toContain("data-facet-conversation");
     expect(bundleText).toContain("data-facet-component");
     expect(bundleText).not.toContain(retiredPatternGlobal);
-    expect(bundleText).not.toContain("get_pattern"); // style-hard-cut: allowed-negative
+    expect(bundleText).not.toContain("get_pattern"); // component-hard-cut: allowed-negative
     expect(bundleText).not.toContain("provider-only-pattern-provenance");
     expect(bundleText).not.toMatch(
       /\bnode:(?:assert|buffer|child_process|crypto|events|fs|http|https|net|os|path|stream|url|util|worker_threads)\b/,
@@ -226,6 +226,49 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     expect(root.textContent).toContain(NEUTRAL_COPY_DEFAULTS.validation.messageTooLong);
+  });
+
+  it("blocks valid message POSTs while the initial visit is still pending", async () => {
+    const fetchCalls: string[] = [];
+    const unresolved = new Promise<Response>(() => {});
+    const globals = globalThis as { fetch: typeof fetch };
+    globals.fetch = ((input: RequestInfo | URL) => {
+      const url = String(input);
+      fetchCalls.push(url);
+      if (url.endsWith("/event")) {
+        return unresolved;
+      }
+      return Promise.resolve(new Response("{}", { status: 202, headers: {} }));
+    }) as typeof fetch;
+
+    const root = await evalBundle(bundleText);
+    StubEventSource.instances.at(-1)?.onopen?.({});
+    const deadline = Date.now() + 10_000;
+    while (!fetchCalls.some((url) => url.endsWith("/event")) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    const textarea = root.querySelector("textarea");
+    const form = root.querySelector("form");
+    const button = root.querySelector("button");
+    expect(textarea).not.toBeNull();
+    expect(form).not.toBeNull();
+    expect(button).not.toBeNull();
+    expect(fetchCalls.filter((url) => url.endsWith("/event"))).toHaveLength(1);
+    expect((button as HTMLButtonElement | null)?.disabled).toBe(true);
+
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    valueSetter?.call(textarea, "hello while pending");
+    textarea!.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea!.dispatchEvent(new Event("change", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(fetchCalls.filter((url) => url.endsWith("/message"))).toHaveLength(0);
   });
 
   it("folds server patch frames from the real SseTransport into StageRenderer", async () => {

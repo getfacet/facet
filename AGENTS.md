@@ -119,7 +119,7 @@ packages do not depend on private workbenches or unpublished experiments.
 
 ```bash
 pnpm install
-pnpm verify         # typecheck + test + lint + format + build + docs/layout/style/NUL checks
+pnpm verify         # typecheck + test + lint + format + build + docs/layout/component/smoke/gate/NUL checks
 pnpm typecheck      # tsc --noEmit across all packages
 pnpm test           # unit suites + the deterministic journey-verdict policy
 pnpm package:smoke  # build + pack/install every public package in a clean consumer
@@ -138,8 +138,8 @@ for Claude Code).
 
 - **`/verify`** passes — run `pnpm verify` for typecheck, test, lint,
   format:check, build, documentation link/anchor/selected-snippet checks,
-  package-layout checks, the style hard-cut regression/scanner pair, and the
-  source NUL-byte scan. The documentation gate is
+  package-layout checks, the component-markup hard-cut regression/scanner pair,
+  and the source NUL-byte scan. The documentation gate is
   `node --test scripts/check-docs.test.mjs` followed by
   `node scripts/check-docs.mjs`. Add/adjust tests for any behavior change; core
   parser, catalog, document/data validation, authorized patch/fold, and agent
@@ -179,8 +179,8 @@ Run `/live-test` too when the refactor touches a live-link surface:
 `packages/tools/quickstart`, `packages/adapters/server`,
 `packages/adapters/client`, `packages/adapters/agent-client`,
 `packages/core/runtime`, `packages/renderers/react` renderer/useFacet paths, or
-core patch/protocol/stage vocabulary. Also run it for release/pre-merge owner
-requests.
+`packages/core/core` patch/protocol/stage vocabulary. Also run it for
+release/pre-merge owner requests.
 
 The gates are right-sized: `/verify` is mechanical, `/code-review` is
 evidence-based and adversarially verified, `/live-test` proves a real boot for

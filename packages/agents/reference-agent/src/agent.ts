@@ -105,7 +105,7 @@ export function createReferenceAgentWithDependencies(
       let finalText: string | null = null;
       try {
         turnSystem = buildSystem(options.guide ?? DEFAULT_GUIDE);
-        const historyKey = historyKeyFromSession(options.agentId, session);
+        const historyKey = historyKeyFromSession(session);
         const iterator = runReferenceAgentLoop({
           provider: options.provider,
           system: turnSystem,
@@ -120,6 +120,7 @@ export function createReferenceAgentWithDependencies(
                 ...(options.summaryStore === undefined
                   ? {}
                   : { summaryStore: options.summaryStore }),
+                ...(summarizer === undefined ? {} : { summarizer }),
                 ...(contextWindowChars === undefined ? {} : { contextWindowChars }),
               }),
           ...(options.trace !== undefined ? { trace: options.trace } : {}),
@@ -170,7 +171,7 @@ function maybeStartBackgroundCompaction(input: {
 }): void {
   const { options, dependencies, summarizer, turnSystem, event, session, contextWindowChars } =
     input;
-  const historyKey = historyKeyFromSession(options.agentId, session);
+  const historyKey = historyKeyFromSession(session);
   const summaryStore = options.summaryStore;
   if (
     summaryStore === undefined ||
@@ -219,17 +220,10 @@ function finalConversationText(
   return undefined;
 }
 
-function historyKeyFromSession(agentId: string, session: FacetToolSession): string | undefined {
+function historyKeyFromSession(session: FacetToolSession): string | undefined {
   if (!isRecord(session)) return undefined;
   const direct = session["sessionKey"];
   if (typeof direct === "string" && direct.length > 0) return direct;
-  const visitor = session["visitor"];
-  if (isRecord(visitor)) {
-    const visitorId = visitor["visitorId"];
-    if (typeof visitorId === "string" && visitorId.length > 0) {
-      return `${agentId}:${visitorId}`;
-    }
-  }
   return undefined;
 }
 

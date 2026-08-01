@@ -48,8 +48,10 @@
  */
 
 import type { ComponentDocument } from "@facet/core";
-import { parseAction } from "@facet/core";
+import { BOUNDS, parseAction } from "@facet/core";
 import { useCallback, useState } from "react";
+
+import { isArrayValue, readArrayItem, readArrayLength, readOwn } from "./safe-read.js";
 
 /**
  * One screen the document declares: the name `nav:` targets, and the node id
@@ -96,22 +98,6 @@ export type NavigationOutcome =
 /** The prop a `Screen` root carries its name in. */
 const NAME_PROP = "name";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Reads one own property without ever throwing, so a hostile getter is inert. */
-function readOwn(container: unknown, key: string): unknown {
-  if (!isRecord(container) || !Object.prototype.hasOwnProperty.call(container, key)) {
-    return undefined;
-  }
-  try {
-    return container[key];
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Every screen the document declares, in document order.
  *
@@ -129,12 +115,14 @@ function readOwn(container: unknown, key: string): unknown {
  */
 export function listScreens(document: ComponentDocument): readonly ScreenView[] {
   const screens = readOwn(document, "screens");
-  if (!Array.isArray(screens)) {
+  if (!isArrayValue(screens)) {
     return [];
   }
   const nodes = readOwn(document, "nodes");
   const views: ScreenView[] = [];
-  for (const nodeId of screens) {
+  const length = Math.min(readArrayLength(screens), BOUNDS.screensPerDocument);
+  for (let index = 0; index < length; index += 1) {
+    const nodeId = readArrayItem(screens, index);
     if (typeof nodeId !== "string") {
       continue;
     }

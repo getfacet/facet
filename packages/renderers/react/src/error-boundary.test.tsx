@@ -58,6 +58,7 @@ import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { boundaryIdentity, safeInvoke, SubtreeBoundary } from "./error-boundary.js";
+import { errorsDuring } from "../../../../test-support/errors-during.js";
 
 afterEach(cleanup);
 
@@ -66,33 +67,6 @@ const COPY = NEUTRAL_COPY_DEFAULTS;
 
 /** The internal detail a crashing component is made to carry. */
 const CRASH_MESSAGE = "boom: internal detail 0xdeadbeef at row 7 of the private ledger";
-
-/**
- * Runs `run` and answers every error that escaped it.
- *
- * A React event handler that throws is caught at React's dispatch boundary and
- * handed to the environment, which jsdom surfaces as a window `error` event, so
- * the escape is observable there and nowhere else. The event is cancelled
- * because these errors are provoked on purpose and should not also be charged
- * to the run as unhandled. A synchronous throw that does reach the caller is the
- * same failure and joins the same list.
- */
-function errorsDuring(run: () => void): readonly string[] {
-  const escaped: string[] = [];
-  const record = (event: ErrorEvent): void => {
-    escaped.push(event.error instanceof Error ? event.error.message : String(event.message));
-    event.preventDefault();
-  };
-  window.addEventListener("error", record);
-  try {
-    run();
-  } catch (error) {
-    escaped.push(error instanceof Error ? error.message : String(error));
-  } finally {
-    window.removeEventListener("error", record);
-  }
-  return escaped;
-}
 
 /**
  * Silences React's own report of a caught error for the duration of `run`.

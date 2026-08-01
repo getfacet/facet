@@ -1,4 +1,5 @@
 import type { ComponentSpec } from "@facet/core";
+import type { DataValueDescriptor } from "@facet/core";
 export type { FacetToolSession } from "@facet/core";
 
 export interface RenderPageInput {
@@ -54,12 +55,7 @@ export interface CurrentScreenObservation {
   readonly issues: readonly string[];
 }
 
-export interface DataSummaryEntry {
-  readonly path: string;
-  readonly shape: "null" | "string" | "number" | "boolean" | "array" | "object";
-  readonly fields: readonly string[];
-  readonly count: number;
-}
+export type DataSummaryEntry = DataValueDescriptor;
 
 export interface TurnObservation {
   readonly stageRevision: number;

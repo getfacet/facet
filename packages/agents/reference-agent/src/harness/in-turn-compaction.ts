@@ -1,4 +1,4 @@
-import type { AgentEvent, FacetToolSession } from "@facet/core";
+import type { VisitorEvent, FacetToolSession } from "@facet/core";
 
 import { describeEvent, formatCurrentStageForPrompt } from "../prompt.js";
 import type { TurnMessage } from "../provider.js";
@@ -20,7 +20,7 @@ export interface InTurnCompactionPolicy {
 export interface CompactInTurnOptions {
   readonly messages: readonly TurnMessage[];
   readonly initialContextLength: number;
-  readonly event: AgentEvent;
+  readonly event: VisitorEvent;
   readonly session: FacetToolSession;
   readonly budget: ReferenceAgentBudget;
   readonly summarizer: Summarizer | undefined;
@@ -126,7 +126,7 @@ function chooseVerbatimKeepGroups(
 
 function refreshStageBlock(
   initialContext: readonly TurnMessage[],
-  event: AgentEvent,
+  event: VisitorEvent,
   session: FacetToolSession,
   budget: ReferenceAgentBudget,
 ): readonly TurnMessage[] {

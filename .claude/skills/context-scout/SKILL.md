@@ -18,7 +18,7 @@ allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git ls-files:*), Bash(
 ## Required context
 - `AGENTS.md` (Facet contract + invariants).
 - `docs/ARCHITECTURE.md` (the two-layer model + fail-safe invariants).
-- The affected package's entrypoints + its `README.md` (bridge/client have one).
+- The affected package's entrypoints + its `README.md` (transport packages have one).
 
 ## Detect changes (triple git diff)
 ```

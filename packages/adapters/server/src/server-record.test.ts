@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { ConversationRecord, Sink } from "@facet/runtime";
-import { agentEvent, postEvent, postMessage, start } from "./server.test-support.js";
+import { visitorEvent, postEvent, postMessage, start } from "./server.test-support.js";
 
 class RecordingSink implements Sink {
   readonly records: ConversationRecord[] = [];
@@ -79,7 +79,7 @@ describe("server conversation records", () => {
     });
     active = server;
 
-    const first = postEvent(base, "s1", agentEvent({ eventId: "event1" }));
+    const first = postEvent(base, "s1", visitorEvent({ eventId: "event1" }));
     await startedPromise;
     const second = await postMessage(base, "s1", "msg2", "busy question");
     release();
@@ -89,7 +89,7 @@ describe("server conversation records", () => {
     expect(sink.records.map((record) => record.messageId)).not.toContain("msg2:visitor");
   });
 
-  it("does not record a busy agent event while a visitor message turn is active", async () => {
+  it("does not record a busy visitor event while a visitor message turn is active", async () => {
     const sink = new RecordingSink();
     let release!: () => void;
     let started!: () => void;
@@ -113,7 +113,7 @@ describe("server conversation records", () => {
 
     const first = postMessage(base, "s1", "msg1", "accepted question");
     await startedPromise;
-    const second = await postEvent(base, "s1", agentEvent({ eventId: "event2" }));
+    const second = await postEvent(base, "s1", visitorEvent({ eventId: "event2" }));
     release();
 
     expect(second.status).toBe(409);

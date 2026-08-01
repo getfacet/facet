@@ -107,6 +107,7 @@ import { MODAL_PART_ATTRIBUTE, ModalFrame, ModalHost } from "./modal-frame.js";
 import { MountNode } from "./mount-node.js";
 import type { ModalMountRequest, MountContext } from "./mount-node.js";
 import type { ComponentRegistry } from "./registry.js";
+import { errorsDuring } from "../../../../test-support/errors-during.js";
 
 /**
  * The switch the withheld-target tests flip. `vi.hoisted` is what lets the mock
@@ -344,32 +345,6 @@ function isIsolated(element: Element): boolean {
 
 function zIndexOf(element: Element): number {
   return Number(globalThis.getComputedStyle(element).zIndex);
-}
-
-/**
- * Every error that escaped while `run` executed.
- *
- * React catches a throw from an event handler at its dispatch boundary and
- * reports it to the environment, which jsdom turns into a window `error` event —
- * so `expect(() => fireEvent.keyDown(…)).not.toThrow()` passes even when the
- * handler threw, and the failure surfaces only as an exit code no assertion
- * names. Listening for the report is what makes the escape assertable.
- */
-function errorsDuring(run: () => void): readonly string[] {
-  const escaped: string[] = [];
-  const record = (event: ErrorEvent): void => {
-    escaped.push(event.error instanceof Error ? event.error.message : String(event.message));
-    event.preventDefault();
-  };
-  window.addEventListener("error", record);
-  try {
-    run();
-  } catch (error) {
-    escaped.push(error instanceof Error ? error.message : String(error));
-  } finally {
-    window.removeEventListener("error", record);
-  }
-  return escaped;
 }
 
 /** One frame under a real host and a real overlay root, the way a screen mounts it. */

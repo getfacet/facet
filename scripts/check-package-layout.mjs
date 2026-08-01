@@ -14,65 +14,18 @@ import {
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  EXPECTED_DEPENDENCIES,
+  EXPECTED_GROUP_CHILDREN,
+  EXPECTED_GROUPS,
+  EXPECTED_PACKAGES,
+  EXPECTED_WORKSPACES,
+  NODE_FREE_ROOT_ENTRY_PACKAGES,
+  PUBLIC_PACKAGE_COUNT,
+  WORKSPACE_COUNT,
+} from "./package-topology.mjs";
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-const EXPECTED_PACKAGES = Object.freeze({
-  "@facet/core": "packages/core/core",
-  "@facet/runtime": "packages/core/runtime",
-  "@facet/assets": "packages/core/assets",
-  "@facet/react": "packages/renderers/react",
-  "@facet/agent-tools": "packages/agents/agent-tools",
-  "@facet/agent": "packages/agents/agent",
-  "@facet/reference-agent": "packages/agents/reference-agent",
-  "@facet/server": "packages/adapters/server",
-  "@facet/client": "packages/adapters/client",
-  "@facet/agent-client": "packages/adapters/agent-client",
-  "@facet/quickstart": "packages/tools/quickstart",
-});
-
-const EXPECTED_GROUPS = Object.freeze(["adapters", "agents", "core", "renderers", "tools"]);
-const EXPECTED_GROUP_CHILDREN = Object.freeze({
-  adapters: Object.freeze(["agent-client", "client", "server"]),
-  agents: Object.freeze(["agent", "agent-tools", "reference-agent"]),
-  core: Object.freeze(["assets", "core", "runtime"]),
-  renderers: Object.freeze(["react"]),
-  tools: Object.freeze(["quickstart"]),
-});
-const EXPECTED_WORKSPACES = Object.freeze({
-  facet: ".",
-  ...EXPECTED_PACKAGES,
-});
-const EXPECTED_DEPENDENCIES = Object.freeze({
-  "@facet/core": Object.freeze([]),
-  "@facet/runtime": Object.freeze(["@facet/core"]),
-  "@facet/assets": Object.freeze(["@facet/core"]),
-  "@facet/react": Object.freeze(["@facet/core"]),
-  "@facet/agent-tools": Object.freeze(["@facet/core"]),
-  "@facet/agent": Object.freeze(["@facet/core"]),
-  "@facet/reference-agent": Object.freeze([
-    "@facet/agent",
-    "@facet/agent-tools",
-    "@facet/core",
-    "@facet/runtime",
-  ]),
-  "@facet/server": Object.freeze(["@facet/core", "@facet/runtime"]),
-  "@facet/client": Object.freeze(["@facet/core"]),
-  "@facet/agent-client": Object.freeze(["@facet/core"]),
-  "@facet/quickstart": Object.freeze([
-    "@facet/agent",
-    "@facet/assets",
-    "@facet/core",
-    "@facet/reference-agent",
-    "@facet/runtime",
-    "@facet/server",
-  ]),
-});
-const NODE_FREE_ROOT_ENTRY_PACKAGES = Object.freeze([
-  "@facet/core",
-  "@facet/react",
-  "@facet/assets",
-  "@facet/runtime",
-]);
 const ASSETS_ROOT_ENTRY = "packages/core/assets/src/index.ts";
 const ASSETS_REACT_ENTRY = "packages/core/assets/src/react.tsx";
 const ASSETS_REACT_ALLOWED_IMPORTS = Object.freeze(["@facet/core", "react"]);
@@ -445,6 +398,10 @@ function checkEntryImportGraphs() {
     (specifier) => !ASSETS_REACT_ALLOWED_IMPORTS.includes(specifier),
   );
   record(
+    assetsReact.nodeImports.length === 0,
+    `node builtin import reachable from @facet/assets/react: ${assetsReact.nodeImports.join("; ")}`,
+  );
+  record(
     unexpectedAssetsReactImports.length === 0,
     `@facet/assets/react imports unexpected packages: ${unexpectedAssetsReactImports.join(", ")}`,
   );
@@ -573,7 +530,7 @@ function main() {
     process.exitCode = 1;
   } else {
     console.log(
-      `[package-layout] PASS (${String(Object.keys(EXPECTED_PACKAGES).length)} public packages, ${String(Object.keys(EXPECTED_WORKSPACES).length)} workspaces, ${String(EXPECTED_GROUPS.length)} role groups)`,
+      `[package-layout] PASS (${String(PUBLIC_PACKAGE_COUNT)} public packages, ${String(WORKSPACE_COUNT)} workspaces, ${String(EXPECTED_GROUPS.length)} role groups)`,
     );
   }
 }

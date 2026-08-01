@@ -35,6 +35,7 @@
 
 import type { DataModel } from "./data-model.js";
 import { parseDataPath } from "./identifiers.js";
+import { isArrayValue, isPlainObject } from "./json-shape.js";
 
 /** The authored prefix of a data reference; the bare dotted path is also accepted. */
 const DATA_PREFIX = "data:";
@@ -106,48 +107,6 @@ export type BindingResolution =
         | "path_not_found"
         | "schema_mismatch";
     };
-
-/**
- * Whether `value` is an array.
- *
- * `Array.isArray` is not total: on a revoked `Proxy` it throws
- * `TypeError: Cannot perform 'IsArray' on a proxy that has been revoked`. Every
- * array test in this module goes through here so that a revoked proxy reads as
- * "not an array" — which is the truthful answer for binding purposes, since
- * nothing can be read out of it either.
- */
-function isArrayValue(value: unknown): value is readonly unknown[] {
-  try {
-    return Array.isArray(value);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Whether `value` is a plain JSON object — not an array, Date, Map or instance.
- *
- * Total for the same reason `isArrayValue` is: `Object.getPrototypeOf` also
- * throws on a revoked proxy, and a proxy may install a `getPrototypeOf` trap
- * that throws on anything. A value whose own shape cannot be established is not
- * a plain object.
- *
- * Deliberately a local copy of the same predicate in `data-model.ts`, which
- * keeps it private: the shared alternative is a private helper module that
- * several later core modules will also want. That consolidation belongs to
- * whoever owns that module, not to a binding resolver.
- */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  try {
-    if (typeof value !== "object" || value === null || isArrayValue(value)) {
-      return false;
-    }
-    const prototype: unknown = Object.getPrototypeOf(value);
-    return prototype === Object.prototype || prototype === null;
-  } catch {
-    return false;
-  }
-}
 
 /** Marks a property read that threw, so a hostile getter can never escape. */
 const READ_FAILED = Symbol("facet.readFailed");

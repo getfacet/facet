@@ -56,8 +56,8 @@ export interface QuickstartServerOptions {
   readonly stageStore?: StageStore;
   /**
    * One effective Theme (validated by the caller) inlined into the shell as
-   * `window.__FACET_THEME__` for the page to hand `StageRenderer`. Patterns stay
-   * provider-side and have no shell value or browser route.
+   * `window.__FACET_THEME__` for the page to hand `StageRenderer`. Component
+   * catalog guidance stays provider-side and has no shell value or browser route.
    */
   readonly theme?: FacetTheme;
   /**

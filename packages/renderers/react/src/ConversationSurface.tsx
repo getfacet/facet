@@ -52,6 +52,8 @@
 import type { ConversationMessage } from "@facet/core";
 import type { ReactElement } from "react";
 
+import { readOwn } from "./safe-read.js";
+
 /**
  * One rendered conversation message.
  *
@@ -74,28 +76,6 @@ interface ReadableItem {
 
 /** The reading of an unusable `items` value: nothing to show, and no exception. */
 const NO_ITEMS: readonly ReadableItem[] = Object.freeze([]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Reads one own property without ever throwing, so a hostile getter is inert.
- *
- * The guard covers the whole read rather than the access alone: a revoked proxy
- * throws from `Array.isArray` inside the shape check, before any value is
- * touched.
- */
-function readOwn(container: unknown, key: string): unknown {
-  try {
-    if (!isRecord(container) || !Object.prototype.hasOwnProperty.call(container, key)) {
-      return undefined;
-    }
-    return container[key];
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * Reads one item, answering `null` for anything with no text to show.

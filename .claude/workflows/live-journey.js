@@ -4,7 +4,7 @@ export const meta = {
   whenToUse: 'Invoked by /live-test after the vitest Tiers 1-2, when a provider key is present and a real-LLM quickstart server URL is supplied. Proves the real browser + real LLM experience renders and responds. Not a CI gate.',
   phases: [
     { title: 'Preflight', detail: 'node dist/cli.js --stub bin smoke (the published-bin standalone gap)' },
-    { title: 'Journey', detail: '3 visitors, each a fresh visitorId, run the fixed Playwright journey → screenshots' },
+    { title: 'Journey', detail: '3 visitors, each a fresh browser session key, run the fixed Playwright journey → screenshots' },
     { title: 'Judge', detail: 'per (visitor × lens) vision judges — render/responsiveness/safety/fidelity + cross-visitor diversity' },
     { title: 'Synthesize', detail: 'aggregate votes through node verdict.ts (HARD/SOFT/quorum) → PASS/FAIL/WARNING' },
   ],
@@ -23,7 +23,7 @@ const VERDICT = 'packages/tools/quickstart/e2e/journey/verdict.ts'
 // Per-visitor lenses (judged on each visitor's shots). HARD/SOFT is decided by verdict.ts's
 // DEFAULT_LENS_POLICY — kept here only to know which judges to spawn. `diversity` is cross-visitor.
 const PER_VISITOR_LENSES = [
-  { key: 'render', focus: 'Did each screenshot show a COHERENT, non-empty rendered page (a real UI: text, boxes, a chat dock) — not blank, not raw JSON, not an error?' },
+  { key: 'render', focus: 'Did each screenshot show a COHERENT, non-empty rendered page (a real UI: text, boxes, and a conversation panel) — not blank, not raw JSON, not an error?' },
   { key: 'responsiveness', focus: 'Across the 4 shots (load → after chat 1 → after chat 2 → after click), did the page VISIBLY CHANGE in response to the chat messages and the click — i.e. the UI is live, not frozen?' },
   { key: 'safety', focus: 'ADVERSARIAL: scan every shot for ANY broken state — blank canvas, raw JSON/markup leaking as text, an error message, overlapping/off-screen/cut-off layout, unreadable contrast. Fail if you find ONE.' },
   { key: 'fidelity', focus: 'Did the page actually reflect the requests — a Pricing section with ~three plans appearing after chat 1, and a playful/cat-themed restyle after chat 2? (SOFT — a reasonable partial attempt passes.)' },
@@ -95,7 +95,7 @@ const runs = await parallel(visitors.map(v => () =>
   agent(
     '## Visitor ' + v + ' — run the fixed Playwright journey\n\n' +
     'Run EXACTLY this (headless; it launches its own chromium + a fresh visitor context):\n' +
-    '```\npnpm exec tsx ' + JOURNEY + ' --url ' + url + ' --visitor ' + v + ' --out ' + artifactsDir + '/' + v + '\n```\n' +
+    '```\npnpm exec tsx ' + JOURNEY + ' --url ' + url + ' --session-key ' + v + ' --out ' + artifactsDir + '/' + v + '\n```\n' +
     'It captures ≥4 screenshots into that --out dir and prints a JSON result. Return ok (did it finish + write ≥4 shots?), ' +
     'the absolute (or repo-relative) screenshot file paths in step order, and a one-line detail. Do NOT judge the shots — just run + report paths.\n\nStructured output only.',
     { label: 'journey:' + v, phase: 'Journey', schema: RUN_SCHEMA }

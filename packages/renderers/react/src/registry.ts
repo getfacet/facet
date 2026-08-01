@@ -70,6 +70,10 @@ function reject(code: string, at: string, detail: string): RegistryRejection {
   return { ok: false, code, at, detail };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * Builds the registry for one session from ordered `[tag, implementation]`
  * pairs.
@@ -170,4 +174,75 @@ export function freezeRegistry(
     });
   }
   return Object.freeze(registry);
+}
+
+/**
+ * Snapshots a host-provided registry object against the already validated
+ * catalog tag list.
+ *
+ * @internal — used by bootstrap, not barrel-exported.
+ */
+export function snapshotRegistryForTags(
+  value: unknown,
+  catalogTags: readonly string[],
+):
+  | { readonly ok: true; readonly registry: ComponentRegistry }
+  | {
+      readonly ok: false;
+      readonly code: string;
+      readonly at: string;
+      readonly detail: string;
+    } {
+  if (!isRecord(value)) {
+    return reject("registry_not_an_object", "registry", "A registry is a plain tag-keyed record.");
+  }
+  // Own property *names*, not `Object.keys`. An implementation defined
+  // non-enumerably is still registered, and both rules below read this set: a
+  // non-enumerable `Facet` would bypass bootstrap's one registry-only rule, and
+  // a non-enumerable surplus tag would let bootstrap report a match on a
+  // registry that does not match. The residual — a `Proxy` whose `ownKeys` trap
+  // answers with less than it holds — is not closable, because every
+  // enumeration primitive routes through that same trap; it stays fail-safe
+  // because the snapshot below is built from catalog tags, so a concealed
+  // implementation is absent from what actually mounts.
+  const registered = new Set(Object.getOwnPropertyNames(value));
+  if (registered.has(FACET_TAG)) {
+    return reject(
+      "reserved_structural_tag",
+      `registry.${FACET_TAG}`,
+      "Facet is a grammar position, not a component.",
+    );
+  }
+
+  const entries: [string, MountedComponent<ReactNode, ReactNode>][] = [];
+  const catalogued = new Set<string>();
+  for (const tag of catalogTags) {
+    catalogued.add(tag);
+    if (!Object.hasOwn(value, tag)) {
+      return reject(
+        "missing_implementation",
+        `registry.${tag}`,
+        "Every catalogued component needs a trusted implementation registered under its tag.",
+      );
+    }
+    const implementation = value[tag];
+    if (typeof implementation !== "function") {
+      return reject(
+        "implementation_not_callable",
+        `registry.${tag}`,
+        "A registered implementation is a component function.",
+      );
+    }
+    entries.push([tag, implementation as MountedComponent<ReactNode, ReactNode>]);
+  }
+
+  const surplus = [...registered].sort().find((tag) => !catalogued.has(tag));
+  if (surplus !== undefined) {
+    return reject(
+      "uncatalogued_implementation",
+      `registry.${surplus}`,
+      "Every registered implementation needs a catalog spec; an agent cannot author what the catalog does not declare.",
+    );
+  }
+  return { ok: true, registry: freezeRegistry(entries) };
 }

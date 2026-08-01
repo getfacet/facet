@@ -75,6 +75,25 @@ describe("publish_data executor", () => {
     expect(session.calls).toHaveLength(1);
   });
 
+  it("returns a success descriptor after commit for arrays with hostile iterators", async () => {
+    const session = new StubSession();
+    const rows = [{ name: "Ada" }];
+    Object.defineProperty(rows, Symbol.iterator, {
+      value: (): never => {
+        throw new Error("hostile iterator");
+      },
+    });
+
+    await expect(
+      executePublishData({ path: at("rows"), value: rows, trusted: true }, session),
+    ).resolves.toMatchObject({
+      ok: true,
+      descriptor: { path: "rows", shape: "array", fields: ["name"], count: 1 },
+      stageRevision: 5,
+    });
+    expect(session.calls).toHaveLength(1);
+  });
+
   it("accepts a B-20-at-limit payload and rejects one character past without state changes", async () => {
     const accepted = new StubSession();
     const rejected = new StubSession();

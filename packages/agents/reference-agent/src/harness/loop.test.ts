@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
-  AgentEvent,
+  VisitorEvent,
   AuthorValidationResult,
   ComponentDocument,
   DataModel,
@@ -27,8 +27,10 @@ import {
   runReferenceAgentLoop,
   type ReferenceAgentLoopSummary,
 } from "./loop.js";
+import type { Summarizer } from "./summary.js";
+import type { ReferenceAgentTraceEvent } from "./trace.js";
 
-const EVENT: AgentEvent = {
+const EVENT: VisitorEvent = {
   eventId: "turn1",
   eventName: "submit",
   sourceNodeId: "cta",
@@ -65,6 +67,12 @@ class MutableSession implements FacetToolSession {
     this.stageRevision += 1;
     this.data = { ...this.data, [path.join(".")]: value };
     return { ok: true, chars: JSON.stringify(value).length };
+  }
+}
+
+class ThrowingSession extends MutableSession {
+  override async applyAuthorMutation(): Promise<AuthorValidationResult> {
+    throw new Error("store missing row");
   }
 }
 
@@ -106,6 +114,8 @@ async function collect(options: {
   readonly provider: ReferenceProvider;
   readonly session?: MutableSession;
   readonly budget?: ReferenceAgentBudget;
+  readonly trace?: (event: ReferenceAgentTraceEvent) => void;
+  readonly summarizer?: Summarizer;
 }): Promise<{
   readonly fragments: readonly TurnOutcome[];
   readonly summary: ReferenceAgentLoopSummary;
@@ -119,6 +129,8 @@ async function collect(options: {
     event: EVENT,
     session,
     budget: options.budget ?? normalizeBudget({ budget: { retryBackoffMs: 0 } }),
+    ...(options.trace === undefined ? {} : { trace: options.trace }),
+    ...(options.summarizer === undefined ? {} : { summarizer: options.summarizer }),
     now: () => 1_234,
   });
   while (true) {
@@ -204,8 +216,8 @@ describe("runReferenceAgentLoop", () => {
     expect(provider.toolsByAttempt[0]?.some((tool) => tool.name === "say")).toBe(false);
   });
 
-  it("emits the bounded safe fallback as the single conversation on provider failure", async () => {
-    const result = await collect({ provider: providerOf(new TypeError("fetch failed")) });
+  it("emits the bounded safe fallback as the single conversation on non-retryable provider failure", async () => {
+    const result = await collect({ provider: providerOf(new Error("configuration failed")) });
 
     expect(result.fragments).toHaveLength(1);
     expect(result.fragments[0]?.conversation?.text).toBe(REFERENCE_AGENT_FALLBACK_TEXT);
@@ -215,6 +227,217 @@ describe("runReferenceAgentLoop", () => {
       toolCallCount: 0,
       finalTextChars: REFERENCE_AGENT_FALLBACK_TEXT.length,
     });
+  });
+
+  it("turns malformed provider steps into a safe fallback instead of throwing", async () => {
+    const trace: ReferenceAgentTraceEvent[] = [];
+    const provider: ReferenceProvider = {
+      name: "openai",
+      model: "mock-model",
+      async run() {
+        return { text: undefined, toolCalls: [] } as unknown as ProviderStep;
+      },
+    };
+
+    const result = await collect({ provider, trace: (event) => trace.push(event) });
+
+    expect(result.fragments.at(-1)?.conversation?.text).toBe(REFERENCE_AGENT_FALLBACK_TEXT);
+    expect(result.summary).toMatchObject({
+      stopReason: "provider_error",
+      stepCount: 0,
+      toolCallCount: 0,
+    });
+    expect(trace).toContainEqual(
+      expect.objectContaining({
+        type: "turn_error",
+        reason: "malformed_response",
+        retryable: false,
+      }),
+    );
+  });
+
+  it("turns malformed provider tool calls into a safe fallback instead of executing them", async () => {
+    const trace: ReferenceAgentTraceEvent[] = [];
+    const session = new MutableSession();
+    const provider: ReferenceProvider = {
+      name: "openai",
+      model: "mock-model",
+      async run() {
+        return {
+          text: "tool",
+          toolCalls: [{ id: "c1", name: "render_page" }],
+        } as unknown as ProviderStep;
+      },
+    };
+
+    const result = await collect({ provider, session, trace: (event) => trace.push(event) });
+
+    expect(session.authoredMarkup).toEqual([]);
+    expect(result.fragments.at(-1)?.conversation?.text).toBe(REFERENCE_AGENT_FALLBACK_TEXT);
+    expect(result.summary).toMatchObject({
+      stopReason: "provider_error",
+      stepCount: 0,
+      toolCallCount: 0,
+    });
+    expect(trace).toContainEqual(
+      expect.objectContaining({
+        type: "turn_error",
+        reason: "malformed_response",
+        retryable: false,
+      }),
+    );
+  });
+
+  it("turns tool/session exceptions into a safe fallback instead of throwing", async () => {
+    const session = new ThrowingSession();
+    const trace: ReferenceAgentTraceEvent[] = [];
+
+    const result = await collect({
+      session,
+      provider: providerOf(
+        step("tool", [
+          call("c1", "render_page", {
+            markup: '<Screen name="home"><Text value="First" /></Screen>',
+          }),
+        ]),
+      ),
+      trace: (event) => trace.push(event),
+    });
+
+    expect(session.authoredMarkup).toEqual([]);
+    expect(result.fragments.at(-1)?.conversation?.text).toBe(REFERENCE_AGENT_FALLBACK_TEXT);
+    expect(result.summary).toMatchObject({
+      stopReason: "provider_error",
+      stepCount: 1,
+      toolCallCount: 0,
+    });
+    expect(trace).toContainEqual(
+      expect.objectContaining({
+        type: "turn_error",
+        reason: "tool_execution_error",
+        retryable: false,
+      }),
+    );
+  });
+
+  it("retries a retryable provider failure before returning the successful step", async () => {
+    const trace: ReferenceAgentTraceEvent[] = [];
+    const provider = providerOf(new TypeError("fetch failed"), step("Recovered."));
+    const result = await collect({
+      provider,
+      budget: normalizeBudget({ budget: { maxProviderRetries: 1, retryBackoffMs: 0 } }),
+      trace: (event) => trace.push(event),
+    });
+
+    expect(provider.turns).toHaveLength(2);
+    expect(trace.map((event) => event.type)).toContain("provider_retry");
+    expect(result.summary).toMatchObject({
+      stopReason: "provider_stop",
+      stepCount: 1,
+      toolCallCount: 0,
+      finalTextChars: "Recovered.".length,
+    });
+    expect(result.fragments.at(-1)?.conversation?.text).toBe("Recovered.");
+  });
+
+  it("returns retry_exhausted when retryable provider failures outlive the budget", async () => {
+    const provider = providerOf(new TypeError("fetch failed"));
+    const result = await collect({
+      provider,
+      budget: normalizeBudget({ budget: { maxProviderRetries: 1, retryBackoffMs: 0 } }),
+    });
+
+    expect(provider.turns).toHaveLength(2);
+    expect(result.fragments.at(-1)?.conversation?.text).toBe(REFERENCE_AGENT_FALLBACK_TEXT);
+    expect(result.summary).toMatchObject({
+      stopReason: "retry_exhausted",
+      stepCount: 0,
+      toolCallCount: 0,
+    });
+  });
+
+  it("rejects a provider step that exceeds the per-step tool-call budget", async () => {
+    const session = new MutableSession();
+    const result = await collect({
+      session,
+      provider: providerOf(
+        step("too many", [
+          call("c1", "read_screen", { screen: "home" }),
+          call("c2", "read_screen", { screen: "home" }),
+        ]),
+      ),
+      budget: normalizeBudget({ budget: { maxToolCallsPerStep: 1 } }),
+    });
+
+    expect(session.authoredMarkup).toEqual([]);
+    expect(result.summary).toMatchObject({
+      stopReason: "tool_call_limit",
+      stepCount: 1,
+      toolCallCount: 0,
+    });
+    expect(result.fragments.at(-1)?.conversation?.text).toBe(REFERENCE_AGENT_FALLBACK_TEXT);
+  });
+
+  it("bounds final assistant text by the reference-agent final-text budget", async () => {
+    const result = await collect({
+      provider: providerOf(step("abcdef")),
+      budget: normalizeBudget({ budget: { maxFinalTextChars: 3 } }),
+    });
+
+    expect(result.summary).toMatchObject({
+      stopReason: "provider_stop",
+      finalTextChars: 3,
+    });
+    expect(result.fragments.at(-1)?.conversation?.text).toBe("abc");
+  });
+
+  it("turns an empty provider stop into a safe empty_turn fallback", async () => {
+    const result = await collect({ provider: providerOf(step("")) });
+
+    expect(result.summary).toMatchObject({
+      stopReason: "empty_turn",
+      stepCount: 1,
+      toolCallCount: 0,
+    });
+    expect(result.fragments.at(-1)?.conversation?.text).toBe(REFERENCE_AGENT_FALLBACK_TEXT);
+  });
+
+  it("compacts older in-turn tool transcript groups before the next provider attempt", async () => {
+    const trace: ReferenceAgentTraceEvent[] = [];
+    const provider = providerOf(
+      step("render", [
+        call("c1", "render_page", {
+          markup: '<Screen name="home"><Text value="First" /></Screen>',
+        }),
+      ]),
+      step("read", [call("c2", "read_screen", { screen: "home" })]),
+      step("Done."),
+    );
+    const result = await collect({
+      provider,
+      trace: (event) => trace.push(event),
+      budget: normalizeBudget({
+        budget: {
+          maxContextChars: 600,
+          compactionTriggerRatio: 0.5,
+          compactionTargetRatio: 0.25,
+          minRecentStepsVerbatim: 1,
+          compactionCooldownSteps: 0,
+          retryBackoffMs: 0,
+        },
+      }),
+    });
+
+    const finalAttemptText = provider.turns
+      .at(-1)
+      ?.messages.map((message) => ("content" in message ? message.content : message.text))
+      .join("\n");
+    expect(trace.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["compaction_triggered", "compaction_done"]),
+    );
+    expect(finalAttemptText).toContain("[transcript compacted:");
+    expect(finalAttemptText).toContain("CURRENT FACET OBSERVATION");
+    expect(result.summary.stopReason).toBe("provider_stop");
   });
 });
 

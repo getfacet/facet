@@ -43,7 +43,7 @@ describe("@facet/quickstart barrel", () => {
 
 describe("quickstart guide brief", () => {
   it("does not advertise retired container node types", () => {
-    const retiredContainerTerms = /\b(?:bricks?|patterns?|presets?|emptyStates?)\b/i; // style-hard-cut: allowed-negative
+    const retiredContainerTerms = /\b(?:bricks?|patterns?|presets?|emptyStates?)\b/i; // component-hard-cut: allowed-negative
 
     expect(QUICKSTART_PAGE_BRIEF).not.toMatch(retiredContainerTerms);
     expect(QUICKSTART_PAGE_BRIEF).toMatch(/safe declarative\s+component markup/);
@@ -236,9 +236,9 @@ describe("runCli — quickstart brick default", () => {
 
       expect(globals.__FACET_INITIAL_STAGE__).toEqual(QUICKSTART_INITIAL_STAGE);
       expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(84);
-      expect(seedText).toHaveLength(12_481);
+      expect(seedText).toHaveLength(12_483);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "6047953818b3062387d1a189d4ba7106f6e200502060bcb7b3a8eb7ce13ee159",
+        "3990dcdd1b25f6d8e7e149060409e523d37bde2b2faaab9a530c969a2a57504d",
       );
     } finally {
       await running.close();

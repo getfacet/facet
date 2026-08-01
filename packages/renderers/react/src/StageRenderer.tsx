@@ -68,7 +68,7 @@
  */
 
 import { parseAction, themeToCssVars } from "@facet/core";
-import type { AgentEvent, ComponentDocument, ComponentNode, DataModel } from "@facet/core";
+import type { VisitorEvent, ComponentDocument, ComponentNode, DataModel } from "@facet/core";
 import type { ReactNode } from "react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -82,6 +82,7 @@ import { ModalFrame, ModalHost } from "./modal-frame.js";
 import { MountNode } from "./mount-node.js";
 import type { ModalMountRequest, MountContext } from "./mount-node.js";
 import { useScreenView } from "./nav.js";
+import { isRecord, readOwn } from "./safe-read.js";
 
 /**
  * The framework's reserved request list, read from the activating node's
@@ -166,35 +167,13 @@ export interface StageRendererProps {
      * `arg: undefined` a type error here, which is the compile-time half of the
      * rule the emission below keeps at runtime. The distinction is not
      * decorative — the transport stamps `eventId` and `stageRevision` onto this
-     * object and hands it to `validateAgentEvent`, which reads a present key as
+     * object and hands it to `validateVisitorEvent`, which reads a present key as
      * "an argument was sent" and rejects a non-string. An argument that was
      * never authored has to be absent, not empty.
      */
     readonly arg?: string;
-    readonly collect: AgentEvent["collect"];
+    readonly collect: VisitorEvent["collect"];
   }) => void;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Reads one own property without ever throwing, so a hostile getter is inert.
- *
- * The guard covers the whole read rather than the access alone: a revoked proxy
- * throws from `Array.isArray` inside the shape check, before any value is
- * touched.
- */
-function readOwn(container: unknown, key: string): unknown {
-  try {
-    if (!isRecord(container) || !Object.prototype.hasOwnProperty.call(container, key)) {
-      return undefined;
-    }
-    return container[key];
-  } catch {
-    return undefined;
-  }
 }
 
 /**

@@ -1,6 +1,7 @@
 import {
   BOUNDS,
   buildCatalogIndex,
+  dataValueEntryCount,
   measurePublishPayload,
   parseDataPath,
   serializeScreen,
@@ -107,26 +108,16 @@ export async function executeReadScreen(
 function readPath(data: FacetToolSession["data"], path: DataPath): unknown {
   let value: unknown = data;
   for (const segment of path) {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    if (typeof value !== "object" || value === null || safeIsArray(value)) {
       return undefined;
     }
-    const record = value as Readonly<Record<string, unknown>>;
-    if (!Object.hasOwn(record, segment)) {
+    const read = safeOwnValue(value, segment);
+    if (read.status !== "ok") {
       return undefined;
     }
-    value = record[segment];
+    value = read.value;
   }
   return value;
-}
-
-function countOf(value: unknown): number {
-  if (Array.isArray(value)) {
-    return value.length;
-  }
-  if (typeof value === "object" && value !== null) {
-    return Object.keys(value).length;
-  }
-  return value === undefined ? 0 : 1;
 }
 
 function envelope(
@@ -178,37 +169,44 @@ function clampArray(
   value: readonly unknown[],
   stageRevision: number,
 ): Extract<ReadDataResult, { readonly ok: true }> {
-  let limit = Math.min(value.length, BOUNDS.readDataResult.items);
+  const count = safeArrayLength(value);
+  let limit = Math.min(count, BOUNDS.readDataResult.items);
   while (limit >= 0) {
-    const candidate = envelope(
-      path,
-      value.slice(0, limit),
-      value.length,
-      limit < value.length,
-      stageRevision,
-    );
+    const prefix = safeArrayPrefix(value, limit);
+    if (prefix === undefined) {
+      limit -= 1;
+      continue;
+    }
+    const candidate = envelope(path, prefix, count, limit < count, stageRevision);
     if (fits(candidate)) {
       return candidate;
     }
     limit -= 1;
   }
-  return envelope(path, [], value.length, true, stageRevision);
+  return envelope(path, [], count, true, stageRevision);
 }
 
 function clampObject(
   path: string,
-  value: Readonly<Record<string, unknown>>,
+  value: object,
   stageRevision: number,
 ): Extract<ReadDataResult, { readonly ok: true }> {
-  const keys = Object.keys(value).sort();
+  const keys = safeKeys(value)?.sort();
+  if (keys === undefined) {
+    return envelope(path, {}, 0, true, stageRevision);
+  }
   const projected: Record<string, unknown> = {};
   for (const key of keys) {
-    const next = { ...projected, [key]: value[key] };
+    const read = safeOwnValue(value, key);
+    if (read.status !== "ok") {
+      continue;
+    }
+    const next = { ...projected, [key]: read.value };
     const candidate = envelope(path, next, keys.length, true, stageRevision);
     if (!fits(candidate)) {
       break;
     }
-    projected[key] = value[key];
+    projected[key] = read.value;
   }
   const result = envelope(
     path,
@@ -228,21 +226,74 @@ function boundedValue(
   if (value === undefined) {
     return envelope(path, null, 0, false, stageRevision);
   }
-  const count = countOf(value);
+  const count = dataValueEntryCount(value);
   const full = envelope(path, value, count, false, stageRevision);
-  if (fits(full) && (!Array.isArray(value) || value.length <= BOUNDS.readDataResult.items)) {
+  const isArray = safeIsArray(value);
+  if (fits(full) && (!isArray || safeArrayLength(value) <= BOUNDS.readDataResult.items)) {
     return full;
   }
   if (typeof value === "string") {
     return clampString(path, value, count, stageRevision);
   }
-  if (Array.isArray(value)) {
+  if (isArray) {
     return clampArray(path, value, stageRevision);
   }
   if (typeof value === "object" && value !== null) {
-    return clampObject(path, value as Readonly<Record<string, unknown>>, stageRevision);
+    return clampObject(path, value, stageRevision);
   }
   return envelope(path, null, count, true, stageRevision);
+}
+
+type SafeOwnValue =
+  | { readonly status: "ok"; readonly value: unknown }
+  | { readonly status: "missing" }
+  | { readonly status: "unsafe" };
+
+function safeIsArray(value: unknown): value is readonly unknown[] {
+  try {
+    return Array.isArray(value);
+  } catch {
+    return false;
+  }
+}
+
+function safeArrayLength(value: readonly unknown[]): number {
+  try {
+    return Number.isSafeInteger(value.length) && value.length > 0 ? value.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function safeArrayPrefix(value: readonly unknown[], limit: number): readonly unknown[] | undefined {
+  const out: unknown[] = [];
+  for (let index = 0; index < limit; index += 1) {
+    try {
+      out.push(value[index]);
+    } catch {
+      return undefined;
+    }
+  }
+  return out;
+}
+
+function safeKeys(value: object): string[] | undefined {
+  try {
+    return Object.keys(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function safeOwnValue(record: object, key: string): SafeOwnValue {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(record, key);
+    if (descriptor === undefined) return { status: "missing" };
+    if (!("value" in descriptor)) return { status: "unsafe" };
+    return { status: "ok", value: descriptor.value };
+  } catch {
+    return { status: "unsafe" };
+  }
 }
 
 export async function executeReadData(

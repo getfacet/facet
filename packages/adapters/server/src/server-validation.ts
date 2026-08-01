@@ -1,11 +1,11 @@
 import type { IncomingMessage } from "node:http";
 import {
   deriveMessageId,
-  validateAgentEvent,
+  validateVisitorEvent,
   validateTurnOutcome,
   validateVisitorText,
 } from "@facet/core";
-import type { AgentControlFrame, AgentEvent, ConversationMessage } from "@facet/core";
+import type { AgentControlFrame, VisitorEvent, ConversationMessage } from "@facet/core";
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -49,10 +49,10 @@ function readSessionKey(value: Record<string, unknown>): string | undefined {
 
 export function normalizeEventBody(
   body: unknown,
-): { readonly sessionKey: string; readonly event: AgentEvent } | undefined {
+): { readonly sessionKey: string; readonly event: VisitorEvent } | undefined {
   if (!isRecord(body)) return undefined;
   const sessionKey = readSessionKey(body);
-  const event = validateAgentEvent(body["event"]);
+  const event = validateVisitorEvent(body["event"]);
   return sessionKey === undefined || !event.ok
     ? undefined
     : Object.freeze({ sessionKey, event: event.event });
@@ -64,7 +64,7 @@ export function normalizeMessageBody(
 ):
   | {
       readonly sessionKey: string;
-      readonly event: AgentEvent;
+      readonly event: VisitorEvent;
       readonly visitorMessage: ConversationMessage;
     }
   | undefined {
@@ -84,7 +84,7 @@ export function normalizeMessageBody(
   ) {
     return undefined;
   }
-  const eventResult = validateAgentEvent({
+  const eventResult = validateVisitorEvent({
     eventId: messageId,
     eventName: "message",
     sourceNodeId: "visitor",
@@ -111,6 +111,12 @@ export function isControlBody(body: unknown): body is AgentControlFrame {
   if (!isRecord(body)) return false;
   if (body["kind"] !== "agent_control") return false;
   if (typeof body["eventId"] !== "string" || body["eventId"].length === 0) return false;
+  if (
+    body["correlationId"] !== undefined &&
+    (typeof body["correlationId"] !== "string" || body["correlationId"].length === 0)
+  ) {
+    return false;
+  }
   const validated = validateTurnOutcome(body["outcome"]);
   return (
     validated.ok &&

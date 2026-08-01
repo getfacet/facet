@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import type {
-  AgentEvent,
+  VisitorEvent,
   AuthorValidationResult,
   ComponentDocument,
   DataPath,
@@ -65,7 +65,7 @@ class FailingSession extends StubSession {
   }
 }
 
-const EVENT: AgentEvent = Object.freeze({
+const EVENT: VisitorEvent = Object.freeze({
   eventId: "event1",
   eventName: "refresh",
   sourceNodeId: "n1",

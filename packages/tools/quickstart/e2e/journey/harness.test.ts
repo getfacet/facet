@@ -16,11 +16,15 @@
  * binds it), proving no orphaned server keeps the port.
  */
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createStubAgent } from "@facet/reference-agent";
 import { bootJourney, resolveJourneyProvider, runBinSmoke } from "./harness.js";
+import { journeyOptionsFromArgs, runJourney, serializeJourneyResult } from "./journey.js";
 
 /** Occupy a loopback port so a boot attempt on it collides (EADDRINUSE). */
 async function occupyPort(): Promise<{ port: number; release: () => Promise<void> }> {
@@ -69,8 +73,69 @@ describe("journey harness", () => {
     const source = readFileSync(new URL("./journey.ts", import.meta.url), "utf8");
     expect(source).toContain('textarea[aria-label="Message"]');
     expect(source).toContain('[data-facet-stage] button[type="button"]');
+    expect(source).toContain("--session-key");
+    expect(source).not.toContain("--visitor");
     expect(source).not.toContain("input:not([data-facet-field-id])");
     expect(source).not.toContain('div[role="button"]');
+  });
+
+  it("runJourney preserves the supplied sessionKey result contract", async () => {
+    const outDir = await mkdtemp(join(tmpdir(), "facet-journey-contract-"));
+    const initScripts: unknown[] = [];
+    let visitedUrl = "";
+    try {
+      const page = {
+        async addInitScript(_fn: unknown, seed: unknown): Promise<void> {
+          initScripts.push(seed);
+        },
+        async goto(url: string): Promise<void> {
+          visitedUrl = url;
+        },
+        async screenshot(options: { readonly path: string }): Promise<void> {
+          await writeFile(options.path, "png");
+        },
+      } as unknown as Parameters<typeof runJourney>[0];
+
+      const result = await runJourney(page, {
+        fixture: "broken",
+        outDir,
+        sessionKey: "contract-session",
+      });
+
+      expect(result.sessionKey).toBe("contract-session");
+      expect(Object.prototype.hasOwnProperty.call(result, "visitorId")).toBe(false);
+      expect(initScripts).toEqual([{ key: "facet:visitor", id: "contract-session" }]);
+      expect(visitedUrl).toContain("/fixtures/broken.html");
+      const info = await stat(result.screenshots[0] ?? "");
+      expect(info.size).toBeGreaterThan(0);
+    } finally {
+      await rm(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it("journey CLI parsing and result JSON use sessionKey without visitorId", () => {
+    const parsed = journeyOptionsFromArgs([
+      "--fixture",
+      "broken",
+      "--out",
+      "/tmp/facet-journey",
+      "--session-key",
+      "cli-session",
+    ]);
+
+    expect(parsed).toEqual({
+      ok: true,
+      options: { fixture: "broken", outDir: "/tmp/facet-journey", sessionKey: "cli-session" },
+    });
+    if (!parsed.ok) throw new Error("expected valid journey cli options");
+    const raw = serializeJourneyResult({
+      sessionKey: parsed.options.sessionKey ?? "",
+      screenshots: [],
+      steps: [],
+    });
+    const json = JSON.parse(raw) as Record<string, unknown>;
+    expect(json["sessionKey"]).toBe("cli-session");
+    expect(Object.prototype.hasOwnProperty.call(json, "visitorId")).toBe(false);
   });
 
   it("bin smoke runs the provider-backed cli and reports a result", async () => {

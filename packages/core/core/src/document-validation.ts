@@ -99,6 +99,7 @@
  */
 
 import { parseAction } from "./actions.js";
+import { parseAuthoredNumber } from "./author-scalar.js";
 import { BOUNDS } from "./bounds.js";
 import { buildCatalogIndex, type FacetCatalog } from "./catalog.js";
 import type { ComponentSpec, PropSchema } from "./component-spec.js";
@@ -199,13 +200,6 @@ const SCREEN_TAG = "Screen";
  * is by definition somewhere else, and is refused as misplaced.
  */
 const STRUCTURAL_TAGS: readonly string[] = [ENVELOPE_TAG, SCREEN_TAG];
-
-/**
- * A decimal literal with no exponent, no leading `+`, no leading zero run and no
- * hexadecimal form — one spelling per value, so the same number is always
- * written the same way and read the same way.
- */
-const NUMERIC_LITERAL = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
 
 const BOOLEAN_LITERALS: readonly string[] = ["true", "false"];
 
@@ -1038,16 +1032,10 @@ function checkNumber(
 ): AuthorError | null {
   const invalid = (cause: string, repair: string): AuthorError =>
     authorError({ code: "invalid-value", location, cause, repair });
-  if (!NUMERIC_LITERAL.test(text)) {
+  const amount = parseAuthoredNumber(text);
+  if (amount === null) {
     return invalid(
       `\`${spec.tag}.${prop.name}\` is a number; \`${excerpt(text)}\` is not one.`,
-      `Write a plain decimal, such as \`${prop.name}="42"\`.`,
-    );
-  }
-  const amount = Number(text);
-  if (!Number.isFinite(amount)) {
-    return invalid(
-      `\`${spec.tag}.${prop.name}\` is a number; \`${excerpt(text)}\` is not a finite one.`,
       `Write a plain decimal, such as \`${prop.name}="42"\`.`,
     );
   }

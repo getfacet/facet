@@ -144,13 +144,8 @@ describe("server rehydrate", () => {
     const serverSources = ["server-rehydrate.ts", "frame-log.ts", "late.ts", "server.ts"].map(
       (name) => readFileSync(new URL(`./${name}`, import.meta.url), "utf8"),
     );
-    const runtimeOutbox = readFileSync(
-      new URL("../../../core/runtime/src/outbox.ts", import.meta.url),
-      "utf8",
-    );
 
-    expect(serverSources.join("\n")).not.toContain('kind: "reset"'); // style-hard-cut: allowed-negative
+    expect(serverSources.join("\n")).not.toContain('kind: "reset"'); // component-hard-cut: allowed-negative
     expect(serverSources.join("\n")).not.toContain("messageSeq");
-    expect(runtimeOutbox).toContain("messageSeq");
   });
 });

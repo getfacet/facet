@@ -11,6 +11,10 @@ const BARREL_EXPORT_CONTRACT = [
   "persistScreen",
   "loadPersistedScreen",
 ] as const;
+const BARREL_SOURCE_EXPORT_CONTRACT = [
+  ...BARREL_EXPORT_CONTRACT,
+  "SseVisitorMessageInput",
+] as const;
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), "utf8");
@@ -43,8 +47,8 @@ describe("@facet/client barrel", () => {
     const text = source("./index.ts");
 
     expect(text).not.toMatch(/export\s+\*/u);
-    expect(exportedNames(text)).toEqual([...BARREL_EXPORT_CONTRACT].sort());
-    expect(text).not.toMatch(/\b(withView|persistView|loadPersistedView|ViewSnapshot)\b/u); // style-hard-cut: allowed-negative
+    expect(exportedNames(text)).toEqual([...BARREL_SOURCE_EXPORT_CONTRACT].sort());
+    expect(text).not.toMatch(/\b(withView|persistView|loadPersistedView|ViewSnapshot)\b/u); // component-hard-cut: allowed-negative
     expect(Object.keys(client).sort()).toEqual([...BARREL_EXPORT_CONTRACT].sort());
   });
 

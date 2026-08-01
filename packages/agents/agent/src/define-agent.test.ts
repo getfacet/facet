@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { validateCatalog, validateTheme } from "@facet/core";
 import type {
-  AgentEvent,
+  VisitorEvent,
   AuthorValidationResult,
   CasOutcome,
   ComponentDocument,
@@ -16,8 +16,6 @@ import type {
   ServerFrame,
   StageRevision,
 } from "@facet/core";
-import { describe, expect, it } from "vitest";
-
 import {
   bootstrapSession,
   FacetRuntime,
@@ -25,7 +23,8 @@ import {
   MemoryStageStore,
   type Session,
   type StageStore,
-} from "../../../core/runtime/src/index.js";
+} from "@facet/runtime";
+import { describe, expect, it } from "vitest";
 import { defineAgent, defineStreamingAgent } from "./define-agent.js";
 
 const STAGE_SOURCE = readFileSync(new URL("./stage.ts", import.meta.url), "utf8");
@@ -99,7 +98,7 @@ function validTheme(): FacetTheme {
   return result.theme;
 }
 
-const event: AgentEvent = Object.freeze({
+const event: VisitorEvent = Object.freeze({
   eventId: "event1",
   eventName: "submit",
   sourceNodeId: "button",

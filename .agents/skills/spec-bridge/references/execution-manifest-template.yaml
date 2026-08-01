@@ -13,7 +13,7 @@ shared_preflight:
     owner: "main-agent"
     verification: "run the three commands"
   - concern: "runtime"
-    requirement: "[e.g. playground buildable; local server/bridge if the WU needs a live check]"
+    requirement: "[e.g. quickstart buildable; local quickstart/transport if the WU needs a live check]"
     owner: "main-agent"
     verification: "[command]"
 

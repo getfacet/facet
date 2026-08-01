@@ -2,7 +2,7 @@
  * WU-3 (Decision C) — the FIXED Playwright journey the /live-test "Live Journey"
  * tier drives against a booted quickstart server, plus the DOM-settle wait
  * (OQ-1), the `--fixture broken` negative mode, and a `main()` CLI the workflow's
- * visitor agents run via shell.
+ * session agents run via shell.
  *
  * The journey is 4 fixed steps capturing ≥4 screenshots into `opts.outDir`:
  *   1. load               → screenshot.
@@ -10,19 +10,20 @@
  *   3. chat "restyle cat"  → settle → screenshot.
  *   4. click the most prominent pressable → settle → screenshot.
  * The step messages are configurable via `opts.messages` (defaults = the real
- * prompts a real LLM answers in WU-4). Each run seeds a FRESH `visitorId` so
- * three visitors are isolated (per-visitor).
+ * prompts a real LLM answers in WU-4). Each run seeds a FRESH browser session
+ * key so three visitors are isolated (per-visitor).
  *
  * OQ-1 — DOM-settle, NOT a fixed sleep: after each send/click, `settleDom` polls
- * the agent-drawn STAGE fingerprint (not `#root`, which includes the ChatDock)
- * and resolves when it is unchanged across a quiet window (default 800ms) AFTER a
- * real change, OR a bounded max timeout (default 45s, a real LLM paint takes
- * seconds) elapses. A timeout is NOT a harness failure: the shot is captured
- * anyway and the `{changed, timedOut}` result is recorded — a visitor whose UI
- * never updated is a judge signal, never a throw.
+ * the agent-drawn STAGE fingerprint (not `#root`, which includes the
+ * conversation panel) and resolves when it is unchanged across a quiet window
+ * (default 800ms) AFTER a real change, OR a bounded max timeout (default 45s, a
+ * real LLM paint takes seconds) elapses. A timeout is NOT a harness failure: the
+ * shot is captured anyway and the `{changed, timedOut}` result is recorded — a
+ * visitor whose UI never updated is a judge signal, never a throw.
  *
  * No-secrets: screenshots capture the rendered page only; the page never renders
- * the provider key, and the ephemeral `visitorId` is the only identifier.
+ * the provider key, and the ephemeral browser session key is the only
+ * identifier.
  *
  * Only exercised under the e2e vitest config / the workflow — never the root
  * `pnpm test` glob (which is `packages/**\/src/**`).
@@ -32,7 +33,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium, type Page } from "playwright";
 
-/** The visitor-facing localStorage key the served page reads its id from. */
+/** The localStorage key the served page reads its anonymous session key from. */
 const VISITOR_STORAGE_KEY = "facet:visitor";
 
 /** Chat prompts for steps 2 and 3 — overridable, defaulting to the real prompts. */
@@ -86,8 +87,8 @@ export interface JourneyOptions {
   readonly url?: string;
   /** Directory the screenshots are written into (created if absent). */
   readonly outDir: string;
-  /** A fresh id per run (per-visitor isolation); auto-generated when omitted. */
-  readonly visitorId?: string;
+  /** A fresh session key per run (per-visitor isolation); auto-generated when omitted. */
+  readonly sessionKey?: string;
   /** `"broken"` loads the committed negative fixture instead of the server. */
   readonly fixture?: "broken";
   /** Overrides for the step 2/3 chat prompts. */
@@ -114,8 +115,8 @@ export interface JourneyStepResult {
 
 /** The full journey outcome. */
 export interface JourneyResult {
-  /** The fresh visitor id this run used. */
-  readonly visitorId: string;
+  /** The fresh browser session key this run used. */
+  readonly sessionKey: string;
   /** Absolute screenshot paths, in capture order (≥4 in normal mode). */
   readonly screenshots: readonly string[];
   /** Per-step results. */
@@ -142,11 +143,11 @@ function sleep(ms: number): Promise<void> {
  */
 function domFingerprint(page: Page): Promise<string> {
   return page.evaluate(() => {
-    // Fingerprint the agent-drawn STAGE (not #root) so a ChatDock change — the
-    // echoed "You: …" line — is NOT mistaken for a page render. An empty or
-    // not-yet-mounted stage ⇒ "0:0", so the shell mounting an empty stage is not
-    // a "change"; only a real paint/edit is. Fall back to #root if the marker is
-    // absent (older bundle).
+    // Fingerprint the agent-drawn STAGE (not #root) so a conversation-panel
+    // echo is NOT mistaken for a page render. An empty or not-yet-mounted stage
+    // ⇒ "0:0", so the shell mounting an empty stage is not a "change"; only a
+    // real paint/edit is. Fall back to #root if the marker is absent (older
+    // bundle).
     const stage = document.querySelector("[data-facet-stage]") ?? document.getElementById("root");
     if (stage === null) return "0:0";
     return `${String(stage.innerHTML.length)}:${String(stage.querySelectorAll("*").length)}`;
@@ -203,11 +204,12 @@ async function capture(page: Page, outDir: string, index: number, label: string)
   return path;
 }
 
-/** Type a message into the ChatDock and send it. */
+/** Type a message into the conversation panel and send it. */
 async function sendChat(page: Page, message: string): Promise<void> {
   // The current quickstart shell exposes a textarea labelled "Message"; stage
-  // fields live inside [data-facet-stage], so this selector targets the dock
-  // directly rather than inferring it from the absence of an old field stamp.
+  // fields live inside [data-facet-stage], so this selector targets the
+  // conversation panel directly rather than inferring it from the absence of an
+  // old field stamp.
   const input = page.locator('textarea[aria-label="Message"]').first();
   await input.fill(message);
   await input.press("Enter");
@@ -235,7 +237,7 @@ async function chatStep(
 
 /**
  * Click the most prominent default-registry pressable: the first stage-local
- * `<button type="button">`, never the ChatDock submit button. A
+ * `<button type="button">`, never the conversation-panel submit button. A
  * missing/undispatched press is RECORDED (`clicked:false`), never thrown — a
  * page with no pressable is a judge signal.
  */
@@ -275,10 +277,10 @@ function brokenFixtureUrl(): string {
 export async function runJourney(page: Page, opts: JourneyOptions): Promise<JourneyResult> {
   await mkdir(opts.outDir, { recursive: true });
   const settle = opts.settle ?? {};
-  const visitorId =
-    opts.visitorId ?? `journey-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`;
+  const sessionKey =
+    opts.sessionKey ?? `journey-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`;
 
-  // Seed the visitor id BEFORE any page script runs so the served page adopts it
+  // Seed the session key BEFORE any page script runs so the served page adopts it
   // (fresh per run ⇒ per-visitor isolation). Storage can be blocked; ignore.
   await page.addInitScript(
     (seed: { key: string; id: string }) => {
@@ -288,7 +290,7 @@ export async function runJourney(page: Page, opts: JourneyOptions): Promise<Jour
         // Storage unavailable — the page falls back to its own random id.
       }
     },
-    { key: VISITOR_STORAGE_KEY, id: visitorId },
+    { key: VISITOR_STORAGE_KEY, id: sessionKey },
   );
 
   // Negative mode (DC-002): capture the deterministic known-bad page for the
@@ -297,7 +299,7 @@ export async function runJourney(page: Page, opts: JourneyOptions): Promise<Jour
     await page.goto(brokenFixtureUrl(), { waitUntil: "load" });
     const screenshot = await capture(page, opts.outDir, 1, "broken");
     return {
-      visitorId,
+      sessionKey,
       screenshots: [screenshot],
       steps: [{ index: 1, label: "broken", screenshot }],
       fixture: "broken",
@@ -338,7 +340,7 @@ export async function runJourney(page: Page, opts: JourneyOptions): Promise<Jour
   // Step 4 — click the most prominent pressable, settle, shot.
   steps.push(await clickStep(page, 4, "click", opts.outDir, settle));
 
-  return { visitorId, screenshots: steps.map((step) => step.screenshot), steps };
+  return { sessionKey, screenshots: steps.map((step) => step.screenshot), steps };
 }
 
 /** Parse `--flag value` pairs (and the bare `--fixture broken` form). */
@@ -359,23 +361,47 @@ function parseArgs(argv: readonly string[]): Record<string, string> {
   return out;
 }
 
+export type JourneyCliOptionsResult =
+  | { readonly ok: true; readonly options: JourneyOptions }
+  | { readonly ok: false; readonly message: string };
+
+export function journeyOptionsFromArgs(argv: readonly string[]): JourneyCliOptionsResult {
+  const args = parseArgs(argv);
+  const outDir = args["out"] ?? args["outDir"];
+  if (outDir === undefined) {
+    return { ok: false, message: "--out <dir> is required" };
+  }
+  const fixture = args["fixture"] === "broken" ? ("broken" as const) : undefined;
+  if (fixture === undefined && (args["url"] === undefined || args["url"] === "")) {
+    return { ok: false, message: "--url <url> is required in normal mode" };
+  }
+
+  return {
+    ok: true,
+    options: {
+      outDir,
+      ...(args["url"] !== undefined ? { url: args["url"] } : {}),
+      ...(args["session-key"] !== undefined ? { sessionKey: args["session-key"] } : {}),
+      ...(fixture !== undefined ? { fixture } : {}),
+    },
+  };
+}
+
+export function serializeJourneyResult(result: JourneyResult): string {
+  return `${JSON.stringify(result, null, 2)}\n`;
+}
+
 /**
- * CLI entry (`node journey.js --url <url> --visitor <id> --out <dir>
+ * CLI entry (`node journey.js --url <url> --session-key <key> --out <dir>
  * [--fixture broken]`) — launches its OWN headless chromium + a fresh context
  * (per-visitor isolation), runs the journey, prints the result JSON, and exits
  * 0 on success / 1 on failure. This is the ONLY I/O beyond the page drive;
  * importing the module runs nothing (guarded below).
  */
 async function main(argv: readonly string[]): Promise<void> {
-  const args = parseArgs(argv);
-  const outDir = args["out"] ?? args["outDir"];
-  if (outDir === undefined) {
-    process.stderr.write("journey: --out <dir> is required\n");
-    process.exit(1);
-  }
-  const fixture = args["fixture"] === "broken" ? ("broken" as const) : undefined;
-  if (fixture === undefined && (args["url"] === undefined || args["url"] === "")) {
-    process.stderr.write("journey: --url <url> is required in normal mode\n");
+  const parsed = journeyOptionsFromArgs(argv);
+  if (!parsed.ok) {
+    process.stderr.write(`journey: ${parsed.message}\n`);
     process.exit(1);
   }
 
@@ -384,14 +410,8 @@ async function main(argv: readonly string[]): Promise<void> {
     const context = await browser.newContext();
     try {
       const page = await context.newPage();
-      const opts: JourneyOptions = {
-        outDir,
-        ...(args["url"] !== undefined ? { url: args["url"] } : {}),
-        ...(args["visitor"] !== undefined ? { visitorId: args["visitor"] } : {}),
-        ...(fixture !== undefined ? { fixture } : {}),
-      };
-      const result = await runJourney(page, opts);
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      const result = await runJourney(page, parsed.options);
+      process.stdout.write(serializeJourneyResult(result));
       // Return (do NOT process.exit) so both finally blocks run and stdout flushes
       // fully — the workflow's visitor agent reads this JSON for the shot paths, so
       // a synchronous exit could truncate a piped write and skip browser teardown.

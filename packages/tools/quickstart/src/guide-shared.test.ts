@@ -13,7 +13,7 @@ describe("quickstart guide markup helpers", () => {
       expect(markup).toContain(`label="${item.label}"`);
       expect(markup).toContain(`action="nav:${item.to}"`);
     }
-    expect(markup).not.toContain("local:"); // style-hard-cut: allowed-negative
+    expect(markup).not.toContain("local:"); // component-hard-cut: allowed-negative
   });
 
   it("escapes card text before embedding it in markup attributes", () => {

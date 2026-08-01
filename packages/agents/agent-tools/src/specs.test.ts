@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { FACET_TOOL_NAMES, FACET_TOOL_SPECS } from "./specs.js";
+import { FACET_TOOL_NAMES, FACET_TOOL_SPECS, facetToolInputKeys } from "./specs.js";
 
 const EXPECTED_TOOL_NAMES = [
   "render_page",
@@ -26,10 +26,10 @@ describe("FACET_TOOL_SPECS", () => {
     expect(FACET_TOOL_SPECS.map((spec) => spec.name)).toEqual(EXPECTED_TOOL_NAMES);
     expect(FACET_TOOL_SPECS).toHaveLength(9);
     expect(FACET_TOOL_NAMES).not.toContain("say");
-    expect(FACET_TOOL_NAMES).not.toContain("append_node"); // style-hard-cut: allowed-negative
-    expect(FACET_TOOL_NAMES).not.toContain("set_node"); // style-hard-cut: allowed-negative
-    expect(FACET_TOOL_NAMES).not.toContain("remove_node"); // style-hard-cut: allowed-negative
-    expect(FACET_TOOL_NAMES).not.toContain("inspect_stage"); // style-hard-cut: allowed-negative
+    expect(FACET_TOOL_NAMES).not.toContain("append_node"); // component-hard-cut: allowed-negative
+    expect(FACET_TOOL_NAMES).not.toContain("set_node"); // component-hard-cut: allowed-negative
+    expect(FACET_TOOL_NAMES).not.toContain("remove_node"); // component-hard-cut: allowed-negative
+    expect(FACET_TOOL_NAMES).not.toContain("inspect_stage"); // component-hard-cut: allowed-negative
   });
 
   it("asserts render_page keeps its stable name but accepts markup, not tree", () => {
@@ -45,6 +45,12 @@ describe("FACET_TOOL_SPECS", () => {
       additionalProperties: false,
     });
     expect(JSON.stringify(renderPage?.inputSchema)).not.toContain("tree");
+  });
+
+  it("derives executor-facing input keys from the canonical tool specs", () => {
+    expect(facetToolInputKeys("render_page")).toEqual(["markup"]);
+    expect(facetToolInputKeys("insert_subtree")).toEqual(["targetId", "markup"]);
+    expect(facetToolInputKeys("publish_data")).toEqual(["path", "value"]);
   });
 
   it("does not expose raw JSON Patch or a conversation-producing tool", () => {

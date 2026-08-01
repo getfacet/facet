@@ -53,7 +53,7 @@ The browser side uses:
 
 - `GET /stream?sessionKey=...` for ordered `ServerFrame` delivery and reconnect
   replay;
-- `POST /event` for validated `AgentEvent` payloads; and
+- `POST /event` for validated `VisitorEvent` payloads; and
 - `POST /message` for visitor conversation text.
 
 Frames carry either a stage-rooted patch batch with a server-authoritative
@@ -65,8 +65,11 @@ and conversation history.
 
 The external-agent side uses `GET /agent/stream`, `POST /agent/control`, and
 `POST /agent/heartbeat`. The server correlates each `AgentControlFrame` to the
-original event id, rejects invalid or non-authorized outcomes, and emits a safe
-assistant message if the remote agent fails.
+original event id and, when needed, an opaque transport correlation id. It also
+sends a bounded turn timeout so an external client can abort provider work before
+the server settles the pending turn. The server rejects stale, invalid, or
+non-authorized outcomes and emits a safe assistant message if the remote agent
+fails.
 
 ## Trust model
 

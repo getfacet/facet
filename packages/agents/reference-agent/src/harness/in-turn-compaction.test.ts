@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
-  AgentEvent,
+  VisitorEvent,
   AuthorValidationResult,
   ComponentDocument,
   FacetCatalog,
@@ -13,7 +13,7 @@ import { normalizeBudget } from "./budget.js";
 import { compactInTurnTranscript, shouldCompactInTurn } from "./in-turn-compaction.js";
 import type { TurnMessage } from "../provider.js";
 
-const EVENT: AgentEvent = {
+const EVENT: VisitorEvent = {
   eventId: "turn1",
   eventName: "submit",
   sourceNodeId: "cta",

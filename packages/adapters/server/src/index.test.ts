@@ -46,7 +46,7 @@ describe("@facet/server barrel", () => {
 
     expect(text).not.toMatch(/export\s+\*/u);
     expect(exportedNames(text)).toEqual([...BARREL_EXPORT_CONTRACT].sort());
-    expect(text).not.toMatch(/\b(say|reset|ViewSnapshot)\b/u); // style-hard-cut: allowed-negative
+    expect(text).not.toMatch(/\b(say|reset|ViewSnapshot)\b/u); // component-hard-cut: allowed-negative
     expect(Object.keys(server).sort()).toEqual([...VALUE_EXPORTS].sort());
   });
 });

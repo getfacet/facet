@@ -2,14 +2,13 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentEvent, ConversationMessage, ServerFrame } from "@facet/core";
+import type { VisitorEvent, ConversationMessage, ServerFrame } from "@facet/core";
 
 import { LocalTransport } from "./local-transport.js";
 
 const sessionKey = "session1";
-const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-function event(overrides: Partial<AgentEvent> = {}): AgentEvent {
+function event(overrides: Partial<VisitorEvent> = {}): VisitorEvent {
   return Object.freeze({
     eventId: "event1",
     eventName: "submit",
@@ -50,8 +49,7 @@ describe("LocalTransport", () => {
     const received: ServerFrame[] = [];
     transport.subscribe((frame) => received.push(frame));
 
-    transport.send(event());
-    await flush();
+    await transport.send(event());
 
     expect(runtime.handle).toHaveBeenCalledWith({ sessionKey, event: event() });
     expect(received).toEqual(frames);
@@ -67,8 +65,7 @@ describe("LocalTransport", () => {
     transport.subscribe((frame) => first.push(frame));
     transport.subscribe((frame) => second.push(frame));
 
-    transport.send(event());
-    await flush();
+    await transport.send(event());
 
     expect(first).toEqual([conversation()]);
     expect(second).toEqual([conversation()]);
@@ -83,8 +80,7 @@ describe("LocalTransport", () => {
     const received: ServerFrame[] = [];
     const unsubscribe = transport.subscribe((frame) => received.push(frame));
     unsubscribe();
-    transport.send(event());
-    await flush();
+    await expect(transport.send(event())).rejects.toThrow("boom");
 
     expect(received).toEqual([]);
     expect(errorSpy).toHaveBeenCalledWith("[facet] local transport failed:", expect.any(Error));

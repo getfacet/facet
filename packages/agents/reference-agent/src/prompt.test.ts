@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { FACET_PROMPT_KIT, FACET_TOOL_SPECS } from "@facet/agent-tools";
 import type {
-  AgentEvent,
+  VisitorEvent,
   AuthorValidationResult,
   ComponentDocument,
   DataModel,
@@ -130,7 +130,7 @@ function session(
   };
 }
 
-function event(overrides: Partial<AgentEvent> = {}): AgentEvent {
+function event(overrides: Partial<VisitorEvent> = {}): VisitorEvent {
   return {
     eventId: "turn1",
     eventName: "submit",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
-  AgentEvent,
+  VisitorEvent,
   AuthorValidationResult,
   FacetCatalog,
   FacetToolSession,
@@ -13,7 +13,7 @@ import { normalizeBudget } from "./budget.js";
 import type { ReferenceAgentDiagnosticEvent } from "./diagnostic-observer.js";
 import { runReferenceAgentLoop } from "./loop.js";
 
-const EVENT: AgentEvent = {
+const EVENT: VisitorEvent = {
   eventId: "turn1",
   eventName: "submit",
   sourceNodeId: "cta",

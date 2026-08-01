@@ -48,7 +48,7 @@ function summarize(result: ActionResult): string {
 describe("parseAction — the public result surface", () => {
   it("lets a consumer hold, narrow and re-emit a result under its declared type", () => {
     const accepted: ActionResult = parseAction("nav:details", DOCUMENT);
-    const rejected: ActionResult = parseAction("local:toggle", DOCUMENT); // style-hard-cut: allowed-negative
+    const rejected: ActionResult = parseAction("local:toggle", DOCUMENT); // component-hard-cut: allowed-negative
 
     expect(summarize(accepted)).toBe("ok:nav");
     expect(summarize(rejected)).toBe("no:unknown_scheme");
@@ -87,14 +87,14 @@ describe("parseAction — the accepted vocabulary", () => {
   const accepted: readonly (readonly [string, string, unknown])[] = [
     ["a nav to the entry screen", "nav:home", { kind: "nav", screen: "home" }],
     ["a nav to another declared screen", "nav:details", { kind: "nav", screen: "details" }],
-    ["an agent event", "agent:refresh", { kind: "agent", event: "refresh" }],
+    ["a visitor event", "agent:refresh", { kind: "agent", event: "refresh" }],
     [
-      "an agent event using every identifier character",
+      "a visitor event using every identifier character",
       "agent:refresh_now-2",
       { kind: "agent", event: "refresh_now-2" },
     ],
     [
-      "an agent event at the B-06 identifier limit",
+      "a visitor event at the B-06 identifier limit",
       `agent:${LONGEST_IDENTIFIER}`,
       { kind: "agent", event: LONGEST_IDENTIFIER },
     ],
@@ -112,8 +112,8 @@ describe("parseAction — the accepted vocabulary", () => {
 
 describe("parseAction — the closed rejection table", () => {
   const rejected: readonly (readonly [string, unknown, string])[] = [
-    ["a local action", "local:toggle", "unknown_scheme"], // style-hard-cut: allowed-negative
-    ["a local action with no target", "local:", "unknown_scheme"], // style-hard-cut: allowed-negative
+    ["a local action", "local:toggle", "unknown_scheme"], // component-hard-cut: allowed-negative
+    ["a local action with no target", "local:", "unknown_scheme"], // component-hard-cut: allowed-negative
     ["a data reference, which reads and never acts", "data:sales.total", "unknown_scheme"],
     ["an invented scheme", "route:home", "unknown_scheme"],
     ["a scheme in the wrong case", "NAV:home", "unknown_scheme"],
@@ -121,7 +121,7 @@ describe("parseAction — the closed rejection table", () => {
     ["a nav to a screen this document does not declare", "nav:missing", "unknown_screen"],
     ["a nav whose case does not match a declared screen", "nav:Home", "unknown_screen"],
     ["a nav with no target", "nav:", "invalid_target"],
-    ["an agent event with no target", "agent:", "invalid_target"],
+    ["a visitor event with no target", "agent:", "invalid_target"],
     ["a target carrying a space", "nav:home page", "invalid_target"],
     ["a target carrying a second scheme separator", "agent:refresh:now", "invalid_target"],
     ["a target that is a data path", "agent:sales.total", "invalid_target"],
@@ -181,7 +181,7 @@ describe("parseAction — totality and determinism", () => {
 
   it("answers the same way twice for the same input", () => {
     expect(parseAction("nav:details", DOCUMENT)).toEqual(parseAction("nav:details", DOCUMENT));
-    expect(parseAction("local:toggle", DOCUMENT)).toEqual(parseAction("local:toggle", DOCUMENT)); // style-hard-cut: allowed-negative
+    expect(parseAction("local:toggle", DOCUMENT)).toEqual(parseAction("local:toggle", DOCUMENT)); // component-hard-cut: allowed-negative
   });
 
   /**

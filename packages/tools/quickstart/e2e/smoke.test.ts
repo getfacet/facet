@@ -15,7 +15,7 @@
  *   FAILURE, not a skip — pre-merge must exercise both adapters.
  */
 import { describe, expect, it } from "vitest";
-import type { AgentEvent, ComponentDocument } from "@facet/core";
+import type { VisitorEvent, ComponentDocument } from "@facet/core";
 import { createReferenceAgent, resolveProvider } from "@facet/reference-agent";
 import { MemorySink } from "@facet/runtime";
 import { startQuickstart, type RunningQuickstart } from "../src/index.js";
@@ -133,7 +133,7 @@ for (const { name, envVar } of PROVIDERS) {
         const sessionKey = `smoke-${name}`;
         const stream = await fetch(`${running.url}/stream?sessionKey=${sessionKey}`);
         expect(stream.status).toBe(200);
-        const event: AgentEvent = {
+        const event: VisitorEvent = {
           eventId: `visit-${name}`,
           eventName: "visit",
           sourceNodeId: "smoke",

@@ -105,6 +105,7 @@ import { CorruptSubtreeState } from "./fallback.js";
 import { FieldHost, isCollectable } from "./field-store.js";
 import type { FieldInjection, FieldStore } from "./field-store.js";
 import type { ComponentRegistry } from "./registry.js";
+import { isArrayValue, isRecord, readArrayItem, readArrayLength, readOwn } from "./safe-read.js";
 
 /** A node's resolved props, named from the mount contract rather than restated. */
 type ResolvedProps = ComponentMountProps["props"];
@@ -223,30 +224,6 @@ const DATA_ONLY_ISSUE = "unresolved_binding";
  */
 const UNSERIALIZABLE = "facet:unserializable-resolved-value";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Reads one own property without ever throwing, so a hostile container is inert.
- *
- * The guard covers the *whole* read, not just the property access. A revoked
- * proxy throws from `Array.isArray` inside the shape check and from the
- * own-property test, both of which run before any value is touched — so a
- * try/catch around the access alone would still let a hostile container unwind
- * the walk that is supposed to degrade it.
- */
-function readOwn(container: unknown, key: string): unknown {
-  try {
-    if (!isRecord(container) || !Object.prototype.hasOwnProperty.call(container, key)) {
-      return undefined;
-    }
-    return container[key];
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Reads one stored node, or answers `null` when what is stored under that id is
  * not a node.
@@ -266,11 +243,16 @@ function readNode(document: ComponentDocument, nodeId: string): ReadNode | null 
   const tag = readOwn(stored, "tag");
   const props = readOwn(stored, "props");
   const children = readOwn(stored, "children");
-  if (typeof tag !== "string" || tag.length === 0 || !isRecord(props) || !Array.isArray(children)) {
+  if (typeof tag !== "string" || tag.length === 0 || !isRecord(props) || !isArrayValue(children)) {
     return null;
   }
   const childNodeIds: string[] = [];
-  for (const child of children) {
+  const childCount = readArrayLength(children);
+  if (childCount > BOUNDS.nodesPerDocument) {
+    return null;
+  }
+  for (let index = 0; index < childCount; index += 1) {
+    const child = readArrayItem(children, index);
     if (typeof child !== "string" || childNodeIds.includes(child)) {
       return null;
     }

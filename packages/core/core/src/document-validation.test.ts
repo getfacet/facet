@@ -439,6 +439,59 @@ describe("validateAuthorMarkup — the accepted document", () => {
     expect(outcome.ok).toBe(true);
   });
 
+  it("rejects a syntactically valid number that overflows before range checks", () => {
+    const overflow = `1${"0".repeat(400)}`;
+    const numericCatalog = catalogOf([
+      {
+        tag: "Reading",
+        whenToUse: "Show one unbounded numeric reading.",
+        acceptsChildren: false,
+        props: {
+          amount: { type: "number", guidance: "The reading.", required: true },
+        },
+      },
+      screenSpec(),
+    ]);
+    const source = [
+      '<Facet entry="home">',
+      '<Screen name="home">',
+      `<Reading amount="${overflow}" />`,
+      "</Screen>",
+      "</Facet>",
+    ].join("");
+
+    const failure = failureOf(author(source, numericCatalog));
+
+    expect(failure.error.code).toBe("invalid-value");
+    expect(failure.error.repair).toContain('amount="42"');
+  });
+
+  it("rejects a syntactically valid number that would lose integer precision", () => {
+    const numericCatalog = catalogOf([
+      {
+        tag: "Reading",
+        whenToUse: "Show one unbounded numeric reading.",
+        acceptsChildren: false,
+        props: {
+          amount: { type: "number", guidance: "The reading.", required: true },
+        },
+      },
+      screenSpec(),
+    ]);
+    const source = [
+      '<Facet entry="home">',
+      '<Screen name="home">',
+      '<Reading amount="9007199254740993" />',
+      "</Screen>",
+      "</Facet>",
+    ].join("");
+
+    const failure = failureOf(author(source, numericCatalog));
+
+    expect(failure.error.code).toBe("invalid-value");
+    expect(failure.error.cause).not.toContain("9007199254740992");
+  });
+
   it("accepts an omitted optional prop and a component that declares no children", () => {
     expect(author('<Facet entry="home"><Screen name="home"><Stack /></Screen></Facet>').ok).toBe(
       true,
@@ -520,7 +573,7 @@ describe("validateAuthorMarkup — the adversarial rejection table", () => {
     ],
     [
       "a local action, which has no place in the vocabulary",
-      '<Facet entry="home"><Screen name="home"><Button label="Go" action="local:toggle" /></Screen></Facet>', // style-hard-cut: allowed-negative
+      '<Facet entry="home"><Screen name="home"><Button label="Go" action="local:toggle" /></Screen></Facet>', // component-hard-cut: allowed-negative
       "unknown-scheme",
     ],
     [
@@ -529,7 +582,7 @@ describe("validateAuthorMarkup — the adversarial rejection table", () => {
       "unknown-screen",
     ],
     [
-      "an agent event that is not an identifier",
+      "a visitor event that is not an identifier",
       '<Facet entry="home"><Screen name="home"><Button label="Go" action="agent:refresh now" /></Screen></Facet>',
       "invalid-action",
     ],

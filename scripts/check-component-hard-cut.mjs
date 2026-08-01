@@ -22,9 +22,9 @@ const EXCLUDED_GLOBS = [
   "!**/.agents/work/**",
 ];
 
-const ALLOWED_ANNOTATION = ["style-hard-cut", "allowed-negative"].join(": ");
+const ALLOWED_ANNOTATION = ["component-hard-cut", "allowed-negative"].join(": ");
 const ELIGIBLE_FIXTURE_SEGMENTS = new Set(["fixtures", "__fixtures__", "test-data"]);
-const SCANNER_PATH = "scripts/check-style-hard-cut.mjs";
+const SCANNER_PATH = "scripts/check-component-hard-cut.mjs";
 const MAX_LEXICAL_FILE_LENGTH = 8 * 1024 * 1024;
 const LEXICAL_READ_CHUNK_LENGTH = 64 * 1024;
 function escapeRegExp(value) {
@@ -43,8 +43,11 @@ function buildRetiredHardCutSymbolsPattern() {
   const joined = (...parts) => parts.join("");
   const symbols = [
     joined("Br", "ick"),
+    joined("Br", "icks"),
     joined("Pat", "tern"),
+    joined("Pat", "terns"),
     joined("Pre", "set"),
+    joined("Pre", "sets"),
     ["STAGE", "SPEC"].join("_"),
     joined("Facet", "Tree"),
     joined("Assets", "Store"),

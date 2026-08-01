@@ -48,16 +48,16 @@ describe("quickstart guide", () => {
     expect(serialized).toContain('<Screen name="what"');
     expect(serialized).toContain('<Button label="Show runtime loop" action="nav:structure"');
     expect(serialized).toContain('<Modal triggerLabel="Why immutable?"');
-    expect(serialized).not.toContain("Pattern"); // style-hard-cut: allowed-negative
-    expect(serialized).not.toContain("Preset"); // style-hard-cut: allowed-negative
-    expect(serialized).not.toContain("Brick"); // style-hard-cut: allowed-negative
+    expect(serialized).not.toContain("Pattern"); // component-hard-cut: allowed-negative
+    expect(serialized).not.toContain("Preset"); // component-hard-cut: allowed-negative
+    expect(serialized).not.toContain("Brick"); // component-hard-cut: allowed-negative
   });
 
   it("pins the regenerated seed size and sha256 golden", () => {
     const json = JSON.stringify(QUICKSTART_INITIAL_STAGE);
 
-    expect(json).toHaveLength(12481);
-    expect(sha256(json)).toBe("6047953818b3062387d1a189d4ba7106f6e200502060bcb7b3a8eb7ce13ee159");
+    expect(json).toHaveLength(12483);
+    expect(sha256(json)).toBe("3990dcdd1b25f6d8e7e149060409e523d37bde2b2faaab9a530c969a2a57504d");
   });
 
   it("keeps the seed within the quickstart prompt budget", () => {
@@ -86,8 +86,8 @@ describe("quickstart guide", () => {
     expect(QUICKSTART_PAGE_BRIEF).toContain("safe declarative");
     expect(QUICKSTART_PAGE_BRIEF).toContain("component markup");
     expect(QUICKSTART_PAGE_BRIEF).toContain("registered default-catalog components");
-    expect(QUICKSTART_PAGE_BRIEF).not.toContain("Pattern"); // style-hard-cut: allowed-negative
-    expect(QUICKSTART_PAGE_BRIEF).not.toContain("Preset"); // style-hard-cut: allowed-negative
-    expect(QUICKSTART_PAGE_BRIEF).not.toContain("Brick"); // style-hard-cut: allowed-negative
+    expect(QUICKSTART_PAGE_BRIEF).not.toContain("Pattern"); // component-hard-cut: allowed-negative
+    expect(QUICKSTART_PAGE_BRIEF).not.toContain("Preset"); // component-hard-cut: allowed-negative
+    expect(QUICKSTART_PAGE_BRIEF).not.toContain("Brick"); // component-hard-cut: allowed-negative
   });
 });

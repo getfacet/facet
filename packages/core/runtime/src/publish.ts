@@ -1,5 +1,6 @@
 import {
   BOUNDS,
+  describeDataValue,
   evaluateCandidateModel,
   isFacetIdentifier,
   measurePublishPayload,
@@ -7,6 +8,7 @@ import {
   resolveBinding,
   writePath,
   type ComponentDocument,
+  type DataValueDescriptor,
   type DataModel,
   type DataPath,
   type JsonPatchOperation,
@@ -18,12 +20,7 @@ import type { Session } from "./session.js";
 import type { WriteAuthority } from "./turn-gate.js";
 import { TurnGate } from "./turn-gate.js";
 
-export interface DataPublishDescriptor {
-  readonly path: string;
-  readonly shape: "null" | "string" | "number" | "boolean" | "array" | "object";
-  readonly fields: readonly string[];
-  readonly count: number;
-}
+export type DataPublishDescriptor = DataValueDescriptor;
 
 export type DataPublishResult =
   | {
@@ -114,64 +111,8 @@ function modelReject(
   };
 }
 
-function shapeOf(value: unknown): DataPublishDescriptor["shape"] {
-  if (value === null) {
-    return "null";
-  }
-  if (Array.isArray(value)) {
-    return "array";
-  }
-  if (isRecord(value)) {
-    return "object";
-  }
-  switch (typeof value) {
-    case "string":
-      return "string";
-    case "number":
-      return "number";
-    case "boolean":
-      return "boolean";
-    default:
-      return "object";
-  }
-}
-
-function fieldsOf(value: unknown): readonly string[] {
-  if (Array.isArray(value)) {
-    const fields = new Set<string>();
-    for (const item of value) {
-      if (!isRecord(item)) {
-        continue;
-      }
-      for (const key of Object.keys(item)) {
-        fields.add(key);
-      }
-    }
-    return Object.freeze([...fields].sort());
-  }
-  if (isRecord(value)) {
-    return Object.freeze(Object.keys(value).sort());
-  }
-  return Object.freeze([]);
-}
-
-function countOf(value: unknown): number {
-  if (Array.isArray(value)) {
-    return value.length;
-  }
-  if (isRecord(value)) {
-    return Object.keys(value).length;
-  }
-  return 1;
-}
-
 function descriptor(path: DataPath, value: unknown): DataPublishDescriptor {
-  return Object.freeze({
-    path: pathText(path),
-    shape: shapeOf(value),
-    fields: fieldsOf(value),
-    count: countOf(value),
-  });
+  return describeDataValue(pathText(path), value);
 }
 
 function valueAtPath(model: DataModel, path: DataPath): unknown {

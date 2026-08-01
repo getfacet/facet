@@ -234,7 +234,6 @@ describe("reference-agent barrel", () => {
       | "provider_error"
       | "retry_exhausted"
       | "sink_error"
-      | "unresolved_buffer"
       | "empty_turn"
     >();
 

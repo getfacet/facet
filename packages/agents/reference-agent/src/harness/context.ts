@@ -1,4 +1,4 @@
-import type { AgentEvent, ConversationMessage, FacetToolSession } from "@facet/core";
+import type { VisitorEvent, ConversationMessage, FacetToolSession } from "@facet/core";
 import type { Sink, SummaryStore } from "@facet/runtime";
 
 import type { ProviderTurn, TurnMessage } from "../provider.js";
@@ -20,7 +20,7 @@ export type ReferenceAgentSummaryDiscardReason = "mismatch" | "invalid" | "store
 
 export interface AssembleProviderContextOptions {
   readonly system: string;
-  readonly event: AgentEvent;
+  readonly event: VisitorEvent;
   readonly session: FacetToolSession;
   readonly sink: Pick<Sink, "history">;
   readonly historyKey: string;

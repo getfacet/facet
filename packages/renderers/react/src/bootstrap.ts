@@ -73,13 +73,7 @@
  * keys. Bootstrap is host configuration, so a fault is a result a host can read.
  */
 
-import type {
-  ComponentSpec,
-  FacetCatalog,
-  FacetTheme,
-  MountedComponent,
-  NeutralCopy,
-} from "@facet/core";
+import type { ComponentSpec, FacetCatalog, FacetTheme, NeutralCopy } from "@facet/core";
 import {
   buildCatalogIndex,
   resolveNeutralCopy,
@@ -87,10 +81,9 @@ import {
   validateModalConformance,
   validateTheme,
 } from "@facet/core";
-import type { ReactNode } from "react";
 
 import type { ComponentRegistry } from "./registry.js";
-import { freezeRegistry } from "./registry.js";
+import { snapshotRegistryForTags } from "./registry.js";
 
 /**
  * What `bootstrapRenderer` answers: the validated session boundary, or the
@@ -131,9 +124,6 @@ type BootstrapRejection = Extract<RendererBootstrap, { readonly ok: false }>;
 
 /** The closed option form. An option outside this set is a rejection. */
 const OPTION_KEYS: readonly string[] = ["catalog", "registry", "theme", "copy"];
-
-/** The one grammar position no component may be registered under. Compared exactly. */
-const FACET_TAG = "Facet";
 
 /** The tag whose registered spec the framework overlap frame projects. */
 const MODAL_TAG = "Modal";
@@ -245,7 +235,10 @@ function bootstrap(options: unknown): RendererBootstrap {
   if (!copy.ok) {
     return copy;
   }
-  const registry = snapshotRegistry(read(options, "registry"), catalog.catalog);
+  const registry = snapshotRegistryForTags(
+    read(options, "registry"),
+    catalog.catalog.components.map((spec) => spec.tag),
+  );
   if (!registry.ok) {
     return registry;
   }
@@ -257,78 +250,4 @@ function bootstrap(options: unknown): RendererBootstrap {
     theme: theme.theme,
     copy: copy.copy,
   };
-}
-
-/** What the registry pass answers: the session's frozen snapshot, or the first failure. */
-type RegistrySnapshot =
-  { readonly ok: true; readonly registry: ComponentRegistry } | BootstrapRejection;
-
-/**
- * Compares the registry with the validated catalog and takes the session's own
- * copy of it.
- *
- * Locations are `registry.<Tag>` throughout, because every fault here is about a
- * tag rather than about a position in an array the host may not have written.
- */
-function snapshotRegistry(value: unknown, catalog: FacetCatalog): RegistrySnapshot {
-  if (!isRecord(value)) {
-    return reject("registry_not_an_object", "registry", "A registry is a plain tag-keyed record.");
-  }
-  // Own property *names*, not `Object.keys`. An implementation defined
-  // non-enumerably is still registered, and both rules below read this set: a
-  // non-enumerable `Facet` would bypass bootstrap's one rule of its own, and a
-  // non-enumerable surplus tag would let bootstrap report a match on a registry
-  // that does not match. The residual — a `Proxy` whose `ownKeys` trap answers
-  // with less than it holds — is not closable, because every enumeration
-  // primitive routes through that same trap; it stays fail-safe because the
-  // snapshot below is built from the catalog's tags, so a concealed
-  // implementation is absent from what actually mounts.
-  const registered = new Set(Object.getOwnPropertyNames(value));
-  if (registered.has(FACET_TAG)) {
-    // Bootstrap's one rule of its own. The catalog already refuses a `Facet`
-    // spec, but a host may hand over a registry it built without
-    // `createRegistry`, and no catalog can speak for that.
-    return reject(
-      "reserved_structural_tag",
-      `registry.${FACET_TAG}`,
-      "Facet is a grammar position, not a component.",
-    );
-  }
-
-  const entries: [string, MountedComponent<ReactNode, ReactNode>][] = [];
-  const catalogued = new Set<string>();
-  // Catalog order first: a host reads its own catalog top to bottom, so the
-  // first component with nothing to mount is the one worth naming.
-  for (const spec of catalog.components) {
-    catalogued.add(spec.tag);
-    if (!Object.hasOwn(value, spec.tag)) {
-      return reject(
-        "missing_implementation",
-        `registry.${spec.tag}`,
-        "Every catalogued component needs a trusted implementation registered under its tag.",
-      );
-    }
-    const implementation = value[spec.tag];
-    if (typeof implementation !== "function") {
-      return reject(
-        "implementation_not_callable",
-        `registry.${spec.tag}`,
-        "A registered implementation is a component function.",
-      );
-    }
-    entries.push([spec.tag, implementation as MountedComponent<ReactNode, ReactNode>]);
-  }
-  // Then the other direction, sorted so the host's own key order never decides
-  // which surplus implementation is reported.
-  const surplus = [...registered].sort().find((tag) => !catalogued.has(tag));
-  if (surplus !== undefined) {
-    return reject(
-      "uncatalogued_implementation",
-      `registry.${surplus}`,
-      "Every registered implementation needs a catalog spec; an agent cannot author what the catalog does not declare.",
-    );
-  }
-  // Built from the catalog's tags, so what the session holds is exactly what the
-  // equality check just compared — not whatever the host's object says next.
-  return { ok: true, registry: freezeRegistry(entries) };
 }

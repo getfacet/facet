@@ -22,7 +22,7 @@ import {
   validateVisitorText,
 } from "@facet/core";
 import type {
-  AgentEvent,
+  VisitorEvent,
   ConversationMessage,
   FacetStage,
   FacetTransport,
@@ -38,8 +38,10 @@ type RendererEvent = {
   readonly sourceNodeId: string;
   readonly screen: string;
   readonly arg?: string;
-  readonly collect: AgentEvent["collect"];
+  readonly collect: VisitorEvent["collect"];
 };
+
+type SendResult = void | PromiseLike<void>;
 
 interface ConversationState {
   readonly order: readonly string[];
@@ -126,8 +128,8 @@ export function useFacet(options: {
   readonly transport: FacetTransport;
   readonly initialStage?: FacetStage;
   readonly copy?: NeutralCopy;
-  readonly onAgentEvent?: (event: AgentEvent) => void;
-  readonly onVisitorMessage?: (message: ConversationMessage) => void;
+  readonly onVisitorEvent?: (event: VisitorEvent) => SendResult;
+  readonly onVisitorMessage?: (message: ConversationMessage) => SendResult;
   readonly createEventId?: () => string;
   readonly createMessageId?: () => string;
   readonly now?: () => number;
@@ -136,7 +138,7 @@ export function useFacet(options: {
     transport,
     initialStage = EMPTY_STAGE,
     copy = NEUTRAL_COPY_DEFAULTS,
-    onAgentEvent,
+    onVisitorEvent,
     onVisitorMessage,
     createEventId,
     createMessageId,
@@ -150,6 +152,10 @@ export function useFacet(options: {
   const [conversation, setConversation] = useState<ConversationState>(EMPTY_CONVERSATION);
   const [pending, setPending] = useState(false);
   const [validationError, setValidationError] = useState<string | undefined>(undefined);
+  const pendingTurnCounts = useRef(new Map<string, number>());
+  const pendingTurnTotal = useRef(0);
+  const pendingFallbackTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const mounted = useRef(true);
 
   const nextId = useCallback((configured: (() => string) | undefined, prefix: string): string => {
     const candidate = configured?.();
@@ -162,6 +168,77 @@ export function useFacet(options: {
     }
     localId.current += 1;
     return `${prefix}-${localId.current}`;
+  }, []);
+
+  const beginPendingTurn = useCallback((turnId: string): void => {
+    const current = pendingTurnCounts.current.get(turnId) ?? 0;
+    pendingTurnCounts.current.set(turnId, current + 1);
+    pendingTurnTotal.current += 1;
+    if (mounted.current) {
+      setPending(true);
+    }
+  }, []);
+
+  const settlePendingTurn = useCallback((turnId: string): void => {
+    const current = pendingTurnCounts.current.get(turnId);
+    if (current === undefined) {
+      return;
+    }
+    if (current <= 1) {
+      pendingTurnCounts.current.delete(turnId);
+    } else {
+      pendingTurnCounts.current.set(turnId, current - 1);
+    }
+    pendingTurnTotal.current = Math.max(0, pendingTurnTotal.current - 1);
+    if (mounted.current) {
+      setPending(pendingTurnTotal.current > 0);
+    }
+  }, []);
+
+  const settlePendingTurnLater = useCallback(
+    (turnId: string): void => {
+      const timer = setTimeout(() => {
+        pendingFallbackTimers.current.delete(timer);
+        settlePendingTurn(turnId);
+      }, 0);
+      pendingFallbackTimers.current.add(timer);
+    },
+    [settlePendingTurn],
+  );
+
+  // Patch frames have no turn id, so pending can only settle on callback
+  // completion, a matching conversation frame, or the void-callback fallback.
+  const startPendingSend = useCallback(
+    (turnId: string, send: () => SendResult): void => {
+      beginPendingTurn(turnId);
+      try {
+        const result = send();
+        if (result !== undefined) {
+          void Promise.resolve(result).then(
+            () => settlePendingTurn(turnId),
+            () => settlePendingTurn(turnId),
+          );
+        } else {
+          settlePendingTurnLater(turnId);
+        }
+      } catch {
+        settlePendingTurn(turnId);
+      }
+    },
+    [beginPendingTurn, settlePendingTurn, settlePendingTurnLater],
+  );
+
+  useEffect(() => {
+    mounted.current = true;
+    return (): void => {
+      mounted.current = false;
+      pendingTurnCounts.current.clear();
+      pendingTurnTotal.current = 0;
+      for (const timer of pendingFallbackTimers.current) {
+        clearTimeout(timer);
+      }
+      pendingFallbackTimers.current.clear();
+    };
   }, []);
 
   useEffect(() => {
@@ -183,20 +260,19 @@ export function useFacet(options: {
             },
           };
         });
-        setPending(false);
         return;
       }
       setConversation((current) => addConversation(current, frame));
-      setPending(false);
+      settlePendingTurn(frame.turnId);
     });
-  }, [transport]);
+  }, [settlePendingTurn, transport]);
 
   const sendEvent = useCallback(
     (event: RendererEvent): void => {
-      if (onAgentEvent === undefined) {
+      if (onVisitorEvent === undefined) {
         return;
       }
-      const stamped: AgentEvent = {
+      const stamped: VisitorEvent = {
         eventId: nextId(createEventId, "event"),
         eventName: event.eventName,
         sourceNodeId: event.sourceNodeId,
@@ -205,10 +281,9 @@ export function useFacet(options: {
         ...(typeof event.arg === "string" ? { arg: event.arg } : {}),
         collect: event.collect,
       };
-      onAgentEvent(stamped);
-      setPending(true);
+      startPendingSend(stamped.eventId, () => onVisitorEvent(stamped));
     },
-    [createEventId, nextId, onAgentEvent, stageState.transition.stageRevision],
+    [createEventId, nextId, onVisitorEvent, stageState.transition.stageRevision, startPendingSend],
   );
 
   const sendMessage = useCallback(
@@ -229,11 +304,17 @@ export function useFacet(options: {
       };
       setConversation((current) => addConversation(current, entry));
       if (onVisitorMessage !== undefined) {
-        onVisitorMessage(entry);
-        setPending(true);
+        startPendingSend(entry.turnId, () => onVisitorMessage(entry));
       }
     },
-    [copy.validation.messageTooLong, createMessageId, nextId, now, onVisitorMessage],
+    [
+      copy.validation.messageTooLong,
+      createMessageId,
+      nextId,
+      now,
+      onVisitorMessage,
+      startPendingSend,
+    ],
   );
 
   const visibleConversation = useMemo(() => conversationItems(conversation), [conversation]);

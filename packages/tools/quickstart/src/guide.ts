@@ -94,7 +94,7 @@ export const QUICKSTART_INITIAL_MARKUP = `<Facet entry="what">
     <Stack gap="lg">
       ${quickstartNavigationMarkup()}
       <Grid columns="2" gap="md">
-        ${quickstartCardMarkup("1. Visitor event", "A click or submitted field becomes a structured AgentEvent with screen, revision, and collected values.")}
+        ${quickstartCardMarkup("1. Visitor event", "A click or submitted field becomes a structured VisitorEvent with screen, revision, and collected values.")}
         ${quickstartCardMarkup("2. Agent tools", "The agent reads component specs, screen markup, and data before sending a bounded mutation.")}
         ${quickstartCardMarkup("3. Runtime validation", "Facet checks the markup, catalog, data bindings, revision, and write authority before a patch lands.")}
         ${quickstartCardMarkup("4. Renderer refresh", "The browser receives trusted component data and mounts only registered React implementations.")}

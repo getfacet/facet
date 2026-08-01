@@ -22,7 +22,7 @@
  * the source. Removing either lock leaves the other holding.
  *
  * `B-22` and `B-23` are read from `@facet/core`'s `BOUNDS`, the same frozen
- * table `validateAgentEvent` and the server's mirror read. Nothing here restates
+ * table `validateVisitorEvent` and the server's mirror read. Nothing here restates
  * a limit as a literal, and the suite's closing sweep states the property that
  * makes the pair meaningful: whatever the sources say, the payload this module
  * builds is accepted by the event boundary.
@@ -35,7 +35,7 @@
  * entry point.
  */
 
-import type { AgentEvent } from "@facet/core";
+import type { VisitorEvent } from "@facet/core";
 import { BOUNDS, isFacetIdentifier } from "@facet/core";
 
 /**
@@ -76,15 +76,17 @@ export interface CollectNames {
 
 /** The built payload and the diagnostics from building it. */
 export interface CollectPayload {
-  readonly collect: AgentEvent["collect"];
+  readonly collect: VisitorEvent["collect"];
   readonly issues: readonly CollectIssue[];
 }
 
 /** One entry of the payload, derived from the event contract so the two cannot drift. */
-type CollectEntry = AgentEvent["collect"][string];
+type CollectEntry = VisitorEvent["collect"][string];
 
 /** The closed source vocabulary, derived from the public union for the same reason. */
 const SOURCE_KINDS: readonly CollectSource["kind"][] = ["value", "sensitive", "unavailable"];
+const PARSED_COLLECT_NAME_LIMIT = BOUNDS.collectFieldsPerEvent + 1;
+const COLLECT_LIST_SCAN_CHARS = PARSED_COLLECT_NAME_LIMIT * (BOUNDS.identifierChars + 1);
 
 /** Whatever a source answered with, when it answered with nothing usable. */
 const UNAVAILABLE: CollectSource = Object.freeze({ kind: "unavailable" });
@@ -158,23 +160,57 @@ export function parseCollectNames(authored: unknown): CollectNames {
     return { names: [], issues: [] };
   }
   const names: string[] = [];
+  const seen = new Set<string>();
   const issues: CollectIssue[] = [];
-  const tokens = authored.split(/\s+/).filter((token) => token !== "");
-  tokens.forEach((token, index) => {
-    if (!isFacetIdentifier(token)) {
+  let token = "";
+  let tokenTooLong = false;
+  let position = 0;
+  let stopped = false;
+
+  const finishToken = (): void => {
+    if (token.length === 0 && !tokenTooLong) return;
+    position += 1;
+    if (tokenTooLong || !isFacetIdentifier(token)) {
       issues.push(
         issue(
           "invalid_collect_name",
           "collect",
-          `Name ${index + 1} of the collect list is not a Facet identifier.`,
+          `Name ${position} of the collect list is not a Facet identifier.`,
         ),
       );
-      return;
-    }
-    if (!names.includes(token)) {
+    } else if (!seen.has(token)) {
+      seen.add(token);
       names.push(token);
+      if (names.length >= PARSED_COLLECT_NAME_LIMIT) {
+        stopped = true;
+      }
     }
-  });
+    token = "";
+    tokenTooLong = false;
+  };
+
+  for (let index = 0; index < authored.length && !stopped; index += 1) {
+    if (index >= COLLECT_LIST_SCAN_CHARS) {
+      issues.push(
+        issue("invalid_collect_name", "collect", "The collect list is too large to read safely."),
+      );
+      stopped = true;
+      break;
+    }
+    const char = authored[index] ?? "";
+    if (/\s/u.test(char)) {
+      finishToken();
+      continue;
+    }
+    if (token.length <= BOUNDS.identifierChars) {
+      token += char;
+    } else {
+      tokenTooLong = true;
+    }
+  }
+  if (!stopped) {
+    finishToken();
+  }
   return { names, issues };
 }
 

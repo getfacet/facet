@@ -19,8 +19,8 @@ const DIMENSIONS = [
   { key: 'bugs', agentType: 'review-bugs', focus: 'logic & correctness bugs (wrong results, off-by-one, null/undefined, mishandled Promises, wrong RFC 6902 patch/pointer handling, component document/catalog validation gaps)' },
   { key: 'types', agentType: 'review-types', focus: 'type safety & public API contracts (any, unsafe as, missing narrowing, exactOptionalPropertyTypes / noUncheckedIndexedAccess holes)' },
   { key: 'edge', agentType: 'review-edge', focus: 'edge cases, error handling, the fail-safe boundaries (markup parsing, component document/catalog validation, StageRenderer), empty/malformed/deep/cyclic input, lifecycle/cleanup' },
-  { key: 'security', agentType: 'review-security', focus: 'the "safe by construction" claims, untrusted input (LLM output, client visitorId, --dangerously-skip-permissions), injection, CORS' },
-  { key: 'concurrency', agentType: 'review-concurrency', focus: 'races (same-visitor events, runtime stage), the bridge queue + persistent generator handshake, ordering, deadlock, timeouts, resource leaks' },
+  { key: 'security', agentType: 'review-security', focus: 'the "safe by construction" claims, untrusted input (LLM output, client sessionKey, --dangerously-skip-permissions), injection, CORS' },
+  { key: 'concurrency', agentType: 'review-concurrency', focus: 'races (same-visitor events, runtime stage), the transport queue + persistent generator handshake, ordering, deadlock, timeouts, resource leaks' },
   { key: 'consistency', agentType: 'review-consistency', focus: 'duplication, cross-package drift, dev-vs-published resolution (publishConfig/exports), barrel usage, naming' },
   { key: 'test-gaps', agentType: 'review-test-gaps', focus: 'changed behavior without a test; critical pure logic (markup parsing, component document/catalog validation, applyPatch, Stage, stores, createSerialQueue) losing coverage; untested testable surface; tautological tests' },
 ]

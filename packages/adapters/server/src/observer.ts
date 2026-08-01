@@ -1,10 +1,10 @@
-import type { AgentEvent, ServerFrame } from "@facet/core";
+import type { VisitorEvent, ServerFrame } from "@facet/core";
 
 export type FacetServerObservation =
   | {
       readonly kind: "ui-in";
       readonly sessionKey: string;
-      readonly event: AgentEvent;
+      readonly event: VisitorEvent;
     }
   | {
       readonly kind: "accepted-frame";

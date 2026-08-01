@@ -27,6 +27,9 @@
   "dependencies": {
     "@facet/core": "workspace:*"
   },
+  "devDependencies": {
+    "@facet/runtime": "workspace:*"
+  },
   "files": [
     "dist"
   ],

@@ -11,26 +11,24 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { PACKAGE_ROLE_ROOTS, PUBLIC_PACKAGE_COUNT } from "./package-topology.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const packageRoots = [
-  "packages/core",
-  "packages/renderers",
-  "packages/agents",
-  "packages/adapters",
-  "packages/tools",
-];
-const expectedPackageCount = 11;
-const expectedBins = {
+let temporaryRoot;
+
+export const packageRoots = PACKAGE_ROLE_ROOTS;
+export const expectedPackageCount = PUBLIC_PACKAGE_COUNT;
+export const expectedBins = {
   "facet-quickstart": {
     args: ["--invalid-for-package-smoke"],
     exitCode: 1,
     output: "Unknown flag",
   },
 };
-const retiredBinNames = ["facet", "facet-bridge"];
-const expectedRuntimeExports = {
+export const retiredBinNames = ["facet", "facet-bridge"];
+export const expectedRuntimeExports = {
   "@facet/core": [
     "BOUNDS",
     "MAX_PATCH_OPS",
@@ -40,13 +38,20 @@ const expectedRuntimeExports = {
     "buildDocument",
     "collectTurnOutcome",
     "createBoundedMap",
+    "dataValueEntryCount",
+    "dataValueFields",
+    "dataValuePresenceCount",
+    "dataValueShape",
+    "describeDataValue",
     "deriveMessageId",
     "evaluateCandidateModel",
+    "isAuthoredNumberLiteral",
     "isFacetIdentifier",
     "iterateTurnOutcome",
     "measurePublishPayload",
     "nextRevision",
     "parseAction",
+    "parseAuthoredNumber",
     "parseDataPath",
     "parseMarkup",
     "resolveBinding",
@@ -55,7 +60,7 @@ const expectedRuntimeExports = {
     "serializeScreen",
     "themeToCssVars",
     "truncateConversationText",
-    "validateAgentEvent",
+    "validateVisitorEvent",
     "validateAuthorMarkup",
     "validateCatalog",
     "validateComponentSpec",
@@ -180,6 +185,9 @@ function fail(message) {
 }
 
 function isolatedEnvironment(extra = {}) {
+  if (temporaryRoot === undefined) {
+    throw new Error("[package-smoke] temporary root is not initialized");
+  }
   const inherited = {};
   for (const key of [
     "PATH",
@@ -224,7 +232,7 @@ function run(command, args, options = {}) {
   return `${result.stdout}${result.stderr}`;
 }
 
-function packageDirectories() {
+export function packageDirectories() {
   const directories = packageRoots.flatMap((root) => {
     const absoluteRoot = join(repoRoot, root);
     return readdirSync(absoluteRoot, { withFileTypes: true })
@@ -245,7 +253,7 @@ function packagePath(fixture, packageName) {
   return join(fixture, "node_modules", ...packageName.split("/"));
 }
 
-function exportSurfaces(packageName, exports) {
+export function exportSurfaces(packageName, exports) {
   if (exports === undefined) return [];
   if (typeof exports === "string" || Array.isArray(exports) || "import" in exports) {
     return [{ specifier: packageName, conditions: exports }];
@@ -256,7 +264,7 @@ function exportSurfaces(packageName, exports) {
   }));
 }
 
-function conditionTarget(conditions, condition) {
+export function conditionTarget(conditions, condition) {
   if (typeof conditions === "string") return condition === "import" ? conditions : undefined;
   if (conditions === null || Array.isArray(conditions) || typeof conditions !== "object") {
     return undefined;
@@ -265,7 +273,7 @@ function conditionTarget(conditions, condition) {
   return typeof target === "string" ? target : undefined;
 }
 
-function assertInstalledSurface(packageDirectory, specifier, condition, target) {
+export function assertInstalledSurface(packageDirectory, specifier, condition, target) {
   if (!target.startsWith("./dist/")) {
     fail(`${specifier} ${condition} target is not published from dist: ${target}`);
   }
@@ -274,116 +282,117 @@ function assertInstalledSurface(packageDirectory, specifier, condition, target) 
   }
 }
 
-const temporaryRoot = mkdtempSync(join(tmpdir(), "facet-package-smoke-"));
-const tarballDirectory = join(temporaryRoot, "tarballs");
-const fixture = join(temporaryRoot, "consumer");
+export function main() {
+  temporaryRoot = mkdtempSync(join(tmpdir(), "facet-package-smoke-"));
+  const tarballDirectory = join(temporaryRoot, "tarballs");
+  const fixture = join(temporaryRoot, "consumer");
 
-try {
-  const packages = packageDirectories().map((directory) => ({
-    directory,
-    manifest: JSON.parse(readFileSync(join(directory, "package.json"), "utf8")),
-  }));
+  try {
+    const packages = packageDirectories().map((directory) => ({
+      directory,
+      manifest: JSON.parse(readFileSync(join(directory, "package.json"), "utf8")),
+    }));
 
-  console.log(`[package-smoke] packing ${String(packages.length)} public packages`);
-  mkdirSync(tarballDirectory);
-  const tarballs = new Map();
-  for (const pkg of packages) {
-    const before = new Set(existsSync(tarballDirectory) ? readdirSync(tarballDirectory) : []);
-    run("pnpm", ["--dir", pkg.directory, "pack", "--pack-destination", tarballDirectory]);
-    const created = readdirSync(tarballDirectory).filter(
-      (file) => file.endsWith(".tgz") && !before.has(file),
+    console.log(`[package-smoke] packing ${String(packages.length)} public packages`);
+    mkdirSync(tarballDirectory);
+    const tarballs = new Map();
+    for (const pkg of packages) {
+      const before = new Set(existsSync(tarballDirectory) ? readdirSync(tarballDirectory) : []);
+      run("pnpm", ["--dir", pkg.directory, "pack", "--pack-destination", tarballDirectory]);
+      const created = readdirSync(tarballDirectory).filter(
+        (file) => file.endsWith(".tgz") && !before.has(file),
+      );
+      if (created.length !== 1) {
+        fail(`${pkg.manifest.name} produced ${String(created.length)} tarballs instead of one`);
+      }
+      tarballs.set(pkg.manifest.name, join(tarballDirectory, created[0]));
+    }
+
+    const dependencies = Object.fromEntries(
+      [...tarballs.entries()].map(([name, tarball]) => [name, `file:${tarball}`]),
     );
-    if (created.length !== 1) {
-      fail(`${pkg.manifest.name} produced ${String(created.length)} tarballs instead of one`);
-    }
-    tarballs.set(pkg.manifest.name, join(tarballDirectory, created[0]));
-  }
+    Object.assign(dependencies, {
+      "@types/node": "^22.0.0",
+      "@types/react": "^19.0.0",
+      react: "^19.0.0",
+      typescript: "^5.9.0",
+    });
+    mkdirSync(fixture);
+    writeFileSync(
+      join(fixture, "package.json"),
+      `${JSON.stringify({ name: "facet-package-smoke", private: true, type: "module", dependencies }, null, 2)}\n`,
+    );
 
-  const dependencies = Object.fromEntries(
-    [...tarballs.entries()].map(([name, tarball]) => [name, `file:${tarball}`]),
-  );
-  Object.assign(dependencies, {
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    react: "^19.0.0",
-    typescript: "^5.9.0",
-  });
-  mkdirSync(fixture);
-  writeFileSync(
-    join(fixture, "package.json"),
-    `${JSON.stringify({ name: "facet-package-smoke", private: true, type: "module", dependencies }, null, 2)}\n`,
-  );
+    console.log("[package-smoke] installing tarballs in a clean consumer project");
+    run(
+      "npm",
+      [
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--package-lock=false",
+        "--registry=https://registry.npmjs.org/",
+      ],
+      {
+        cwd: fixture,
+        timeout: 240_000,
+      },
+    );
 
-  console.log("[package-smoke] installing tarballs in a clean consumer project");
-  run(
-    "npm",
-    [
-      "install",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      "--package-lock=false",
-      "--registry=https://registry.npmjs.org/",
-    ],
-    {
-      cwd: fixture,
-      timeout: 240_000,
-    },
-  );
-
-  const esmSurfaces = [];
-  const cjsSurfaces = [];
-  const typeSurfaces = [];
-  for (const source of packages) {
-    const packageDirectory = packagePath(fixture, source.manifest.name);
-    const installedManifestPath = join(packageDirectory, "package.json");
-    if (!existsSync(installedManifestPath)) fail(`${source.manifest.name} was not installed`);
-    const installedManifestText = readFileSync(installedManifestPath, "utf8");
-    const installedManifest = JSON.parse(installedManifestText);
-    if (installedManifestText.includes("workspace:")) {
-      fail(`${source.manifest.name} still contains a workspace: dependency after packing`);
-    }
-    if (!existsSync(join(packageDirectory, "LICENSE"))) {
-      fail(`${source.manifest.name} tarball does not contain LICENSE`);
-    }
-
-    for (const surface of exportSurfaces(source.manifest.name, installedManifest.exports)) {
-      const importTarget = conditionTarget(surface.conditions, "import");
-      const requireTarget = conditionTarget(surface.conditions, "require");
-      const typesTarget = conditionTarget(surface.conditions, "types");
-      if (importTarget !== undefined) {
-        assertInstalledSurface(packageDirectory, surface.specifier, "import", importTarget);
-        esmSurfaces.push(surface.specifier);
+    const esmSurfaces = [];
+    const cjsSurfaces = [];
+    const typeSurfaces = [];
+    for (const source of packages) {
+      const packageDirectory = packagePath(fixture, source.manifest.name);
+      const installedManifestPath = join(packageDirectory, "package.json");
+      if (!existsSync(installedManifestPath)) fail(`${source.manifest.name} was not installed`);
+      const installedManifestText = readFileSync(installedManifestPath, "utf8");
+      const installedManifest = JSON.parse(installedManifestText);
+      if (installedManifestText.includes("workspace:")) {
+        fail(`${source.manifest.name} still contains a workspace: dependency after packing`);
       }
-      if (requireTarget !== undefined) {
-        assertInstalledSurface(packageDirectory, surface.specifier, "require", requireTarget);
-        cjsSurfaces.push(surface.specifier);
+      if (!existsSync(join(packageDirectory, "LICENSE"))) {
+        fail(`${source.manifest.name} tarball does not contain LICENSE`);
       }
-      if (typesTarget !== undefined) {
-        assertInstalledSurface(packageDirectory, surface.specifier, "types", typesTarget);
-        typeSurfaces.push(surface.specifier);
+
+      for (const surface of exportSurfaces(source.manifest.name, installedManifest.exports)) {
+        const importTarget = conditionTarget(surface.conditions, "import");
+        const requireTarget = conditionTarget(surface.conditions, "require");
+        const typesTarget = conditionTarget(surface.conditions, "types");
+        if (importTarget !== undefined) {
+          assertInstalledSurface(packageDirectory, surface.specifier, "import", importTarget);
+          esmSurfaces.push(surface.specifier);
+        }
+        if (requireTarget !== undefined) {
+          assertInstalledSurface(packageDirectory, surface.specifier, "require", requireTarget);
+          cjsSurfaces.push(surface.specifier);
+        }
+        if (typesTarget !== undefined) {
+          assertInstalledSurface(packageDirectory, surface.specifier, "types", typesTarget);
+          typeSurfaces.push(surface.specifier);
+        }
       }
     }
-  }
 
-  const environmentGuard = `for (const key of ["GITHUB_TOKEN", "GH_TOKEN", "NPM_TOKEN", "NODE_AUTH_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL"]) {
+    const environmentGuard = `for (const key of ["GITHUB_TOKEN", "GH_TOKEN", "NPM_TOKEN", "NODE_AUTH_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL"]) {
   if (process.env[key] !== undefined) throw new Error(\`credential leaked to package smoke child: \${key}\`);
 }`;
-  writeFileSync(
-    join(fixture, "esm-smoke.mjs"),
-    `${environmentGuard}\n${esmSurfaces.map((specifier) => `await import(${JSON.stringify(specifier)});`).join("\n")}\n`,
-  );
-  run(process.execPath, ["esm-smoke.mjs"], { cwd: fixture });
+    writeFileSync(
+      join(fixture, "esm-smoke.mjs"),
+      `${environmentGuard}\n${esmSurfaces.map((specifier) => `await import(${JSON.stringify(specifier)});`).join("\n")}\n`,
+    );
+    run(process.execPath, ["esm-smoke.mjs"], { cwd: fixture });
 
-  writeFileSync(
-    join(fixture, "cjs-smoke.cjs"),
-    `${environmentGuard}\n${cjsSurfaces.map((specifier) => `require(${JSON.stringify(specifier)});`).join("\n")}\n`,
-  );
-  run(process.execPath, ["cjs-smoke.cjs"], { cwd: fixture });
+    writeFileSync(
+      join(fixture, "cjs-smoke.cjs"),
+      `${environmentGuard}\n${cjsSurfaces.map((specifier) => `require(${JSON.stringify(specifier)});`).join("\n")}\n`,
+    );
+    run(process.execPath, ["cjs-smoke.cjs"], { cwd: fixture });
 
-  writeFileSync(
-    join(fixture, "contract-smoke.mjs"),
-    `${environmentGuard}
+    writeFileSync(
+      join(fixture, "contract-smoke.mjs"),
+      `${environmentGuard}
 import assert from "node:assert/strict";
 const expectedRuntimeExports = ${JSON.stringify(expectedRuntimeExports, null, 2)};
 const expectedDefaultCatalogTags = ${JSON.stringify(expectedDefaultCatalogTags, null, 2)};
@@ -394,7 +403,7 @@ for (const specifier of Object.keys(expectedRuntimeExports)) {
   surfaces[specifier] = await import(specifier);
   assert.deepEqual(
     Object.keys(surfaces[specifier]).sort(),
-    expectedRuntimeExports[specifier],
+    [...expectedRuntimeExports[specifier]].sort(),
     \`unexpected runtime exports for \${specifier}\`,
   );
 }
@@ -431,36 +440,40 @@ for (const spec of tools.FACET_TOOL_SPECS) {
   assert.equal("parameters" in spec, false);
 }
 
-for (const name of ["FacetTree", "AssetsStore", "MemoryAssets", "loadAssets", "ViewSnapshot"]) { // style-hard-cut: allowed-negative
+for (const name of ["FacetTree", "AssetsStore", "MemoryAssets", "loadAssets", "ViewSnapshot"]) { // component-hard-cut: allowed-negative
   assert.equal(name in core, false, \`retired @facet/core export survived: \${name}\`);
 }
-for (const name of ["get_brick_spec", "get_style_choices", "get_preset", "get_pattern", "inspect_stage", "inspect_node", "append_node", "set_node", "remove_node", "say"]) { // style-hard-cut: allowed-negative
+for (const name of ["get_brick_spec", "get_style_choices", "get_preset", "get_pattern", "inspect_stage", "inspect_node", "append_node", "set_node", "remove_node", "say"]) { // component-hard-cut: allowed-negative
   assert.equal(tools.FACET_TOOL_NAMES.includes(name), false, \`retired tool survived: \${name}\`);
 }
-for (const name of ["createStageToolAssetSnapshot", "selectPatternReference", "executeGetPattern", "executeGetBrickSpec"]) { // style-hard-cut: allowed-negative
+for (const name of ["createStageToolAssetSnapshot", "selectPatternReference", "executeGetPattern", "executeGetBrickSpec"]) { // component-hard-cut: allowed-negative
   assert.equal(name in tools, false, \`retired @facet/agent-tools export survived: \${name}\`);
 }
 `,
-  );
-  run(process.execPath, ["contract-smoke.mjs"], { cwd: fixture });
+    );
+    run(process.execPath, ["contract-smoke.mjs"], { cwd: fixture });
 
-  const typeImports = typeSurfaces
-    .map(
-      (specifier, index) =>
-        `import type * as Surface${String(index)} from ${JSON.stringify(specifier)};`,
-    )
-    .join("\n");
-  const typeUses = typeSurfaces
-    .map((_, index) => `keyof typeof Surface${String(index)}`)
-    .join(", ");
-  writeFileSync(
-    join(fixture, "types-smoke.ts"),
-    `${typeImports}
+    const typeImports = typeSurfaces
+      .map(
+        (specifier, index) =>
+          `import type * as Surface${String(index)} from ${JSON.stringify(specifier)};`,
+      )
+      .join("\n");
+    const typeUses = typeSurfaces
+      .map((_, index) => `keyof typeof Surface${String(index)}`)
+      .join(", ");
+    writeFileSync(
+      join(fixture, "types-smoke.ts"),
+      `${typeImports}
 import type {
-  AgentEvent,
+  VisitorEvent,
   ComponentDocument,
   ComponentSpec,
   ConversationMessage,
+  DataValueCountPolicy,
+  DataValueDescriptor,
+  DescribeDataValueOptions,
+  DataValueShape,
   FacetAgent,
   FacetCatalog,
   FacetTargetedMutationInput,
@@ -486,22 +499,24 @@ import type {
   UpdateNodeInput,
 } from "@facet/agent-tools";
 import type { AgentConnection, ConnectOptions } from "@facet/agent-client";
+import type { SseVisitorMessageInput } from "@facet/client";
 import type { ReferenceAgentOptions } from "@facet/reference-agent";
 import type { QuickstartServerOptions, RunningQuickstart } from "@facet/quickstart";
 // @ts-expect-error retired hard-cut type
-import type { FacetTree } from "@facet/core"; // style-hard-cut: allowed-negative
+import type { FacetTree } from "@facet/core"; // component-hard-cut: allowed-negative
 // @ts-expect-error retired hard-cut type
-import type { LoadedAssets } from "@facet/runtime"; // style-hard-cut: allowed-negative
+import type { LoadedAssets } from "@facet/runtime"; // component-hard-cut: allowed-negative
 // @ts-expect-error retired hard-cut type
-import type { GetBrickSpecToolInput } from "@facet/agent-tools"; // style-hard-cut: allowed-negative
+import type { GetBrickSpecToolInput } from "@facet/agent-tools"; // component-hard-cut: allowed-negative
 export type PublishedSurfaces = [${typeUses}];
 export type ComponentMarkupContract = [
   ComponentSpec,
   FacetCatalog,
   ComponentDocument,
-  AgentEvent,
+  VisitorEvent,
   TurnOutcome,
   ConversationMessage,
+  DescribeDataValueOptions,
   StageStore,
   Sink,
   SummaryStore,
@@ -517,6 +532,7 @@ export type ComponentMarkupContract = [
   TurnObservation,
   AgentConnection,
   ConnectOptions,
+  SseVisitorMessageInput,
   ReferenceAgentOptions,
   QuickstartServerOptions,
   RunningQuickstart,
@@ -542,54 +558,62 @@ declare const toolInputs: ToolInputContract;
 void contract;
 void toolInputs;
 `,
-  );
-  writeFileSync(
-    join(fixture, "tsconfig.json"),
-    `${JSON.stringify(
-      {
-        compilerOptions: {
-          lib: ["ES2022", "DOM"],
-          module: "NodeNext",
-          moduleResolution: "NodeNext",
-          noEmit: true,
-          skipLibCheck: false,
-          strict: true,
-          target: "ES2022",
+    );
+    writeFileSync(
+      join(fixture, "tsconfig.json"),
+      `${JSON.stringify(
+        {
+          compilerOptions: {
+            lib: ["ES2022", "DOM"],
+            module: "NodeNext",
+            moduleResolution: "NodeNext",
+            noEmit: true,
+            skipLibCheck: false,
+            strict: true,
+            target: "ES2022",
+          },
+          include: ["types-smoke.ts"],
         },
-        include: ["types-smoke.ts"],
-      },
-      null,
-      2,
-    )}\n`,
-  );
-  run(process.execPath, [join(fixture, "node_modules/typescript/bin/tsc")], { cwd: fixture });
+        null,
+        2,
+      )}\n`,
+    );
+    run(process.execPath, [join(fixture, "node_modules/typescript/bin/tsc")], { cwd: fixture });
 
-  console.log("[package-smoke] exercising installed bin links");
-  for (const name of retiredBinNames) {
-    const executable = join(fixture, "node_modules", ".bin", name);
-    if (existsSync(executable)) fail(`${name} retired bin link was installed`);
-  }
-  for (const [name, expectation] of Object.entries(expectedBins)) {
-    const executable = join(fixture, "node_modules", ".bin", name);
-    if (!existsSync(executable)) fail(`${name} bin link was not installed`);
-    const output = run(executable, expectation.args, {
-      cwd: fixture,
-      env: expectation.env,
-      exitCode: expectation.exitCode,
-      timeout: 10_000,
-    });
-    if (!output.includes(expectation.output)) {
-      fail(`${name} did not produce its expected startup diagnostic: ${expectation.output}`);
+    console.log("[package-smoke] exercising installed bin links");
+    for (const name of retiredBinNames) {
+      const executable = join(fixture, "node_modules", ".bin", name);
+      if (existsSync(executable)) fail(`${name} retired bin link was installed`);
+    }
+    for (const [name, expectation] of Object.entries(expectedBins)) {
+      const executable = join(fixture, "node_modules", ".bin", name);
+      if (!existsSync(executable)) fail(`${name} bin link was not installed`);
+      const output = run(executable, expectation.args, {
+        cwd: fixture,
+        env: expectation.env,
+        exitCode: expectation.exitCode,
+        timeout: 10_000,
+      });
+      if (!output.includes(expectation.output)) {
+        fail(`${name} did not produce its expected startup diagnostic: ${expectation.output}`);
+      }
+    }
+
+    console.log(
+      `[package-smoke] PASS (${String(packages.length)} packages, ${String(esmSurfaces.length)} ESM, ${String(cjsSurfaces.length)} CJS, ${String(typeSurfaces.length)} type surfaces, ${String(Object.keys(expectedBins).length)} bins)`,
+    );
+  } finally {
+    if (process.env.FACET_KEEP_PACKAGE_SMOKE !== "1") {
+      rmSync(temporaryRoot, { recursive: true, force: true });
+    } else {
+      console.log(`[package-smoke] kept fixture at ${relative(repoRoot, temporaryRoot)}`);
     }
   }
+}
 
-  console.log(
-    `[package-smoke] PASS (${String(packages.length)} packages, ${String(esmSurfaces.length)} ESM, ${String(cjsSurfaces.length)} CJS, ${String(typeSurfaces.length)} type surfaces, ${String(Object.keys(expectedBins).length)} bins)`,
-  );
-} finally {
-  if (process.env.FACET_KEEP_PACKAGE_SMOKE !== "1") {
-    rmSync(temporaryRoot, { recursive: true, force: true });
-  } else {
-    console.log(`[package-smoke] kept fixture at ${relative(repoRoot, temporaryRoot)}`);
-  }
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+) {
+  main();
 }

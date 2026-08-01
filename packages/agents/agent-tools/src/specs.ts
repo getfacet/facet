@@ -153,3 +153,19 @@ export const FACET_TOOL_SPECS: readonly FacetToolSpec[] = Object.freeze([
     true,
   ),
 ]);
+
+const FACET_TOOL_SPEC_BY_NAME: ReadonlyMap<FacetToolName, FacetToolSpec> = new Map(
+  FACET_TOOL_SPECS.map((tool) => [tool.name, tool]),
+);
+
+export function facetToolSpec(name: FacetToolName): FacetToolSpec {
+  const tool = FACET_TOOL_SPEC_BY_NAME.get(name);
+  if (tool === undefined) {
+    throw new Error(`Unknown Facet tool spec: ${name}`);
+  }
+  return tool;
+}
+
+export function facetToolInputKeys(name: FacetToolName): readonly string[] {
+  return facetToolSpec(name).inputSchema.required;
+}

@@ -66,6 +66,7 @@ import { createFieldStore } from "./field-store.js";
 import { MountNode } from "./mount-node.js";
 import type { MountContext } from "./mount-node.js";
 import type { ComponentRegistry } from "./registry.js";
+import { errorsDuring } from "../../../../test-support/errors-during.js";
 
 afterEach(cleanup);
 
@@ -156,32 +157,6 @@ function ancestorsOf(element: Element): readonly Element[] {
 
 function isIsolated(element: Element): boolean {
   return globalThis.getComputedStyle(element).isolation === "isolate";
-}
-
-/**
- * Every error that escaped `run`.
- *
- * A render that throws with no boundary above it unwinds to the caller, and
- * React also reports it to the environment; jsdom turns the report into a window
- * `error` event. Collecting both and cancelling the report is what lets a
- * deliberately provoked failure be asserted without also being charged to the
- * run as an unhandled error.
- */
-function errorsDuring(run: () => void): readonly string[] {
-  const escaped: string[] = [];
-  const record = (event: ErrorEvent): void => {
-    escaped.push(event.error instanceof Error ? event.error.message : String(event.message));
-    event.preventDefault();
-  };
-  window.addEventListener("error", record);
-  try {
-    run();
-  } catch (error) {
-    escaped.push(error instanceof Error ? error.message : String(error));
-  } finally {
-    window.removeEventListener("error", record);
-  }
-  return escaped;
 }
 
 describe("the containment element", () => {

@@ -2,7 +2,7 @@
 import {
   BOUNDS,
   NEUTRAL_COPY_DEFAULTS,
-  type AgentEvent,
+  type VisitorEvent,
   type ComponentDocument,
   type ComponentMountProps,
   type ComponentNode,
@@ -255,6 +255,10 @@ function sourceOf(file: string): string {
   return readFileSync(join(dirname(fileURLToPath(import.meta.url)), file), "utf8");
 }
 
+function nextTick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function firstField(): HTMLInputElement {
   const field = document.querySelector<HTMLInputElement>('[data-testid="field"]');
   if (field === null) {
@@ -371,10 +375,10 @@ describe("useFacet conversation and sends", () => {
 
   it("stamps only eventId and stageRevision onto renderer events", () => {
     const transport = new TestTransport();
-    const sent: AgentEvent[] = [];
+    const sent: VisitorEvent[] = [];
     const ids = ["event-a", "event-b"];
     const view = renderHookWith(transport, {
-      onAgentEvent: (event) => {
+      onVisitorEvent: (event) => {
         sent.push(event);
       },
       createEventId: () => ids.shift() ?? "event-extra",
@@ -426,7 +430,10 @@ describe("useFacet conversation and sends", () => {
 
   it("surfaces a turn in flight as pending until a server frame settles it", () => {
     const transport = new TestTransport();
-    const view = renderHookWith(transport, { onAgentEvent: () => {} });
+    const view = renderHookWith(transport, {
+      onVisitorEvent: () => {},
+      createEventId: () => "event-1",
+    });
 
     act(() => {
       view.result.current.sendEvent({
@@ -438,7 +445,230 @@ describe("useFacet conversation and sends", () => {
     });
     expect(view.result.current.pending).toBe(true);
 
-    emit(transport, message());
+    emit(transport, message({ messageId: "event-1:assistant", turnId: "event-1" }));
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("clears pending after a void callback even when the turn is patch-only", async () => {
+    const transport = new TestTransport();
+    const view = renderHookWith(transport, {
+      onVisitorEvent: () => {},
+      createEventId: () => "event-1",
+    });
+
+    act(() => {
+      view.result.current.sendEvent({
+        eventName: "refresh",
+        sourceNodeId: "button_1",
+        screen: "home",
+        collect: {},
+      });
+    });
+    emit(
+      transport,
+      patch(1, [{ op: "replace", path: "", value: { document: documentWithText("a"), data: {} } }]),
+    );
+    expect(view.result.current.pending).toBe(true);
+
+    await act(async () => {
+      await nextTick();
+    });
+
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("clears pending when async visitor event sending completes", async () => {
+    const transport = new TestTransport();
+    let completeSend: (() => void) | undefined;
+    const sent = new Promise<void>((resolve) => {
+      completeSend = resolve;
+    });
+    const view = renderHookWith(transport, {
+      onVisitorEvent: () => sent,
+      createEventId: () => "event-1",
+    });
+
+    act(() => {
+      view.result.current.sendEvent({
+        eventName: "refresh",
+        sourceNodeId: "button_1",
+        screen: "home",
+        collect: {},
+      });
+    });
+    expect(view.result.current.pending).toBe(true);
+
+    await act(async () => {
+      if (completeSend === undefined) {
+        throw new Error("send promise was not created");
+      }
+      completeSend();
+      await sent;
+      await Promise.resolve();
+    });
+
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("does not clear pending for a patch frame that has no turn identity", () => {
+    const transport = new TestTransport();
+    const view = renderHookWith(transport, {
+      onVisitorEvent: () => {},
+      createEventId: () => "event-1",
+    });
+
+    act(() => {
+      view.result.current.sendEvent({
+        eventName: "refresh",
+        sourceNodeId: "button_1",
+        screen: "home",
+        collect: {},
+      });
+    });
+    emit(
+      transport,
+      patch(1, [{ op: "replace", path: "", value: { document: documentWithText("a"), data: {} } }]),
+    );
+
+    expect(view.result.current.pending).toBe(true);
+
+    emit(transport, message({ messageId: "event-1:assistant", turnId: "event-1" }));
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("clears pending when visitor event sending fails", async () => {
+    const transport = new TestTransport();
+    const view = renderHookWith(transport, {
+      onVisitorEvent: () => Promise.reject(new Error("offline")),
+    });
+
+    await act(async () => {
+      view.result.current.sendEvent({
+        eventName: "refresh",
+        sourceNodeId: "button_1",
+        screen: "home",
+        collect: {},
+      });
+      await Promise.resolve();
+    });
+
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("clears pending when visitor event sending throws synchronously", () => {
+    const transport = new TestTransport();
+    const view = renderHookWith(transport, {
+      onVisitorEvent: () => {
+        throw new Error("offline");
+      },
+    });
+
+    act(() => {
+      view.result.current.sendEvent({
+        eventName: "refresh",
+        sourceNodeId: "button_1",
+        screen: "home",
+        collect: {},
+      });
+    });
+
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("clears pending when visitor message sending fails", async () => {
+    const transport = new TestTransport();
+    const view = renderHookWith(transport, {
+      onVisitorMessage: () => Promise.reject(new Error("offline")),
+      createMessageId: () => "visitor-turn",
+      now: () => 123,
+    });
+
+    await act(async () => {
+      view.result.current.sendMessage("hello");
+      await Promise.resolve();
+    });
+
+    expect(view.result.current.pending).toBe(false);
+    expect(view.result.current.conversation.map((item) => item.messageId)).toEqual([
+      "visitor-turn:visitor",
+    ]);
+  });
+
+  it("keeps pending when a later send fails while an earlier turn is unresolved", async () => {
+    const transport = new TestTransport();
+    const ids = ["event-a", "event-b"];
+    const view = renderHookWith(transport, {
+      onVisitorEvent: (event) =>
+        event.eventId === "event-a"
+          ? new Promise<void>(() => {})
+          : Promise.reject(new Error("offline")),
+      createEventId: () => ids.shift() ?? "event-extra",
+    });
+
+    await act(async () => {
+      view.result.current.sendEvent({
+        eventName: "refresh",
+        sourceNodeId: "button_1",
+        screen: "home",
+        collect: {},
+      });
+      view.result.current.sendEvent({
+        eventName: "refresh",
+        sourceNodeId: "button_2",
+        screen: "home",
+        collect: {},
+      });
+      await Promise.resolve();
+    });
+
+    expect(view.result.current.pending).toBe(true);
+
+    emit(
+      transport,
+      message({ messageId: "event-a:assistant", turnId: "event-a", text: "first done" }),
+    );
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("does not count one turn's patch and conversation as two pending settlements", () => {
+    const transport = new TestTransport();
+    const ids = ["event-a", "event-b"];
+    const view = renderHookWith(transport, {
+      onVisitorEvent: () => {},
+      createEventId: () => ids.shift() ?? "event-extra",
+    });
+
+    act(() => {
+      view.result.current.sendEvent({
+        eventName: "refresh",
+        sourceNodeId: "button_1",
+        screen: "home",
+        collect: {},
+      });
+      view.result.current.sendEvent({
+        eventName: "refresh",
+        sourceNodeId: "button_2",
+        screen: "home",
+        collect: {},
+      });
+    });
+
+    emit(
+      transport,
+      patch(1, [{ op: "replace", path: "", value: { document: documentWithText("a"), data: {} } }]),
+    );
+    expect(view.result.current.pending).toBe(true);
+
+    emit(
+      transport,
+      message({ messageId: "event-a:assistant", turnId: "event-a", text: "first done" }),
+    );
+    expect(view.result.current.pending).toBe(true);
+
+    emit(
+      transport,
+      message({ messageId: "event-b:assistant", turnId: "event-b", text: "second done" }),
+    );
     expect(view.result.current.pending).toBe(false);
   });
 

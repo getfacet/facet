@@ -1,11 +1,12 @@
 import type { ServerResponse } from "node:http";
-import type { AgentControlFrame, AgentEvent, AgentEventFrame } from "@facet/core";
+import { randomUUID } from "node:crypto";
+import type { AgentControlFrame, VisitorEvent, VisitorEventFrame } from "@facet/core";
 import { collectTurnOutcome, validateTurnOutcome } from "@facet/core";
 import { offlineFor } from "./offline.js";
 import { writeSse } from "./sse.js";
 
 interface RuntimeContext {
-  readonly event: AgentEvent;
+  readonly event: VisitorEvent;
 }
 
 interface RuntimeLikeAgent {
@@ -13,6 +14,7 @@ interface RuntimeLikeAgent {
 }
 
 interface Pending {
+  readonly correlationId: string;
   readonly eventId: string;
   readonly resolve: (result: { readonly text: string | null }) => void;
   readonly timer: ReturnType<typeof setTimeout>;
@@ -20,6 +22,7 @@ interface Pending {
 
 export interface AgentChannelDeps {
   readonly agentTimeoutMs?: number;
+  readonly maxPendingTurns?: number;
   readonly fallbackAgent?: RuntimeLikeAgent;
 }
 
@@ -34,6 +37,8 @@ export interface AgentChannel {
 }
 
 const RUNTIME_AUTHORITY_TIMEOUT_MS = 30_000;
+const REMOTE_TIMEOUT_SAFETY_MARGIN_MS = 1_000;
+const MAX_REMOTE_PENDING_TURNS = 256;
 
 export const REMOTE_TIMEOUT_TEXT =
   "(still working — this is taking longer than usual; the answer will appear here when it's ready)";
@@ -50,18 +55,50 @@ function textFromControl(frame: AgentControlFrame): string | null | undefined {
   return validated.outcome.conversation?.text ?? null;
 }
 
+function controlCorrelationId(frame: AgentControlFrame): string {
+  return frame.correlationId ?? frame.eventId;
+}
+
+function resolveAgentTimeoutMs(requested: number | undefined): number {
+  const candidate =
+    requested === undefined || !Number.isFinite(requested)
+      ? RUNTIME_AUTHORITY_TIMEOUT_MS
+      : requested;
+  return Math.floor(
+    Math.max(
+      1,
+      Math.min(candidate, RUNTIME_AUTHORITY_TIMEOUT_MS - REMOTE_TIMEOUT_SAFETY_MARGIN_MS),
+    ),
+  );
+}
+
+function remoteFrameTimeoutMs(timeoutMs: number): number {
+  return Math.max(
+    1,
+    timeoutMs > REMOTE_TIMEOUT_SAFETY_MARGIN_MS
+      ? timeoutMs - REMOTE_TIMEOUT_SAFETY_MARGIN_MS
+      : timeoutMs,
+  );
+}
+
+function positiveIntegerOption(value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (!Number.isFinite(value) || value < 1) return fallback;
+  return Math.floor(value);
+}
+
 export function createAgentChannel(deps: AgentChannelDeps = {}): AgentChannel {
-  const requestedTimeoutMs = deps.agentTimeoutMs ?? RUNTIME_AUTHORITY_TIMEOUT_MS;
-  const timeoutMs = Math.min(requestedTimeoutMs, RUNTIME_AUTHORITY_TIMEOUT_MS);
+  const timeoutMs = resolveAgentTimeoutMs(deps.agentTimeoutMs);
+  const maxPendingTurns = positiveIntegerOption(deps.maxPendingTurns, MAX_REMOTE_PENDING_TURNS);
   const pending = new Map<string, Pending>();
   let stream: ServerResponse | null = null;
   let lastHeartbeat = Date.now();
 
-  const settle = (eventId: string, text: string | null): boolean => {
-    const turn = pending.get(eventId);
+  const settle = (correlationId: string, text: string | null): boolean => {
+    const turn = pending.get(correlationId);
     if (turn === undefined) return false;
     clearTimeout(turn.timer);
-    pending.delete(eventId);
+    pending.delete(correlationId);
     turn.resolve({ text });
     return true;
   };
@@ -78,15 +115,22 @@ export function createAgentChannel(deps: AgentChannelDeps = {}): AgentChannel {
       if (current === null) {
         return Promise.resolve({ text: offlineFor(event) });
       }
-      if (pending.has(event.eventId)) {
+      if (pending.size >= maxPendingTurns) {
         return Promise.resolve({ text: REMOTE_TIMEOUT_TEXT });
       }
-      const frame: AgentEventFrame = Object.freeze({ kind: "agent_event" as const, event });
+      const correlationId = randomUUID();
+      const frame: VisitorEventFrame = Object.freeze({
+        kind: "visitor_event" as const,
+        correlationId,
+        timeoutMs: remoteFrameTimeoutMs(timeoutMs),
+        event,
+      });
       return new Promise((resolve) => {
         const timer = setTimeout(() => {
-          settle(event.eventId, REMOTE_TIMEOUT_TEXT);
+          settle(correlationId, REMOTE_TIMEOUT_TEXT);
         }, timeoutMs);
-        pending.set(event.eventId, {
+        pending.set(correlationId, {
+          correlationId,
           eventId: event.eventId,
           timer,
           resolve,
@@ -127,10 +171,12 @@ export function createAgentChannel(deps: AgentChannelDeps = {}): AgentChannel {
       lastHeartbeat = Date.now();
     },
     resolve(frame) {
-      if (!pending.has(frame.eventId)) return false;
+      const correlationId = controlCorrelationId(frame);
+      const turn = pending.get(correlationId);
+      if (turn === undefined || turn.eventId !== frame.eventId) return false;
       const text = textFromControl(frame);
       if (text === undefined) return false;
-      settle(frame.eventId, text);
+      settle(correlationId, text);
       void collectTurnOutcome(frame.outcome);
       return true;
     },

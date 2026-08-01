@@ -95,7 +95,7 @@ to a safe subset.
 
 Core also owns the transport-neutral message vocabulary:
 `FacetAgent`, `FacetTransport`, `TurnOutcome`, `ServerFrame`, `PatchFrame`,
-`AgentEvent`, `StageRevision`, and related validation helpers. Those types let
+`VisitorEvent`, `StageRevision`, and related validation helpers. Those types let
 runtime, client transports, renderers, and agent packages agree on revision
 coherence without introducing package cycles.
 

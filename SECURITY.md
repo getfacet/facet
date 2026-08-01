@@ -44,11 +44,12 @@ public or anonymous. In its default configuration it does **not** authenticate:
   unless you set `agentToken` and configure external agents to send the matching
   `x-facet-token` header, for example from `FACET_AGENT_TOKEN`. Set it whenever
   the server is reachable by anything other than a trusted local process.
-- The browser channel trusts `visitorId` as the session key — it is not verified.
-  The default browser id is a 128-bit random UUID (unguessable), which is correct
-  for anonymous pages. If you key sessions by a guessable/enumerable id, or your
-  pages carry per-user sensitive data, you **must** add your own authentication in
-  front of the server; otherwise one visitor can read another's page and history.
+- The browser channel trusts `sessionKey` as-is — it is not verified. The
+  default browser helper stores a 128-bit random UUID as the local session key,
+  which is correct for anonymous pages. If you key sessions by a
+  guessable/enumerable id, or your pages carry per-user sensitive data, you
+  **must** add your own authentication in front of the server; otherwise one
+  visitor can read another's page and history.
 
 If you build a hosted / multi-tenant product on top of `@facet/server`, treat the
 above as required work, not optional — add authentication, per-tenant isolation,
@@ -63,7 +64,8 @@ authentication in front.
 Two in-memory server structures are bounded, best-effort caches under that same
 trust model: the per-session frame log backing `Last-Event-ID` resume (session
 churn evicts it — resume then degrades to a full rehydrate, nothing is lost)
-and the late-result window keyed by sequential request ids (bounded FIFO; on an
-unauthenticated port it is one more reason to set `agentToken`).
+and the remote-agent pending window keyed by opaque transport correlations
+(bounded FIFO; on an unauthenticated port it is one more reason to set
+`agentToken`).
 
 [gh-report]: https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability

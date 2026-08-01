@@ -17,7 +17,7 @@ export const meta = {
 // Workflow({name:'refactor-audit', args?:{votes?,thorough?,skipCritic?}}).
 
 const DIMENSIONS = [
-  { key: 'duplication', focus: 'the same logic/spec/string in >=2 places (e.g. the LLM stage spec). Cite EVERY location.' },
+  { key: 'duplication', focus: 'the same logic/spec/string in >=2 places (e.g. provider prompt builders or tool specs). Cite EVERY location.' },
   { key: 'boundaries', focus: 'wrong dependency direction, protocol types outside @facet/core, reusable code stuck in one package that others need, Node built-ins in a browser entry. Cite the import.' },
   { key: 'dead-code', focus: 'unused exports/files/branches, orphans after a refactor. PROVE it with a grep showing no references.' },
   { key: 'hygiene', focus: 'package.json uniformity (build/files/exports/publishConfig/sideEffects), missing tests on pure logic (kit builders, cli op-building), doc drift vs the actual published package set.' },

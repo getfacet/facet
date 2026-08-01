@@ -1,6 +1,6 @@
 import { deriveMessageId, validateCatalog, validateTheme } from "@facet/core";
 import type {
-  AgentEvent,
+  VisitorEvent,
   ComponentDocument,
   ConversationMessage,
   FacetCatalog,
@@ -69,7 +69,7 @@ export function testTheme(): FacetTheme {
   return result.theme;
 }
 
-export function agentEvent(overrides: Partial<AgentEvent> = {}): AgentEvent {
+export function visitorEvent(overrides: Partial<VisitorEvent> = {}): VisitorEvent {
   return {
     eventId: "event1",
     eventName: "submit",
@@ -203,7 +203,11 @@ export async function readFrames(response: Response, count: number): Promise<rea
   }
 }
 
-export function postEvent(base: string, sessionKey: string, event: AgentEvent): Promise<Response> {
+export function postEvent(
+  base: string,
+  sessionKey: string,
+  event: VisitorEvent,
+): Promise<Response> {
   return fetch(`${base}/event`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

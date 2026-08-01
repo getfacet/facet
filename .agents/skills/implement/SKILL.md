@@ -111,8 +111,9 @@ feature commit.
 ## Stage 2 — Feature hard gate
 Run in order; on any FAIL, fix and restart the inner loop from the top:
 1. **`/update-tests`** — every changed production file is covered; required suites run.
-2. **`/verify`** — typecheck + test + lint + format:check + build + source NUL
-   scan all pass.
+2. **`/verify`** — the canonical verify command list passes: typecheck, test,
+   lint, format:check, build, docs, package-layout, component-hard-cut,
+   package-smoke/gate-profile tests, and source NUL scan.
 3. **`/code-review`** — PASS = P0–P2 = 0 (P3 nits non-blocking). Fix findings,
    re-run `/verify`, then re-run `/code-review` (never declare PASS on the strength
    of the fixes alone).

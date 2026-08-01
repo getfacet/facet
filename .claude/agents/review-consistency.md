@@ -8,8 +8,8 @@ You review Facet for **consistency** problems. Read `docs/REVIEW-RULES.md`.
 
 Hunt for:
 
-- **Duplication** — the same logic or string in >1 place (e.g. the LLM stage-spec
-  prompt in the bridge and the playground generator), copy-pasted helpers.
+- **Duplication** — the same logic or string in >1 place (for example provider
+  prompt builders, tool specs, or renderer helpers), copy-pasted helpers.
 - **Cross-package drift** — a type/const defined twice, a barrel that re-exports
   Node-only code into a browser entry, an interface that lives in the wrong
   package (protocol types outside `@facet/core`).

@@ -29,6 +29,8 @@
 export { parseAction } from "./actions.js";
 export type { Action, ActionResult } from "./actions.js";
 
+export { isAuthoredNumberLiteral, parseAuthoredNumber } from "./author-scalar.js";
+
 export { BOUNDS } from "./bounds.js";
 export type { Bounds } from "./bounds.js";
 
@@ -50,6 +52,20 @@ export type { ConversationMessage } from "./conversation.js";
 export { resolveBinding } from "./data-binding.js";
 export type { BindingResolution } from "./data-binding.js";
 
+export {
+  dataValueEntryCount,
+  dataValueFields,
+  dataValuePresenceCount,
+  dataValueShape,
+  describeDataValue,
+} from "./data-descriptor.js";
+export type {
+  DataValueCountPolicy,
+  DataValueDescriptor,
+  DescribeDataValueOptions,
+  DataValueShape,
+} from "./data-descriptor.js";
+
 export { evaluateCandidateModel, measurePublishPayload, writePath } from "./data-model.js";
 export type { DataModel, DataModelEvaluation, PayloadEvaluation } from "./data-model.js";
 
@@ -59,8 +75,8 @@ export type { AuthorValidationResult } from "./document-validation.js";
 export { buildDocument } from "./document.js";
 export type { ComponentDocument, ComponentNode } from "./document.js";
 
-export { validateAgentEvent } from "./event.js";
-export type { AgentEvent, AgentEventValidationResult } from "./event.js";
+export { validateVisitorEvent } from "./event.js";
+export type { VisitorEvent, VisitorEventValidationResult } from "./event.js";
 
 export { isFacetIdentifier, parseDataPath } from "./identifiers.js";
 export type { DataPath } from "./identifiers.js";
@@ -87,7 +103,7 @@ export type { JsonPatchOperation } from "./patch.js";
 export { collectTurnOutcome, iterateTurnOutcome, validateTurnOutcome } from "./protocol.js";
 export type {
   AgentControlFrame,
-  AgentEventFrame,
+  VisitorEventFrame,
   FacetAgent,
   FacetTransport,
   PatchFrame,

@@ -22,8 +22,10 @@ node --test scripts/check-docs.test.mjs
 node scripts/check-docs.mjs
 node --test scripts/check-package-layout.test.mjs
 node scripts/check-package-layout.mjs
-node --test scripts/check-style-hard-cut.test.mjs
-node scripts/check-style-hard-cut.mjs
+node --test scripts/check-component-hard-cut.test.mjs
+node scripts/check-component-hard-cut.mjs
+node --test scripts/package-smoke.test.mjs
+node --test scripts/gate-profiles.test.mjs
 node scripts/check-source-nuls.mjs
 ```
 
@@ -40,11 +42,16 @@ node scripts/check-source-nuls.mjs
   then `scripts/check-docs.mjs` validates current-document links, anchors, and
   explicitly marked concrete TypeScript/TSX snippets. Run them in that order.
 - **package layout** — the Node regression suite plus
-  `scripts/check-package-layout.mjs` pin the exact 15
-  package name-to-path map, workspace uniqueness, repository directories, role
-  groups, root `labs/`, and the absence of current references to retired paths.
-- **style hard cut** — the Node regression suite pins the scanner, then the
-  scanner rejects retired style syntax or claims in production and documentation.
+  `scripts/check-package-layout.mjs` pin the current package-layout inventory,
+  workspace uniqueness, repository directories, role groups, root `labs/`, and
+  the absence of current references to retired paths.
+- **component-markup hard cut** — the Node regression suite pins the scanner,
+  then the scanner rejects retired syntax or claims in production and
+  documentation.
+- **package smoke inventory** — `scripts/package-smoke.test.mjs` pins the
+  public-package smoke inventory and helper behavior.
+- **gate profiles** — `scripts/gate-profiles.test.mjs` keeps `pnpm verify`,
+  verify skills, and review-rule command lists aligned.
 - **raw-NUL scan** — `scripts/check-source-nuls.mjs` must report PASS.
   A raw `0x00` byte in tracked source (use the `\x00` string escape instead) makes
   git treat the file as binary, hiding its whole diff from `/code-review`. This

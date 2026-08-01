@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { FacetToolSession } from "@facet/core";
 import {
-  agentEvent,
+  visitorEvent,
   eventReader,
   postEvent,
   readFrames,
@@ -64,7 +64,7 @@ describe("createFacetServer", () => {
     const reader = eventReader(stream);
 
     await reader.next(); // initial rehydrate
-    const response = await postEvent(base, "s1", agentEvent());
+    const response = await postEvent(base, "s1", visitorEvent());
     expect(response.status).toBe(202);
 
     const patch = await reader.next();
@@ -97,7 +97,7 @@ describe("createFacetServer", () => {
     const reader = eventReader(stream);
 
     await reader.next(); // initial rehydrate
-    const response = await postEvent(base, "s1", agentEvent());
+    const response = await postEvent(base, "s1", visitorEvent());
     expect(response.status).toBe(202);
     const patch = await reader.next();
     await reader.close();

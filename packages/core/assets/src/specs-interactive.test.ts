@@ -616,7 +616,7 @@ describe("interactive specs — Button's action prop domain", () => {
   it("admits nav: and agent: and nothing else", () => {
     expect(authorOutcome(`<Button label="Go" action="nav:home" />`)).toBe("accepted");
     expect(authorOutcome(`<Button label="Refresh" action="agent:refresh" />`)).toBe("accepted");
-    expect(authorOutcome(`<Button label="Toggle" action="local:toggle" />`)).toBe("unknown-scheme"); // style-hard-cut: allowed-negative
+    expect(authorOutcome(`<Button label="Toggle" action="local:toggle" />`)).toBe("unknown-scheme"); // component-hard-cut: allowed-negative
   });
 
   it("rejects a nav: target no screen in the same document declares", () => {
@@ -627,7 +627,7 @@ describe("interactive specs — Button's action prop domain", () => {
     expect(authorOutcome(`<Button label="Go" />`)).toBe("missing-required-prop");
   });
 
-  it("declares an optional collect prop naming the fields an agent event carries", () => {
+  it("declares an optional collect prop naming the fields a visitor event carries", () => {
     const collect = propOf("Button", "collect");
     expect({ type: collect.type, required: collect.required }).toEqual({
       type: "string",
