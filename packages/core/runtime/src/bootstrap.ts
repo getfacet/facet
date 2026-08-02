@@ -5,6 +5,7 @@ import {
   validateCatalog,
   validateModalConformance,
   validateTheme,
+  validateThemeExtensionDeclarations,
 } from "@facet/core";
 import type {
   AuthorError,
@@ -19,11 +20,18 @@ import type { Session } from "./session.js";
 export interface SessionBootstrapOptions {
   readonly catalog: FacetCatalog;
   readonly theme: FacetTheme;
+  readonly themeExtensions?: unknown;
   readonly copy?: unknown;
   readonly initialMarkup?: string;
 }
 
-const OPTION_KEYS: readonly string[] = ["catalog", "theme", "copy", "initialMarkup"];
+const OPTION_KEYS: readonly string[] = [
+  "catalog",
+  "theme",
+  "themeExtensions",
+  "copy",
+  "initialMarkup",
+];
 const MODAL_TAG = "Modal";
 const EMPTY_DATA: DataModel = Object.freeze({});
 
@@ -73,12 +81,14 @@ function initialDocument(
 function sessionFrom(
   catalog: FacetCatalog,
   theme: FacetTheme,
+  themeExtensions: Session["themeExtensions"],
   copy: Session["copy"],
   document: ComponentDocument | null,
 ): Session {
   return Object.freeze({
     catalog,
     theme,
+    themeExtensions,
     copy,
     document,
     data: EMPTY_DATA,
@@ -108,7 +118,7 @@ function bootstrap(options: unknown): ReturnType<typeof bootstrapSession> {
     return reject(
       "session_bootstrap_not_an_object",
       "",
-      "Session bootstrap takes one object: { catalog, theme, copy?, initialMarkup? }.",
+      "Session bootstrap takes one object: { catalog, theme, themeExtensions?, copy?, initialMarkup? }.",
     );
   }
 
@@ -136,7 +146,15 @@ function bootstrap(options: unknown): ReturnType<typeof bootstrapSession> {
     }
   }
 
-  const theme = validateTheme(read(options, "theme"));
+  const themeExtensions = validateThemeExtensionDeclarations(read(options, "themeExtensions"));
+  if (!themeExtensions.ok) {
+    return themeExtensions;
+  }
+
+  const theme = validateTheme(read(options, "theme"), {
+    catalog: catalog.catalog,
+    extensions: themeExtensions.extensions,
+  });
   if (!theme.ok) {
     return theme;
   }
@@ -153,6 +171,12 @@ function bootstrap(options: unknown): ReturnType<typeof bootstrapSession> {
 
   return {
     ok: true,
-    session: sessionFrom(catalog.catalog, theme.theme, copy.copy, document.document),
+    session: sessionFrom(
+      catalog.catalog,
+      theme.theme,
+      themeExtensions.extensions,
+      copy.copy,
+      document.document,
+    ),
   };
 }

@@ -44,6 +44,7 @@ export type {
   ComponentSpecValidationResult,
   PropSchema,
   StructuredPropType,
+  ThemeRecipeSpec,
 } from "./component-spec.js";
 
 export { deriveMessageId, truncateConversationText, validateVisitorText } from "./conversation.js";
@@ -117,8 +118,37 @@ export type { CasOutcome, StageRevision } from "./revision.js";
 
 export type { FacetStage } from "./stage.js";
 
-export { themeToCssVars, validateTheme } from "./theme.js";
-export type { FacetTheme, ThemeValidationResult } from "./theme.js";
+export {
+  FACET_THEME_CONTRACT,
+  facetThemeToKebabCase,
+  themeTokenRef,
+  themeTokenVar,
+} from "./theme-contract.js";
+export type {
+  FacetExtensionTokenRef,
+  FacetFoundationGroupName,
+  FacetFoundationTheme,
+  FacetFoundationTokenRef,
+  FacetRecipeTokenRef,
+  FacetSemanticGroupName,
+  FacetSemanticTheme,
+  FacetSemanticTokenRef,
+  FacetThemeContract,
+  FacetThemeGroupSpec,
+  FacetThemeTokenRef,
+  FacetThemeTokenSpec,
+  FacetThemeTokenTableValues,
+  FacetThemeTokenValueKind,
+  FacetThemeTokenValues,
+} from "./theme-contract.js";
+export { themeToCssVars, validateTheme, validateThemeExtensionDeclarations } from "./theme.js";
+export type {
+  FacetTheme,
+  FacetThemeExtensionDeclaration,
+  FacetThemeValidationOptions,
+  ThemeExtensionDeclarationValidationResult,
+  ThemeValidationResult,
+} from "./theme.js";
 
 export type {
   FacetTargetedMutationInput,

@@ -72,6 +72,7 @@
 
 import { BOUNDS } from "./bounds.js";
 import { isFacetIdentifier } from "./identifiers.js";
+import { facetThemeToKebabCase, type FacetThemeTokenValueKind } from "./theme-contract.js";
 
 /** The three scalar types an authored prop value can take. */
 type PropType = "string" | "number" | "boolean";
@@ -137,6 +138,11 @@ export interface CollectSpec {
   readonly sensitiveProp?: string;
 }
 
+/** Component-owned recipe tokens the active theme must fill when this spec is active. */
+export interface ThemeRecipeSpec {
+  readonly tokens: Readonly<Record<string, FacetThemeTokenValueKind>>;
+}
+
 /** The serializable description of one component in the active catalog. */
 export interface ComponentSpec {
   readonly tag: string;
@@ -145,6 +151,7 @@ export interface ComponentSpec {
   readonly props: Readonly<Record<string, PropSchema>>;
   readonly acceptsChildren: boolean;
   readonly collect?: CollectSpec;
+  readonly themeRecipe?: ThemeRecipeSpec;
 }
 
 /**
@@ -172,9 +179,31 @@ export type ComponentSpecValidationResult =
  */
 type SpecRejection = Extract<ComponentSpecValidationResult, { readonly ok: false }>;
 
-const SPEC_KEYS: readonly string[] = ["tag", "whenToUse", "props", "acceptsChildren", "collect"];
+const SPEC_KEYS: readonly string[] = [
+  "tag",
+  "whenToUse",
+  "props",
+  "acceptsChildren",
+  "collect",
+  "themeRecipe",
+];
 
 const COLLECT_KEYS: readonly string[] = ["collectable", "valueProp", "sensitiveProp"];
+const THEME_RECIPE_KEYS: readonly string[] = ["tokens"];
+const TOKEN_VALUE_KINDS: readonly FacetThemeTokenValueKind[] = [
+  "color",
+  "length",
+  "number",
+  "opacity",
+  "fontFamily",
+  "fontWeight",
+  "lineHeight",
+  "duration",
+  "easing",
+  "shadow",
+  "effect",
+  "text",
+];
 
 /** The exact prop name a collect list addresses a collectable component by. */
 const COLLECT_NAME_PROP = "name";
@@ -310,20 +339,26 @@ function validateSpec(value: unknown): ComponentSpecValidationResult {
     return eventArg;
   }
 
+  const base: ComponentSpec = {
+    tag,
+    whenToUse,
+    props: props.props,
+    acceptsChildren,
+  };
+  const recipe = validateThemeRecipe(value["themeRecipe"]);
+  if (!recipe.ok) {
+    return recipe;
+  }
+  const withRecipe = recipe.recipe === undefined ? base : { ...base, themeRecipe: recipe.recipe };
+
   if (!("collect" in value)) {
-    return freezeSpec({ tag, whenToUse, props: props.props, acceptsChildren });
+    return freezeSpec(withRecipe);
   }
   const collect = validateCollect(value["collect"], props.props);
   if (!collect.ok) {
     return collect;
   }
-  return freezeSpec({
-    tag,
-    whenToUse,
-    props: props.props,
-    acceptsChildren,
-    collect: collect.collect,
-  });
+  return freezeSpec({ ...withRecipe, collect: collect.collect });
 }
 
 function freezeSpec(spec: ComponentSpec): { readonly ok: true; readonly spec: ComponentSpec } {
@@ -353,6 +388,69 @@ function validateProps(
     props[name] = schema.schema;
   }
   return { ok: true, props: Object.freeze(props) };
+}
+
+function validateThemeRecipe(
+  value: unknown,
+): { readonly ok: true; readonly recipe: ThemeRecipeSpec | undefined } | SpecRejection {
+  if (value === undefined) {
+    return { ok: true, recipe: undefined };
+  }
+  if (!isRecord(value)) {
+    return reject("invalid_theme_recipe", "themeRecipe", "themeRecipe must be a plain object.");
+  }
+  const unknownKey = firstUnknownKey(value, THEME_RECIPE_KEYS);
+  if (unknownKey !== undefined) {
+    return reject(
+      "unknown_theme_recipe_key",
+      `themeRecipe.${unknownKey}`,
+      "The theme recipe form is closed.",
+    );
+  }
+  const rawTokens = value["tokens"];
+  if (!isRecord(rawTokens)) {
+    return reject(
+      "invalid_theme_recipe_tokens",
+      "themeRecipe.tokens",
+      "Recipe tokens are a plain object.",
+    );
+  }
+  const names = Object.keys(rawTokens).sort();
+  const projected = new Set<string>();
+  const tokens: Record<string, FacetThemeTokenValueKind> = {};
+  for (const name of names) {
+    if (!isFacetIdentifier(name)) {
+      return reject(
+        "invalid_theme_recipe_token",
+        `themeRecipe.tokens.${name}`,
+        "A recipe token name must be a Facet identifier.",
+      );
+    }
+    const projectedName = facetThemeToKebabCase(name);
+    if (projected.has(projectedName)) {
+      return reject(
+        "duplicate_theme_recipe_token",
+        `themeRecipe.tokens.${name}`,
+        "Recipe token names must not collide after CSS variable projection.",
+      );
+    }
+    projected.add(projectedName);
+    const kind = rawTokens[name];
+    if (typeof kind !== "string" || !TOKEN_VALUE_KINDS.includes(kind as FacetThemeTokenValueKind)) {
+      return reject(
+        "invalid_theme_recipe_token_kind",
+        `themeRecipe.tokens.${name}`,
+        "A recipe token kind must be one of Facet's declared theme token value kinds.",
+      );
+    }
+    tokens[name] = kind as FacetThemeTokenValueKind;
+  }
+  return {
+    ok: true,
+    recipe: Object.freeze({
+      tokens: Object.freeze(tokens),
+    }),
+  };
 }
 
 function validatePropSchema(

@@ -485,7 +485,7 @@ describe("the port is satisfied structurally, never nominally", () => {
     // not have to: a wider record satisfies a narrower structural port.
     const runtimeShaped = {
       catalog: TEST_CATALOG,
-      theme: { tokens: { "color-surface": "#fff" } },
+      theme: { foundation: {}, semantic: {} },
       copy: { preparing: "Preparing your page." },
       phase: "preparing" as const,
       document: null,

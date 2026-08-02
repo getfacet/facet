@@ -41,7 +41,7 @@ import type { ComponentMountProps, MountedComponent } from "@facet/core";
 import type { ReactNode } from "react";
 
 import type { FlowStyle } from "./style.js";
-import { flowStyle, mountStyle, token } from "./style.js";
+import { flowStyle, foundation, mountStyle, recipe, semantic } from "./style.js";
 
 /** What one of these components is handed. React supplies both element types. */
 type Mount = ComponentMountProps<ReactNode>;
@@ -83,24 +83,24 @@ function readEnum<Value extends string>(
  */
 const TEXT_VARIANTS = {
   title: {
-    fontSize: token("fontSize", "xl"),
-    fontWeight: token("fontWeight", "bold"),
-    lineHeight: token("lineHeight", "tight"),
+    fontSize: recipe("text", "titleFontSize"),
+    fontWeight: recipe("text", "titleFontWeight"),
+    lineHeight: foundation("typography", "lineHeightTight"),
   },
   heading: {
-    fontSize: token("fontSize", "lg"),
-    fontWeight: token("fontWeight", "medium"),
-    lineHeight: token("lineHeight", "tight"),
+    fontSize: recipe("text", "headingFontSize"),
+    fontWeight: recipe("text", "headingFontWeight"),
+    lineHeight: foundation("typography", "lineHeightTight"),
   },
   body: {
-    fontSize: token("fontSize", "md"),
-    fontWeight: token("fontWeight", "regular"),
-    lineHeight: token("lineHeight", "normal"),
+    fontSize: recipe("text", "bodyFontSize"),
+    fontWeight: foundation("typography", "fontWeightRegular"),
+    lineHeight: foundation("typography", "lineHeightNormal"),
   },
   caption: {
-    fontSize: token("fontSize", "xs"),
-    fontWeight: token("fontWeight", "regular"),
-    lineHeight: token("lineHeight", "normal"),
+    fontSize: recipe("text", "captionFontSize"),
+    fontWeight: foundation("typography", "fontWeightRegular"),
+    lineHeight: foundation("typography", "lineHeightNormal"),
   },
 } as const;
 
@@ -123,11 +123,11 @@ export const Text: MountedComponent<ReactNode, ReactNode> = (mount) => {
 
   const style = mountStyle(mount.themeVars, {
     margin: 0,
-    fontFamily: token("fontFamily", "sans"),
+    fontFamily: foundation("typography", "fontFamilySans"),
     fontSize: scale.fontSize,
     fontWeight: scale.fontWeight,
     lineHeight: scale.lineHeight,
-    color: muted ? token("color", "textMuted") : token("color", "text"),
+    color: muted ? recipe("text", "mutedText") : recipe("text", "defaultText"),
   });
 
   if (variant === "title") return <h1 style={style}>{value}</h1>;
@@ -163,27 +163,27 @@ export const Metric: MountedComponent<ReactNode, ReactNode> = (mount) => {
   const rootStyle: FlowStyle = {
     display: "flex",
     flexDirection: "column",
-    gap: token("space", "xs"),
-    fontFamily: token("fontFamily", "sans"),
+    gap: foundation("space", "xs"),
+    fontFamily: foundation("typography", "fontFamilySans"),
   };
   const labelStyle: FlowStyle = {
-    fontSize: token("fontSize", "sm"),
-    fontWeight: token("fontWeight", "regular"),
-    color: token("color", "textMuted"),
+    fontSize: recipe("metric", "labelFontSize"),
+    fontWeight: foundation("typography", "fontWeightRegular"),
+    color: recipe("metric", "labelColor"),
   };
   const valueStyle: FlowStyle = {
     display: "flex",
     alignItems: "baseline",
-    gap: token("space", "xs"),
-    fontSize: token("fontSize", "xl"),
-    fontWeight: token("fontWeight", "bold"),
-    lineHeight: token("lineHeight", "tight"),
-    color: token("color", "text"),
+    gap: foundation("space", "xs"),
+    fontSize: recipe("metric", "valueFontSize"),
+    fontWeight: recipe("metric", "valueFontWeight"),
+    lineHeight: foundation("typography", "lineHeightTight"),
+    color: recipe("metric", "valueColor"),
   };
   const unitStyle: FlowStyle = {
-    fontSize: token("fontSize", "sm"),
-    fontWeight: token("fontWeight", "medium"),
-    color: token("color", "textMuted"),
+    fontSize: recipe("metric", "labelFontSize"),
+    fontWeight: foundation("typography", "fontWeightMedium"),
+    color: recipe("metric", "labelColor"),
   };
 
   return (
@@ -203,10 +203,10 @@ export const Metric: MountedComponent<ReactNode, ReactNode> = (mount) => {
  * everywhere else in the theme, so a status word never needs a colour of its own.
  */
 const BADGE_TONES = {
-  neutral: token("color", "textMuted"),
-  positive: token("color", "success"),
-  warning: token("color", "warning"),
-  danger: token("color", "danger"),
+  neutral: recipe("badge", "text"),
+  positive: semantic("status", "successText"),
+  warning: semantic("status", "warningText"),
+  danger: semantic("status", "dangerText"),
 } as const;
 
 const BADGE_TONE_NAMES = Object.keys(BADGE_TONES) as readonly (keyof typeof BADGE_TONES)[];
@@ -220,16 +220,16 @@ export const Badge: MountedComponent<ReactNode, ReactNode> = (mount) => {
   const style: FlowStyle = {
     display: "inline-flex",
     alignItems: "center",
-    gap: token("space", "xs"),
-    padding: `${token("space", "xs")} ${token("space", "sm")}`,
-    borderRadius: token("radius", "full"),
-    border: `${token("borderWidth", "thin")} solid ${accent}`,
-    background: token("color", "surface"),
+    gap: foundation("space", "xs"),
+    padding: `${recipe("badge", "paddingBlock")} ${recipe("badge", "paddingInline")}`,
+    borderRadius: recipe("badge", "radius"),
+    border: `${foundation("borderWidth", "thin")} solid ${recipe("badge", "border")}`,
+    background: recipe("badge", "background"),
     color: accent,
-    fontFamily: token("fontFamily", "sans"),
-    fontSize: token("fontSize", "xs"),
-    fontWeight: token("fontWeight", "medium"),
-    lineHeight: token("lineHeight", "tight"),
+    fontFamily: foundation("typography", "fontFamilySans"),
+    fontSize: foundation("typography", "fontSizeXs"),
+    fontWeight: foundation("typography", "fontWeightMedium"),
+    lineHeight: foundation("typography", "lineHeightTight"),
   };
 
   return <span style={mountStyle(mount.themeVars, style)}>{label}</span>;

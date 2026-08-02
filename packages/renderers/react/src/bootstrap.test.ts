@@ -40,6 +40,7 @@ import type {
   ComponentSpec,
   FacetCatalog,
   FacetTheme,
+  FacetThemeExtensionDeclaration,
   MountedComponent,
   NeutralCopy,
 } from "@facet/core";
@@ -47,6 +48,7 @@ import { BOUNDS, NEUTRAL_COPY_DEFAULTS } from "@facet/core";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
+import { completeThemeInput, validTestTheme } from "../../../../test-support/theme-fixture.js";
 import type { RendererBootstrap } from "./bootstrap.js";
 import { bootstrapRenderer } from "./bootstrap.js";
 import * as bootstrapModule from "./bootstrap.js";
@@ -121,32 +123,12 @@ function registryFor(...tags: readonly string[]): ComponentRegistry {
 }
 
 /** A complete theme. Every token name the closed contract declares, and no other. */
-const THEME: FacetTheme = {
-  color: {
-    background: "#ffffff",
-    surface: "#f7f7f8",
-    border: "#e3e3e6",
-    text: "#16161a",
-    textMuted: "#6b6b73",
-    accent: "#2563eb",
-    onAccent: "#ffffff",
-    success: "#15803d",
-    warning: "#b45309",
-    danger: "#b91c1c",
+const THEME: FacetTheme = validTestTheme({
+  semantic: {
+    action: { primaryBg: "#2563eb" },
+    text: { default: "#16161a" },
   },
-  space: { xs: "4px", sm: "8px", md: "16px", lg: "24px", xl: "40px" },
-  radius: { sm: "2px", md: "6px", lg: "12px", full: "9999px" },
-  borderWidth: { thin: "1px", thick: "2px" },
-  shadow: {
-    sm: "0 1px 2px rgba(0,0,0,0.06)",
-    md: "0 2px 8px rgba(0,0,0,0.08)",
-    lg: "0 8px 24px rgba(0,0,0,0.12)",
-  },
-  fontFamily: { sans: "system-ui, sans-serif", mono: "ui-monospace, monospace" },
-  fontSize: { xs: "12px", sm: "14px", md: "16px", lg: "20px", xl: "28px" },
-  fontWeight: { regular: "400", medium: "500", bold: "700" },
-  lineHeight: { tight: "1.2", normal: "1.5", relaxed: "1.7" },
-};
+});
 
 /** An options object whose named option throws the moment anything reads it. */
 function throwingOption(name: string, enumerable: boolean): Record<string, unknown> {
@@ -205,7 +187,7 @@ describe("bootstrapRenderer closes the trust boundary on all three host paths", 
     ]);
     expect([...session.index.keys()].sort()).toEqual(["Badge", "Modal", "Screen", "Text"]);
     expect(session.index.get("Screen")?.acceptsChildren).toBe(true);
-    expect(session.theme.color.accent).toBe("#2563eb");
+    expect(session.theme.semantic.action.primaryBg).toBe("#2563eb");
     expect(Object.keys(session.registry).sort()).toEqual(["Badge", "Modal", "Screen", "Text"]);
   });
 
@@ -898,20 +880,19 @@ describe("bootstrapRenderer resolves neutral copy from the framework and the hos
 
 describe("bootstrapRenderer requires a complete theme", () => {
   it("relays a missing token rejection", () => {
-    const incomplete = {
-      ...THEME,
-      color: { ...THEME.color, accent: undefined },
-    } as unknown as FacetTheme;
+    const incomplete = completeThemeInput();
+    const semantic = incomplete["semantic"] as Record<string, Record<string, unknown>>;
+    delete semantic["text"]?.["default"];
 
     const rejection = rejected(
       bootstrapRenderer({
         catalog: catalogOf(screenSpec(), modalSpec()),
         registry: registryFor("Screen", "Modal"),
-        theme: incomplete,
+        theme: incomplete as unknown as FacetTheme,
       }),
     );
 
-    expect(rejection.at).toBe("color.accent");
+    expect(rejection.at).toBe("semantic.text.default");
   });
 
   it("relays a rejection for a theme that is not an object", () => {
@@ -924,6 +905,32 @@ describe("bootstrapRenderer requires a complete theme", () => {
     );
 
     expect(rejection.code.length).toBeGreaterThan(0);
+  });
+
+  it("validates theme extensions against host declarations and carries them into the session", () => {
+    const themeExtensions: readonly FacetThemeExtensionDeclaration[] = Object.freeze([
+      Object.freeze({
+        namespace: "brand",
+        tokens: Object.freeze({ accentHalo: "color" }),
+      }),
+    ]);
+    const theme = completeThemeInput({
+      extensions: {
+        brand: { accentHalo: "#123456" },
+      },
+    });
+
+    const session = accepted(
+      bootstrapRenderer({
+        catalog: catalogOf(screenSpec(), modalSpec()),
+        registry: registryFor("Screen", "Modal"),
+        theme: theme as unknown as FacetTheme,
+        themeExtensions,
+      }),
+    );
+
+    expect(session.theme.extensions?.brand?.accentHalo).toBe("#123456");
+    expect(session.themeExtensions).toEqual(themeExtensions);
   });
 });
 

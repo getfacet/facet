@@ -1,8 +1,9 @@
 # Design System
 
-Facet's design system is a closed component catalog plus a semantic theme and a
-trusted React registry. Agents choose registered tags and declared props; hosts
-own the theme values and the React components that render them.
+Facet's design system is a closed component catalog plus a layered theme
+contract and a trusted React registry. Agents choose registered tags and
+declared props; hosts own the theme values and the React components that render
+them.
 
 ## Default component set
 
@@ -53,22 +54,41 @@ catalog/theme data without loading renderer code.
 
 ## Theme contract
 
-`DEFAULT_THEME` is one complete semantic theme. Component specs decide which prop
-values an author may write; theme data decides how trusted components turn those
-values into visual output.
+Core defines Facet Design Contract v1 as two required layers and two declared
+layers:
+
+- `foundation` is the raw design scale: palette, typography, spacing, sizing,
+  radii, borders, shadow, opacity, motion, effects, breakpoints, and density.
+- `semantic` maps those scales into UI meaning: canvas, surface, text, border,
+  action, status, state, focus, selection, disabled, loading, layer, validation,
+  and the remaining required contract roles exported by `FACET_THEME_CONTRACT`.
+- `recipes` are component-owned token namespaces declared by
+  `ComponentSpec.themeRecipe`. They are required when the active catalog
+  declares them. The namespace is the component tag transformed with
+  `facetThemeToKebabCase`, so a catalog rejects recipe-owning tags that collide
+  after that CSS variable projection.
+- `extensions` are host-owned token namespaces declared through bootstrap
+  `themeExtensions`.
+
+`DEFAULT_THEME` is the default asset theme that fills the required
+foundation/semantic layers and the default catalog's component recipes.
+Component specs decide which prop values an author may write; theme data decides
+how trusted components turn those values into visual output.
 
 ```ts check-docs
-import { DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
 import { themeToCssVars } from "@facet/core";
 
-const vars = themeToCssVars(DEFAULT_THEME);
+const vars = themeToCssVars(DEFAULT_THEME, { catalog: DEFAULT_CATALOG });
 
-console.log(Object.keys(vars).length);
+console.log(vars["--facet-semantic-text-default"] !== undefined);
 ```
 
 Hosts may replace the theme with another complete theme that passes Core
-validation. Facet does not merge partial themes at runtime, and authored markup
-does not contain raw CSS, hex colors, imports, or executable style logic.
+validation. Required foundation and semantic token names are closed; hosts may
+add their own extension namespaces only by declaring them at bootstrap. Facet
+does not merge partial themes at runtime, and authored markup does not contain
+raw CSS, hex colors, imports, or executable style logic.
 
 ## Custom components
 

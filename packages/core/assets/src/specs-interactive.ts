@@ -70,6 +70,21 @@ export const BUTTON_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: false,
+  themeRecipe: {
+    tokens: {
+      primaryBg: "color",
+      primaryText: "color",
+      primaryBorder: "color",
+      secondaryBg: "color",
+      secondaryText: "color",
+      secondaryBorder: "color",
+      quietText: "color",
+      radius: "length",
+      paddingInline: "length",
+      paddingBlock: "length",
+      focusRing: "shadow",
+    },
+  },
 };
 
 export const FIELD_SPEC: ComponentSpec = {
@@ -110,6 +125,17 @@ export const FIELD_SPEC: ComponentSpec = {
     valueProp: "value",
     sensitiveProp: "secret",
   },
+  themeRecipe: {
+    tokens: {
+      labelText: "color",
+      inputBg: "color",
+      inputText: "color",
+      inputBorder: "color",
+      inputFocusBorder: "color",
+      inputRadius: "length",
+      inputPadding: "length",
+    },
+  },
 };
 
 export const TABLE_SPEC: ComponentSpec = {
@@ -129,6 +155,16 @@ export const TABLE_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: false,
+  themeRecipe: {
+    tokens: {
+      captionText: "color",
+      text: "color",
+      headerText: "color",
+      headerBg: "color",
+      rowBorder: "color",
+      cellPadding: "length",
+    },
+  },
 };
 
 /**

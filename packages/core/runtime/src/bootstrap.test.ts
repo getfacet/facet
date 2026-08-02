@@ -5,10 +5,10 @@ import {
   NEUTRAL_COPY_DEFAULTS,
   validateCatalog,
   validateModalConformance,
-  validateTheme,
 } from "@facet/core";
-import type { FacetCatalog, FacetTheme } from "@facet/core";
+import type { FacetCatalog, FacetTheme, FacetThemeExtensionDeclaration } from "@facet/core";
 
+import { completeThemeInput, validTestTheme } from "../../../../test-support/theme-fixture.js";
 import { bootstrapSession } from "./bootstrap.js";
 
 function spec(tag: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -56,31 +56,6 @@ function catalogWithScreen(...components: readonly unknown[]): Record<string, un
   return { components: [...components, screenSpec()] };
 }
 
-function themeRecord(): Record<string, Record<string, string>> {
-  return {
-    color: {
-      background: "#ffffff",
-      surface: "#f8fafc",
-      border: "#d0d7de",
-      text: "#111827",
-      textMuted: "#6b7280",
-      accent: "#2563eb",
-      onAccent: "#ffffff",
-      success: "#16a34a",
-      warning: "#ca8a04",
-      danger: "#dc2626",
-    },
-    space: { xs: "4px", sm: "8px", md: "12px", lg: "16px", xl: "24px" },
-    radius: { sm: "4px", md: "8px", lg: "12px", full: "999px" },
-    borderWidth: { thin: "1px", thick: "2px" },
-    shadow: { sm: "0 1px 2px #0001", md: "0 4px 8px #0002", lg: "0 12px 24px #0003" },
-    fontFamily: { sans: "Inter, sans-serif", mono: "Menlo, monospace" },
-    fontSize: { xs: "12px", sm: "14px", md: "16px", lg: "20px", xl: "24px" },
-    fontWeight: { regular: "400", medium: "500", bold: "700" },
-    lineHeight: { tight: "1.1", normal: "1.5", relaxed: "1.8" },
-  };
-}
-
 function validCatalog(): FacetCatalog {
   const result = validateCatalog(catalogWithScreen(textSpec()));
   if (!result.ok) {
@@ -90,11 +65,11 @@ function validCatalog(): FacetCatalog {
 }
 
 function validTheme(): FacetTheme {
-  const result = validateTheme(themeRecord());
-  if (!result.ok) {
-    throw new Error(`expected theme acceptance, got ${result.code} at ${result.at}`);
-  }
-  return result.theme;
+  return validTestTheme({
+    semantic: {
+      text: { default: "#111827" },
+    },
+  });
 }
 
 function rejected(
@@ -181,8 +156,12 @@ describe("bootstrapSession", () => {
   it("keeps each session on its own frozen catalog and theme snapshot", () => {
     const firstComponents = [textSpec(), screenSpec()];
     const secondComponents = [spec("Badge"), screenSpec()];
-    const firstTheme = themeRecord();
-    const secondTheme = themeRecord();
+    const firstTheme = completeThemeInput({
+      semantic: {
+        text: { default: "#111827" },
+      },
+    });
+    const secondTheme = completeThemeInput();
 
     const first = bootstrapSession({
       catalog: { components: firstComponents } as unknown as FacetCatalog,
@@ -194,13 +173,13 @@ describe("bootstrapSession", () => {
     });
 
     firstComponents.push(spec("Injected"));
-    firstTheme["color"] = { ...firstTheme["color"], text: "#ff00ff" };
+    firstTheme["semantic"] = {};
 
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
     if (first.ok && second.ok) {
       expect(Object.isFrozen(first.session.catalog.components)).toBe(true);
-      expect(Object.isFrozen(first.session.theme.color)).toBe(true);
+      expect(Object.isFrozen(first.session.theme.semantic.text)).toBe(true);
       expect(first.session.catalog.components.map((component) => component.tag)).toEqual([
         "Text",
         "Screen",
@@ -209,7 +188,33 @@ describe("bootstrapSession", () => {
         "Badge",
         "Screen",
       ]);
-      expect(first.session.theme.color.text).toBe("#111827");
+      expect(first.session.theme.semantic.text.default).toBe("#111827");
+    }
+  });
+
+  it("validates theme extensions against host declarations and stores the declarations", () => {
+    const themeExtensions: readonly FacetThemeExtensionDeclaration[] = Object.freeze([
+      Object.freeze({
+        namespace: "brand",
+        tokens: Object.freeze({ accentHalo: "color" }),
+      }),
+    ]);
+    const theme = completeThemeInput({
+      extensions: {
+        brand: { accentHalo: "#123456" },
+      },
+    });
+
+    const result = bootstrapSession({
+      catalog: validCatalog(),
+      theme: theme as unknown as FacetTheme,
+      themeExtensions,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.session.theme.extensions?.brand?.accentHalo).toBe("#123456");
+      expect(result.session.themeExtensions).toEqual(themeExtensions);
     }
   });
 

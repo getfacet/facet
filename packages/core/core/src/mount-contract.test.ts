@@ -135,7 +135,7 @@ interface FakeElement {
 /** A trusted component, written the way a registered implementation is written. */
 const Card: MountedComponent<readonly FakeElement[], FakeElement> = (props) => {
   const title = props.props["title"];
-  const tone = props.themeVars["--facet-color-surface"] ?? "";
+  const tone = props.themeVars["--facet-semantic-surface-default"] ?? "";
   return { rendered: `${String(title)}|${tone}|${props.children.length}` };
 };
 
@@ -158,7 +158,7 @@ function mountProps(
   return {
     props: { title: "Revenue", label: "Refresh", value: "north" },
     children: [],
-    themeVars: { "--facet-color-surface": "#fff" },
+    themeVars: { "--facet-semantic-surface-default": "#fff" },
     onAction: () => undefined,
     ...overrides,
   };

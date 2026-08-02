@@ -60,10 +60,10 @@ function documentWithText(text: string): ComponentDocument {
 function completeTheme(background: string, success = "#0f7b4f") {
   return {
     ...DEFAULT_THEME,
-    color: {
-      ...DEFAULT_THEME.color,
-      background,
-      success,
+    semantic: {
+      ...DEFAULT_THEME.semantic,
+      canvas: { ...DEFAULT_THEME.semantic.canvas, background },
+      status: { ...DEFAULT_THEME.semantic.status, successText: success },
     },
   };
 }
@@ -194,7 +194,7 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
     const root = await evalBundle(bundleText);
 
     const defaultProbe = document.createElement("div");
-    defaultProbe.style.background = DEFAULT_THEME.color.background;
+    defaultProbe.style.background = DEFAULT_THEME.semantic.canvas.background;
     expect(root.querySelector("[data-facet-stage]")).not.toBeNull();
     expect(root.querySelector("[data-facet-conversation]")).not.toBeNull();
     expect(root.textContent).not.toContain("retired-tree");

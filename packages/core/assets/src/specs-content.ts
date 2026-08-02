@@ -53,6 +53,18 @@ export const TEXT_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: false,
+  themeRecipe: {
+    tokens: {
+      titleFontSize: "length",
+      titleFontWeight: "fontWeight",
+      headingFontSize: "length",
+      headingFontWeight: "fontWeight",
+      bodyFontSize: "length",
+      captionFontSize: "length",
+      defaultText: "color",
+      mutedText: "color",
+    },
+  },
 };
 
 export const METRIC_SPEC: ComponentSpec = {
@@ -77,6 +89,15 @@ export const METRIC_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: false,
+  themeRecipe: {
+    tokens: {
+      valueColor: "color",
+      valueFontSize: "length",
+      valueFontWeight: "fontWeight",
+      labelColor: "color",
+      labelFontSize: "length",
+    },
+  },
 };
 
 export const BADGE_SPEC: ComponentSpec = {
@@ -99,6 +120,16 @@ export const BADGE_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: false,
+  themeRecipe: {
+    tokens: {
+      background: "color",
+      text: "color",
+      border: "color",
+      radius: "length",
+      paddingInline: "length",
+      paddingBlock: "length",
+    },
+  },
 };
 
 /**

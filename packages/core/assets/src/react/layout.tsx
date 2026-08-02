@@ -40,10 +40,11 @@ import {
   enumProp,
   flagProp,
   flowStyle,
+  foundation,
   mountStyle,
+  recipe,
   space,
   textProp,
-  token,
 } from "./style.js";
 
 /** How wide a screen's reading column may grow. */
@@ -130,18 +131,18 @@ export const Screen: MountedComponent<ReactNode, ReactNode> = function Screen({
         width: "100%",
         minWidth: 0,
         padding: space(padding),
-        background: token("color", "background"),
-        color: token("color", "text"),
-        fontFamily: token("fontFamily", "sans"),
-        fontSize: token("fontSize", "md"),
-        lineHeight: token("lineHeight", "normal"),
+        background: recipe("screen", "background"),
+        color: recipe("screen", "text"),
+        fontFamily: foundation("typography", "fontFamilySans"),
+        fontSize: foundation("typography", "fontSizeMd"),
+        lineHeight: foundation("typography", "lineHeightNormal"),
       })}
     >
       <div
         style={flowStyle({
           display: "flex",
           flexDirection: "column",
-          gap: token("space", "lg"),
+          gap: recipe("screen", "contentGap"),
           width: "100%",
           minWidth: 0,
           maxWidth: MAX_WIDTHS[maxWidth],
@@ -152,10 +153,10 @@ export const Screen: MountedComponent<ReactNode, ReactNode> = function Screen({
           <h1
             style={flowStyle({
               margin: 0,
-              fontSize: token("fontSize", "xl"),
-              fontWeight: token("fontWeight", "bold"),
-              lineHeight: token("lineHeight", "tight"),
-              color: token("color", "text"),
+              fontSize: recipe("screen", "titleFontSize"),
+              fontWeight: recipe("screen", "titleFontWeight"),
+              lineHeight: recipe("screen", "titleLineHeight"),
+              color: recipe("screen", "titleColor"),
             })}
           >
             {title}

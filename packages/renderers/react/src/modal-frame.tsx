@@ -89,7 +89,8 @@
  * would own a piece of the overlap contract the framework has to keep.
  */
 
-import type { ComponentMountProps } from "@facet/core";
+import { themeTokenRef } from "@facet/core";
+import type { ComponentMountProps, FacetThemeTokenRef } from "@facet/core";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import {
   createContext,
@@ -105,6 +106,10 @@ import {
 import { createPortal } from "react-dom";
 
 import { OVERLAY_Z_BAND, useOverlayRoot } from "./containment.js";
+
+function theme(ref: FacetThemeTokenRef): string {
+  return themeTokenRef(ref);
+}
 
 /**
  * The marker every element of the frame carries, naming which part it is.
@@ -198,17 +203,17 @@ const FRAME_STYLE: Readonly<CSSProperties> = Object.freeze({
   maxWidth: "32rem",
   maxHeight: "calc(100vh - 2rem)",
   overflowY: "auto",
-  background: "var(--facet-color-surface)",
-  color: "var(--facet-color-text)",
+  background: theme({ layer: "semantic", group: "surface", token: "default" }),
+  color: theme({ layer: "semantic", group: "text", token: "default" }),
   borderStyle: "solid",
-  borderWidth: "var(--facet-border-width-thin)",
-  borderColor: "var(--facet-color-border)",
-  borderRadius: "var(--facet-radius-lg)",
-  boxShadow: "var(--facet-shadow-lg)",
-  padding: "var(--facet-space-lg)",
-  fontFamily: "var(--facet-font-family-sans)",
-  fontSize: "var(--facet-font-size-md)",
-  lineHeight: "var(--facet-line-height-normal)",
+  borderWidth: theme({ layer: "foundation", group: "borderWidth", token: "thin" }),
+  borderColor: theme({ layer: "semantic", group: "border", token: "default" }),
+  borderRadius: theme({ layer: "foundation", group: "radius", token: "lg" }),
+  boxShadow: theme({ layer: "semantic", group: "layer", token: "modalShadow" }),
+  padding: theme({ layer: "foundation", group: "space", token: "lg" }),
+  fontFamily: theme({ layer: "foundation", group: "typography", token: "fontFamilySans" }),
+  fontSize: theme({ layer: "foundation", group: "typography", token: "fontSizeMd" }),
+  lineHeight: theme({ layer: "foundation", group: "typography", token: "lineHeightNormal" }),
 });
 
 /** The heading and the dismiss control, on one line. Structure only. */
@@ -216,17 +221,17 @@ const HEADER_STYLE: Readonly<CSSProperties> = Object.freeze({
   display: "flex",
   alignItems: "baseline",
   justifyContent: "space-between",
-  gap: "var(--facet-space-md)",
-  marginBottom: "var(--facet-space-md)",
+  gap: theme({ layer: "foundation", group: "space", token: "md" }),
+  marginBottom: theme({ layer: "foundation", group: "space", token: "md" }),
 });
 
 const TITLE_STYLE: Readonly<CSSProperties> = Object.freeze({
   margin: 0,
-  color: "var(--facet-color-text)",
-  fontFamily: "var(--facet-font-family-sans)",
-  fontSize: "var(--facet-font-size-lg)",
-  fontWeight: "var(--facet-font-weight-bold)",
-  lineHeight: "var(--facet-line-height-tight)",
+  color: theme({ layer: "semantic", group: "text", token: "default" }),
+  fontFamily: theme({ layer: "foundation", group: "typography", token: "fontFamilySans" }),
+  fontSize: theme({ layer: "foundation", group: "typography", token: "fontSizeLg" }),
+  fontWeight: theme({ layer: "foundation", group: "typography", token: "fontWeightBold" }),
+  lineHeight: theme({ layer: "foundation", group: "typography", token: "lineHeightTight" }),
 });
 
 /**
@@ -240,12 +245,12 @@ const DISMISS_STYLE: Readonly<CSSProperties> = Object.freeze({
   flex: "none",
   background: "transparent",
   borderStyle: "none",
-  borderRadius: "var(--facet-radius-sm)",
-  padding: "var(--facet-space-xs)",
-  color: "var(--facet-color-text-muted)",
-  fontFamily: "var(--facet-font-family-sans)",
-  fontSize: "var(--facet-font-size-lg)",
-  lineHeight: "var(--facet-line-height-tight)",
+  borderRadius: theme({ layer: "foundation", group: "radius", token: "sm" }),
+  padding: theme({ layer: "foundation", group: "space", token: "xs" }),
+  color: theme({ layer: "semantic", group: "text", token: "muted" }),
+  fontFamily: theme({ layer: "foundation", group: "typography", token: "fontFamilySans" }),
+  fontSize: theme({ layer: "foundation", group: "typography", token: "fontSizeLg" }),
+  lineHeight: theme({ layer: "foundation", group: "typography", token: "lineHeightTight" }),
   cursor: "pointer",
 });
 

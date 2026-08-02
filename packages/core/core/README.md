@@ -64,6 +64,7 @@ author against. A catalog declares:
 - accepted props and scalar domains;
 - which props may bind to data paths;
 - which components collect visitor input; and
+- which component-owned theme recipe tokens the active theme must fill; and
 - whether a component may contain children.
 
 `validateCatalog`, `buildCatalogIndex`, `validateComponentSpec`, and
@@ -74,6 +75,20 @@ frame contract.
 
 Core does not ship React components. It only defines what a valid host catalog
 means; renderer packages close that catalog against a trusted registry.
+
+## Theme contract
+
+Core owns Facet Design Contract v1: required `foundation` and `semantic` theme
+layers, catalog-declared component `recipes`, and host-declared `extensions`.
+`validateTheme`, `validateThemeExtensionDeclarations`, `themeToCssVars`,
+`themeTokenVar`, `themeTokenRef`, and `FACET_THEME_CONTRACT` are the shared
+helpers every runtime, renderer, and asset package uses to keep theme data
+closed and CSS custom-property names stable.
+
+Recipe namespaces derive from component tags with `facetThemeToKebabCase`.
+Catalog validation rejects recipe-owning tags that collide after that
+projection, so a theme namespace always resolves to one component recipe
+contract.
 
 ## Documents, data, and patches
 

@@ -166,8 +166,8 @@ function Page(): ReactNode {
   }, [facet.transition.stageRevision]);
 
   useEffect(() => {
-    document.body.style.background = bootstrap.theme.color.background;
-    document.body.style.color = bootstrap.theme.color.text;
+    document.body.style.background = bootstrap.theme.semantic.canvas.background;
+    document.body.style.color = bootstrap.theme.semantic.text.default;
   }, [bootstrap.theme]);
 
   useEffect(() => {
@@ -211,8 +211,8 @@ function Page(): ReactNode {
     setDraft("");
   };
   const pageStyle = useMemo(
-    () => ({ ...styles.page, fontFamily: bootstrap.theme.fontFamily.sans }),
-    [bootstrap.theme.fontFamily.sans],
+    () => ({ ...styles.page, fontFamily: bootstrap.theme.foundation.typography.fontFamilySans }),
+    [bootstrap.theme.foundation.typography.fontFamilySans],
   );
 
   return (
@@ -288,7 +288,7 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: "0.75rem",
-    borderTop: `1px solid ${DEFAULT_THEME.color.border}`,
+    borderTop: `1px solid ${DEFAULT_THEME.semantic.border.default}`,
     paddingTop: "1rem",
   },
   messageForm: {

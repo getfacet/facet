@@ -17,8 +17,10 @@ limiter, billing layer, or tenant control plane.
 ## Server setup
 
 `createFacetServer` requires the immutable catalog and theme that bootstrap the
-runtime session. An optional in-process agent can handle visitor events
-directly; otherwise an external agent may connect through the agent channel.
+runtime session, plus optional `themeExtensions` when the theme fills
+host-declared extension namespaces. An optional in-process agent can handle
+visitor events directly; otherwise an external agent may connect through the
+agent channel.
 
 ```ts check-docs
 import { defineAgent } from "@facet/agent";

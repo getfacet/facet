@@ -2,10 +2,13 @@ import {
   BOUNDS,
   buildCatalogIndex,
   evaluateCandidateModel,
+  FACET_THEME_CONTRACT,
+  facetThemeToKebabCase,
   NEUTRAL_COPY_DEFAULTS,
   resolveNeutralCopy,
   validateCatalog,
   validateTheme,
+  validateThemeExtensionDeclarations,
 } from "@facet/core";
 import type {
   CasOutcome,
@@ -15,6 +18,8 @@ import type {
   DataModel,
   FacetCatalog,
   FacetTheme,
+  FacetThemeExtensionDeclaration,
+  FacetThemeTokenValues,
   NeutralCopy,
   StageRevision,
 } from "@facet/core";
@@ -50,6 +55,22 @@ interface DocumentContext {
   readonly issues: SessionIssue[];
 }
 
+function fallbackThemeLayer(
+  groups: readonly {
+    readonly name: string;
+    readonly tokens: readonly { readonly name: string }[];
+  }[],
+): Readonly<Record<string, Readonly<Record<string, string>>>> {
+  return Object.freeze(
+    Object.fromEntries(
+      groups.map((group) => [
+        group.name,
+        Object.freeze(Object.fromEntries(group.tokens.map((token) => [token.name, "initial"]))),
+      ]),
+    ),
+  );
+}
+
 const FALLBACK_CATALOG_INPUT = Object.freeze({
   components: Object.freeze([
     Object.freeze({
@@ -68,26 +89,8 @@ const FALLBACK_CATALOG_INPUT = Object.freeze({
 });
 
 const FALLBACK_THEME_INPUT = Object.freeze({
-  color: Object.freeze({
-    background: "#ffffff",
-    surface: "#f8fafc",
-    border: "#d0d7de",
-    text: "#111827",
-    textMuted: "#6b7280",
-    accent: "#2563eb",
-    onAccent: "#ffffff",
-    success: "#16a34a",
-    warning: "#ca8a04",
-    danger: "#dc2626",
-  }),
-  space: Object.freeze({ xs: "2px", sm: "4px", md: "8px", lg: "16px", xl: "24px" }),
-  radius: Object.freeze({ sm: "4px", md: "8px", lg: "12px", full: "999px" }),
-  borderWidth: Object.freeze({ thin: "1px", thick: "2px" }),
-  shadow: Object.freeze({ sm: "none", md: "0 2px 8px #0002", lg: "0 8px 24px #0003" }),
-  fontFamily: Object.freeze({ sans: "system-ui", mono: "ui-monospace" }),
-  fontSize: Object.freeze({ xs: "12px", sm: "14px", md: "16px", lg: "20px", xl: "24px" }),
-  fontWeight: Object.freeze({ regular: "400", medium: "500", bold: "700" }),
-  lineHeight: Object.freeze({ tight: "1.1", normal: "1.5", relaxed: "1.8" }),
+  foundation: fallbackThemeLayer(FACET_THEME_CONTRACT.foundation),
+  semantic: fallbackThemeLayer(FACET_THEME_CONTRACT.semantic),
 });
 
 function issue(code: string, at: string, detail: string): SessionIssue {
@@ -134,17 +137,59 @@ function fallbackCatalog(): FacetCatalog {
   return result.catalog;
 }
 
-function fallbackTheme(): FacetTheme {
-  const result = validateTheme(FALLBACK_THEME_INPUT);
+function fallbackThemeDeclaredLayer(
+  declarations: readonly {
+    readonly namespace: string;
+    readonly tokens: Readonly<Record<string, unknown>>;
+  }[],
+): FacetThemeTokenValues | undefined {
+  if (declarations.length === 0) {
+    return undefined;
+  }
+  return Object.freeze(
+    Object.fromEntries(
+      declarations.map((declaration) => [
+        declaration.namespace,
+        Object.freeze(
+          Object.fromEntries(Object.keys(declaration.tokens).map((token) => [token, "initial"])),
+        ),
+      ]),
+    ),
+  );
+}
+
+function fallbackTheme(
+  catalog: FacetCatalog,
+  themeExtensions: readonly FacetThemeExtensionDeclaration[],
+): FacetTheme {
+  const recipes = fallbackThemeDeclaredLayer(
+    catalog.components.flatMap((spec) =>
+      spec.themeRecipe === undefined
+        ? []
+        : [{ namespace: facetThemeToKebabCase(spec.tag), tokens: spec.themeRecipe.tokens }],
+    ),
+  );
+  const extensions = fallbackThemeDeclaredLayer(themeExtensions);
+  const input = Object.freeze({
+    ...FALLBACK_THEME_INPUT,
+    ...(recipes === undefined ? {} : { recipes }),
+    ...(extensions === undefined ? {} : { extensions }),
+  });
+  const result = validateTheme(input, { catalog, extensions: themeExtensions });
   if (!result.ok) {
     throw new Error("runtime fallback theme is invalid");
   }
   return result.theme;
 }
 
+function fallbackThemeExtensions(): readonly FacetThemeExtensionDeclaration[] {
+  return Object.freeze([]);
+}
+
 function sessionFrom(
   catalog: FacetCatalog,
   theme: FacetTheme,
+  themeExtensions: readonly FacetThemeExtensionDeclaration[],
   copy: NeutralCopy,
   document: ComponentDocument | null,
   data: DataModel,
@@ -153,6 +198,7 @@ function sessionFrom(
   return Object.freeze({
     catalog,
     theme,
+    themeExtensions,
     copy,
     document,
     data,
@@ -165,8 +211,18 @@ function safeEmpty(issues: readonly SessionIssue[]): {
   readonly session: Session;
   readonly issues: readonly SessionIssue[];
 } {
+  const catalog = fallbackCatalog();
+  const themeExtensions = fallbackThemeExtensions();
   return Object.freeze({
-    session: sessionFrom(fallbackCatalog(), fallbackTheme(), NEUTRAL_COPY_DEFAULTS, null, {}, 0),
+    session: sessionFrom(
+      catalog,
+      fallbackTheme(catalog, themeExtensions),
+      themeExtensions,
+      NEUTRAL_COPY_DEFAULTS,
+      null,
+      {},
+      0,
+    ),
     issues: Object.freeze([...issues]),
   });
 }
@@ -180,13 +236,30 @@ function normalizeCatalog(source: unknown, issues: SessionIssue[]): FacetCatalog
   return fallbackCatalog();
 }
 
-function normalizeTheme(source: unknown, issues: SessionIssue[]): FacetTheme {
-  const result = validateTheme(source);
+function normalizeTheme(
+  source: unknown,
+  catalog: FacetCatalog,
+  themeExtensions: readonly FacetThemeExtensionDeclaration[],
+  issues: SessionIssue[],
+): FacetTheme {
+  const result = validateTheme(source, { catalog, extensions: themeExtensions });
   if (result.ok) {
     return result.theme;
   }
   issues.push(issue(result.code, result.at, result.detail));
-  return fallbackTheme();
+  return fallbackTheme(catalog, themeExtensions);
+}
+
+function normalizeThemeExtensions(
+  source: unknown,
+  issues: SessionIssue[],
+): readonly FacetThemeExtensionDeclaration[] {
+  const result = validateThemeExtensionDeclarations(source);
+  if (result.ok) {
+    return result.extensions;
+  }
+  issues.push(issue(result.code, result.at, result.detail));
+  return fallbackThemeExtensions();
 }
 
 function normalizeCopy(source: unknown, issues: SessionIssue[]): NeutralCopy {
@@ -523,7 +596,16 @@ export function validatePersistedSession(stored: unknown): {
     }
 
     const catalog = normalizeCatalog(readOwn(stored, "catalog", issues, "catalog"), issues);
-    const theme = normalizeTheme(readOwn(stored, "theme", issues, "theme"), issues);
+    const themeExtensions = normalizeThemeExtensions(
+      readOwn(stored, "themeExtensions", issues, "themeExtensions"),
+      issues,
+    );
+    const theme = normalizeTheme(
+      readOwn(stored, "theme", issues, "theme"),
+      catalog,
+      themeExtensions,
+      issues,
+    );
     const copy = normalizeCopy(readOwn(stored, "copy", issues, "copy"), issues);
     const data = normalizeData(readOwn(stored, "data", issues, "data"), issues);
     const stageRevision = normalizeRevision(
@@ -537,7 +619,7 @@ export function validatePersistedSession(stored: unknown): {
     );
 
     return Object.freeze({
-      session: sessionFrom(catalog, theme, copy, document, data, stageRevision),
+      session: sessionFrom(catalog, theme, themeExtensions, copy, document, data, stageRevision),
       issues: Object.freeze([...issues]),
     });
   } catch {

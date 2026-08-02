@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  BOUNDS,
-  deriveMessageId,
-  parseDataPath,
-  validateCatalog,
-  validateTheme,
-} from "@facet/core";
+import { BOUNDS, deriveMessageId, parseDataPath, validateCatalog } from "@facet/core";
 import type {
   VisitorEvent,
   CasOutcome,
@@ -24,6 +18,7 @@ import type { Session } from "./session.js";
 import type { ConversationRecord, Sink } from "./sink.js";
 import { MemoryStageStore } from "./stage-store.js";
 import type { StageStore } from "./stage-store.js";
+import { validTestTheme } from "../../../../test-support/theme-fixture.js";
 
 const MARKUP_READY = `<Facet entry="home">
   <Screen name="home">
@@ -65,31 +60,6 @@ function catalogRecord(): Record<string, unknown> {
   };
 }
 
-function themeRecord(): Record<string, Record<string, string>> {
-  return {
-    color: {
-      background: "#fff",
-      surface: "#f9fafb",
-      border: "#e5e7eb",
-      text: "#111827",
-      textMuted: "#6b7280",
-      accent: "#2563eb",
-      onAccent: "#fff",
-      success: "#16a34a",
-      warning: "#ca8a04",
-      danger: "#dc2626",
-    },
-    space: { xs: "2px", sm: "4px", md: "8px", lg: "16px", xl: "24px" },
-    radius: { sm: "4px", md: "8px", lg: "12px", full: "999px" },
-    borderWidth: { thin: "1px", thick: "2px" },
-    shadow: { sm: "none", md: "0 2px 8px #0002", lg: "0 8px 24px #0003" },
-    fontFamily: { sans: "system-ui", mono: "ui-monospace" },
-    fontSize: { xs: "12px", sm: "14px", md: "16px", lg: "18px", xl: "22px" },
-    fontWeight: { regular: "400", medium: "500", bold: "700" },
-    lineHeight: { tight: "1.1", normal: "1.4", relaxed: "1.8" },
-  };
-}
-
 function validCatalog(): FacetCatalog {
   const result = validateCatalog(catalogRecord());
   if (!result.ok) {
@@ -99,11 +69,7 @@ function validCatalog(): FacetCatalog {
 }
 
 function validTheme(): FacetTheme {
-  const result = validateTheme(themeRecord());
-  if (!result.ok) {
-    throw new Error(`expected theme acceptance, got ${result.code}`);
-  }
-  return result.theme;
+  return validTestTheme();
 }
 
 function pathOf(value: string): DataPath {

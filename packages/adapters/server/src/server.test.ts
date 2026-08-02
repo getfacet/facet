@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { FacetToolSession } from "@facet/core";
+import type { FacetThemeExtensionDeclaration, FacetToolSession } from "@facet/core";
+import { validTestTheme } from "../../../../test-support/theme-fixture.js";
 import {
   visitorEvent,
   eventReader,
@@ -162,5 +163,22 @@ describe("createFacetServer", () => {
     expect(frame?.data.kind).toBe("patch");
     expect(JSON.stringify(frame?.data)).not.toContain('"say"');
     expect(JSON.stringify(frame?.data)).not.toContain('"reset"');
+  });
+
+  it("passes host theme extension declarations into runtime bootstrap", async () => {
+    const themeExtensions: readonly FacetThemeExtensionDeclaration[] = Object.freeze([
+      Object.freeze({
+        namespace: "brand",
+        tokens: Object.freeze({ accentHalo: "color" }),
+      }),
+    ]);
+    const theme = validTestTheme({
+      themeExtensions,
+      extensions: { brand: { accentHalo: "#123456" } },
+    });
+    const { server, base } = await start({ theme, themeExtensions });
+    active = server;
+
+    await expect(fetch(`${base}/health`).then((res) => res.text())).resolves.toBe("ok agent=local");
   });
 });

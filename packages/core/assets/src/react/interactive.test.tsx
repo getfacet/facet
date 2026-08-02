@@ -48,6 +48,8 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_CATALOG } from "../catalog.js";
+import { DEFAULT_THEME } from "../theme-default.js";
 import { Badge, Metric, Text } from "./content.js";
 import { Button, Field, Table } from "./interactive.js";
 import { errorsDuring } from "../../../../../test-support/errors-during.js";
@@ -60,85 +62,41 @@ type MountedProps = Mount["props"];
 /** What every token value in the fixture theme below begins with. */
 const TOKEN_MARKER = "themetoken-";
 
+type TokenLayer = Readonly<Record<string, Readonly<Record<string, string>>>>;
+
+function markerThemeLayer<Layer extends TokenLayer>(layer: Layer, layerName: string): Layer {
+  const groups: Record<string, Readonly<Record<string, string>>> = {};
+  for (const [group, tokens] of Object.entries(layer)) {
+    groups[group] = Object.freeze(
+      Object.fromEntries(
+        Object.keys(tokens).map((token) => [
+          token,
+          `${TOKEN_MARKER}${layerName}-${group}-${token}`,
+        ]),
+      ),
+    );
+  }
+  return Object.freeze(groups) as Layer;
+}
+
 /**
- * A complete theme whose every value is a unique marker rather than a colour or
- * a length.
- *
- * Two things follow from that, and both are the point. The theme is
- * **complete**, so the fixture states the same closed contract a real bootstrap
- * validates — a component reaching for a name outside it is a compile error at
- * `token()`, not a fixture omission. And every value is **recognisable**, so
- * "this component inlined a token's value instead of referencing it" is a
- * string the assertions can find, wherever in a declaration it was pasted.
- *
- * The values are deliberately not valid CSS colours or lengths: nothing here
- * needs to lay out, and a marker that could pass for a real value would be
- * harder to see when it leaks.
+ * A complete theme whose every fixed and recipe token value is a unique marker
+ * rather than a colour or a length.
  */
-const THEME: FacetTheme = {
-  color: {
-    background: `${TOKEN_MARKER}color-background`,
-    surface: `${TOKEN_MARKER}color-surface`,
-    border: `${TOKEN_MARKER}color-border`,
-    text: `${TOKEN_MARKER}color-text`,
-    textMuted: `${TOKEN_MARKER}color-text-muted`,
-    accent: `${TOKEN_MARKER}color-accent`,
-    onAccent: `${TOKEN_MARKER}color-on-accent`,
-    success: `${TOKEN_MARKER}color-success`,
-    warning: `${TOKEN_MARKER}color-warning`,
-    danger: `${TOKEN_MARKER}color-danger`,
-  },
-  space: {
-    xs: `${TOKEN_MARKER}space-xs`,
-    sm: `${TOKEN_MARKER}space-sm`,
-    md: `${TOKEN_MARKER}space-md`,
-    lg: `${TOKEN_MARKER}space-lg`,
-    xl: `${TOKEN_MARKER}space-xl`,
-  },
-  radius: {
-    sm: `${TOKEN_MARKER}radius-sm`,
-    md: `${TOKEN_MARKER}radius-md`,
-    lg: `${TOKEN_MARKER}radius-lg`,
-    full: `${TOKEN_MARKER}radius-full`,
-  },
-  borderWidth: {
-    thin: `${TOKEN_MARKER}border-width-thin`,
-    thick: `${TOKEN_MARKER}border-width-thick`,
-  },
-  shadow: {
-    sm: `${TOKEN_MARKER}shadow-sm`,
-    md: `${TOKEN_MARKER}shadow-md`,
-    lg: `${TOKEN_MARKER}shadow-lg`,
-  },
-  fontFamily: {
-    sans: `${TOKEN_MARKER}font-family-sans`,
-    mono: `${TOKEN_MARKER}font-family-mono`,
-  },
-  fontSize: {
-    xs: `${TOKEN_MARKER}font-size-xs`,
-    sm: `${TOKEN_MARKER}font-size-sm`,
-    md: `${TOKEN_MARKER}font-size-md`,
-    lg: `${TOKEN_MARKER}font-size-lg`,
-    xl: `${TOKEN_MARKER}font-size-xl`,
-  },
-  fontWeight: {
-    regular: `${TOKEN_MARKER}font-weight-regular`,
-    medium: `${TOKEN_MARKER}font-weight-medium`,
-    bold: `${TOKEN_MARKER}font-weight-bold`,
-  },
-  lineHeight: {
-    tight: `${TOKEN_MARKER}line-height-tight`,
-    normal: `${TOKEN_MARKER}line-height-normal`,
-    relaxed: `${TOKEN_MARKER}line-height-relaxed`,
-  },
-};
+const THEME: FacetTheme = Object.freeze({
+  foundation: markerThemeLayer(DEFAULT_THEME.foundation, "foundation"),
+  semantic: markerThemeLayer(DEFAULT_THEME.semantic, "semantic"),
+  recipes: markerThemeLayer(DEFAULT_THEME.recipes ?? {}, "recipe"),
+});
 
 /**
  * The custom properties a real bootstrap hands every mount, produced by the same
  * projection the runtime uses rather than restated by hand — so the names the
  * assertions look for are the names that actually reach a browser.
  */
-const THEME_VARS: Readonly<Record<string, string>> = themeToCssVars(THEME);
+const THEME_VARS: Readonly<Record<string, string>> = themeToCssVars(THEME, {
+  catalog: DEFAULT_CATALOG,
+});
 
 interface MountCallbacks {
   readonly onAction?: (prop: string) => void;

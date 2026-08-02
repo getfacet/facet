@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { BOUNDS } from "@facet/core";
-import type { ComponentDocument, DataModel, FacetCatalog, FacetTheme } from "@facet/core";
+import { BOUNDS, validateCatalog, validateTheme } from "@facet/core";
+import type {
+  ComponentDocument,
+  DataModel,
+  FacetCatalog,
+  FacetThemeExtensionDeclaration,
+} from "@facet/core";
 
+import { validTestTheme } from "../../../../test-support/theme-fixture.js";
 import { bootstrapSession } from "./bootstrap.js";
 import { MemoryStageStore, loadSession, validatePersistedSession } from "./stage-store.js";
 import type { SessionIssue, StageStore } from "./stage-store.js";
@@ -45,29 +51,40 @@ function catalogRecord(): Record<string, unknown> {
   };
 }
 
-function themeRecord(): Record<string, Record<string, string>> {
-  return {
-    color: {
-      background: "#fff",
-      surface: "#f9fafb",
-      border: "#e5e7eb",
-      text: "#111827",
-      textMuted: "#6b7280",
-      accent: "#2563eb",
-      onAccent: "#fff",
-      success: "#16a34a",
-      warning: "#ca8a04",
-      danger: "#dc2626",
-    },
-    space: { xs: "2px", sm: "4px", md: "8px", lg: "16px", xl: "24px" },
-    radius: { sm: "4px", md: "8px", lg: "12px", full: "999px" },
-    borderWidth: { thin: "1px", thick: "2px" },
-    shadow: { sm: "none", md: "0 2px 8px #0002", lg: "0 8px 24px #0003" },
-    fontFamily: { sans: "system-ui", mono: "ui-monospace" },
-    fontSize: { xs: "12px", sm: "14px", md: "16px", lg: "18px", xl: "22px" },
-    fontWeight: { regular: "400", medium: "500", bold: "700" },
-    lineHeight: { tight: "1.1", normal: "1.4", relaxed: "1.8" },
-  };
+function acceptedCatalog(source: Record<string, unknown>): FacetCatalog {
+  const result = validateCatalog(source);
+  if (!result.ok) {
+    throw new Error(`expected catalog acceptance, got ${result.code} at ${result.at}`);
+  }
+  return result.catalog;
+}
+
+function catalogWithTextRecipe(): FacetCatalog {
+  return acceptedCatalog({
+    components: [
+      component("Text", {
+        props: {
+          value: { type: "string", guidance: "Short text." },
+          arg: { type: "string", guidance: "The event argument." },
+        },
+        themeRecipe: { tokens: { accent: "color" } },
+      }),
+      component("Panel", {
+        props: {},
+        acceptsChildren: true,
+      }),
+      component("Screen", {
+        props: {
+          name: {
+            type: "string",
+            required: true,
+            guidance: "The screen name the document entry selects.",
+          },
+        },
+        acceptsChildren: true,
+      }),
+    ],
+  });
 }
 
 function scalar(value: string): { readonly kind: "scalar"; readonly value: string } {
@@ -94,7 +111,7 @@ function baseSession(
 ): Session {
   const boot = bootstrapSession({
     catalog: catalogRecord() as unknown as FacetCatalog,
-    theme: themeRecord() as unknown as FacetTheme,
+    theme: validTestTheme(),
   });
   if (!boot.ok) {
     throw new Error(`expected bootstrap acceptance, got ${boot.code}`);
@@ -388,6 +405,68 @@ describe("validatePersistedSession fail-safe restore", () => {
     });
 
     expectStableNormalization(stored, false);
+  });
+
+  it("restores a valid fallback theme for a recipe-owning catalog when the theme is corrupt", () => {
+    const catalog = catalogWithTextRecipe();
+    const theme = validTestTheme({
+      catalog,
+      recipes: { text: { accent: "#2563eb" } },
+    });
+    const boot = bootstrapSession({ catalog, theme });
+    if (!boot.ok) {
+      throw new Error(`expected bootstrap acceptance, got ${boot.code}`);
+    }
+
+    const restored = validatePersistedSession({
+      ...boot.session,
+      document: validDocument(),
+      phase: "live",
+      theme: null,
+    });
+    const themeResult = validateTheme(restored.session.theme, {
+      catalog: restored.session.catalog,
+      extensions: restored.session.themeExtensions,
+    });
+
+    expect(restored.issues.map((issue) => issue.code)).toContain("theme_not_an_object");
+    expect(themeResult.ok).toBe(true);
+    expect(restored.session.theme.recipes?.["text"]?.["accent"]).toBe("initial");
+  });
+
+  it("restores fallback extension tokens when extension declarations survived but theme did not", () => {
+    const catalog = catalogWithTextRecipe();
+    const themeExtensions: readonly FacetThemeExtensionDeclaration[] = Object.freeze([
+      Object.freeze({
+        namespace: "chart",
+        tokens: Object.freeze({ seriesA: "color" }),
+      }),
+    ]);
+    const theme = validTestTheme({
+      catalog,
+      themeExtensions,
+      recipes: { text: { accent: "#2563eb" } },
+      extensions: { chart: { seriesA: "#9333ea" } },
+    });
+    const boot = bootstrapSession({ catalog, theme, themeExtensions });
+    if (!boot.ok) {
+      throw new Error(`expected bootstrap acceptance, got ${boot.code}`);
+    }
+
+    const restored = validatePersistedSession({
+      ...boot.session,
+      document: validDocument(),
+      phase: "live",
+      theme: null,
+    });
+    const themeResult = validateTheme(restored.session.theme, {
+      catalog: restored.session.catalog,
+      extensions: restored.session.themeExtensions,
+    });
+
+    expect(restored.issues.map((issue) => issue.code)).toContain("theme_not_an_object");
+    expect(themeResult.ok).toBe(true);
+    expect(restored.session.theme.extensions?.["chart"]?.["seriesA"]).toBe("initial");
   });
 
   it("normalizes a throwing node getter instead of letting it survive into lanes", () => {

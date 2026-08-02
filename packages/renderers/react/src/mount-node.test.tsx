@@ -115,7 +115,7 @@ const CORRUPT = '[data-facet-neutral-state="corrupt-subtree"]';
 const CRASHED = '[data-facet-neutral-state="component-unavailable"]';
 
 const THEME_VARS: Readonly<Record<string, string>> = Object.freeze({
-  "--facet-color-text": "#101010",
+  "--facet-semantic-text-default": "#101010",
 });
 
 /** The internal detail a deliberately crashing component carries. */
@@ -237,7 +237,7 @@ function TextImpl({ props, themeVars, onAction }: ComponentMountProps<ReactNode>
       type="button"
       data-testid="text"
       data-total={props["total"] === undefined ? "absent" : String(props["total"])}
-      data-theme={themeVars["--facet-color-text"] ?? ""}
+      data-theme={themeVars["--facet-semantic-text-default"] ?? ""}
       onClick={() => {
         onAction("action");
       }}

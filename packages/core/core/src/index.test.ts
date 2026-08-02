@@ -69,6 +69,7 @@ const PUBLIC_SURFACE: readonly string[] = Object.freeze([
   "ComponentSpecValidationResult",
   "PropSchema",
   "StructuredPropType",
+  "ThemeRecipeSpec",
   "ConversationMessage",
   "deriveMessageId",
   "truncateConversationText",
@@ -142,14 +143,37 @@ const PUBLIC_SURFACE: readonly string[] = Object.freeze([
   "StageRevision",
   "CasOutcome",
   "nextRevision",
+  "FACET_THEME_CONTRACT",
+  "facetThemeToKebabCase",
+  "themeTokenRef",
+  "themeTokenVar",
+  "FacetExtensionTokenRef",
+  "FacetFoundationGroupName",
+  "FacetFoundationTheme",
+  "FacetFoundationTokenRef",
+  "FacetRecipeTokenRef",
+  "FacetSemanticGroupName",
+  "FacetSemanticTheme",
+  "FacetSemanticTokenRef",
   "FacetTheme",
+  "FacetThemeContract",
+  "FacetThemeExtensionDeclaration",
+  "FacetThemeGroupSpec",
+  "FacetThemeTokenRef",
+  "FacetThemeTokenSpec",
+  "FacetThemeTokenTableValues",
+  "FacetThemeTokenValueKind",
+  "FacetThemeTokenValues",
+  "FacetThemeValidationOptions",
   "validateTheme",
+  "validateThemeExtensionDeclarations",
+  "ThemeExtensionDeclarationValidationResult",
   "ThemeValidationResult",
   "themeToCssVars",
 ]);
 
 /** The contract's own count, pinned so a silent list edit is a failure. */
-const PUBLIC_SURFACE_SIZE = 96;
+const PUBLIC_SURFACE_SIZE = 120;
 
 /**
  * The exact off-barrel set named by the contract. `markup-lexer.ts` is private
@@ -203,6 +227,7 @@ const PUBLIC_RESULT_CONTRACTS: readonly string[] = Object.freeze([
   "ActionResult",
   "VisitorEventValidationResult",
   "NeutralCopyResolution",
+  "ThemeExtensionDeclarationValidationResult",
   "ThemeValidationResult",
   "TurnOutcomeValidationResult",
 ]);

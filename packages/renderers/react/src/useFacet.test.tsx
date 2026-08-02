@@ -26,6 +26,7 @@ import { MODAL_PART_ATTRIBUTE } from "./modal-frame.js";
 import type { ComponentRegistry } from "./registry.js";
 import { StageRenderer } from "./StageRenderer.js";
 import { useFacet } from "./useFacet.js";
+import { validTestTheme } from "../../../../test-support/theme-fixture.js";
 
 class TestTransport implements FacetTransport {
   readonly listeners = new Set<(frame: ServerFrame) => void>();
@@ -44,32 +45,7 @@ class TestTransport implements FacetTransport {
   }
 }
 
-const THEME: FacetTheme = {
-  color: {
-    background: "#ffffff",
-    surface: "#f7f7f7",
-    border: "#dddddd",
-    text: "#111111",
-    textMuted: "#666666",
-    accent: "#1d4ed8",
-    onAccent: "#ffffff",
-    success: "#15803d",
-    warning: "#b45309",
-    danger: "#b91c1c",
-  },
-  space: { xs: "0.25rem", sm: "0.5rem", md: "0.75rem", lg: "1rem", xl: "1.5rem" },
-  radius: { sm: "2px", md: "6px", lg: "12px", full: "9999px" },
-  borderWidth: { thin: "1px", thick: "2px" },
-  shadow: {
-    sm: "0 1px 2px rgba(0, 0, 0, 0.08)",
-    md: "0 4px 8px rgba(0, 0, 0, 0.1)",
-    lg: "0 12px 32px rgba(0, 0, 0, 0.2)",
-  },
-  fontFamily: { sans: "Inter, sans-serif", mono: "Menlo, monospace" },
-  fontSize: { xs: "0.75rem", sm: "0.875rem", md: "1rem", lg: "1.25rem", xl: "1.75rem" },
-  fontWeight: { regular: "400", medium: "500", bold: "700" },
-  lineHeight: { tight: "1.2", normal: "1.5", relaxed: "1.7" },
-};
+const THEME: FacetTheme = validTestTheme();
 
 const EMPTY_STAGE: FacetStage = Object.freeze({ document: null, data: Object.freeze({}) });
 

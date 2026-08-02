@@ -555,7 +555,10 @@ describe("quickstart E2E — initialMarkup seeding", () => {
   it("inlines theme and initialMarkup in one executable script", async () => {
     const theme: FacetTheme = {
       ...DEFAULT_THEME,
-      color: { ...DEFAULT_THEME.color, accent: "#123456" },
+      semantic: {
+        ...DEFAULT_THEME.semantic,
+        action: { ...DEFAULT_THEME.semantic.action, primaryBg: "#123456" },
+      },
     };
     const seeded = await boot({ theme, initialMarkup: SEED_MARKUP });
     try {

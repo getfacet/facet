@@ -97,6 +97,7 @@ import type { ComponentRegistry } from "./registry.js";
 import { StageRenderer } from "./StageRenderer.js";
 import type { StageRendererProps } from "./StageRenderer.js";
 import { errorsDuring } from "../../../../test-support/errors-during.js";
+import { validTestTheme } from "../../../../test-support/theme-fixture.js";
 
 /**
  * The switch the withheld-target tests flip. `vi.hoisted` is what lets the mock
@@ -165,59 +166,19 @@ afterEach(() => {
 
 // ── The two themes every projection assertion is made under ──────────────────
 
-const THEME: FacetTheme = {
-  color: {
-    background: "#f7f7f7",
-    surface: "#ffffff",
-    border: "#dcdcdc",
-    text: "#101010",
-    textMuted: "#6b6b6b",
-    accent: "#1d4ed8",
-    onAccent: "#ffffff",
-    success: "#15803d",
-    warning: "#b45309",
-    danger: "#b91c1c",
+const THEME: FacetTheme = validTestTheme({
+  semantic: {
+    surface: { default: "#ffffff" },
+    text: { default: "#101010", muted: "#6b6b6b" },
   },
-  space: { xs: "0.25rem", sm: "0.5rem", md: "0.75rem", lg: "1rem", xl: "1.5rem" },
-  radius: { sm: "2px", md: "6px", lg: "12px", full: "9999px" },
-  borderWidth: { thin: "1px", thick: "2px" },
-  shadow: {
-    sm: "0 1px 2px rgba(0, 0, 0, 0.08)",
-    md: "0 4px 8px rgba(0, 0, 0, 0.1)",
-    lg: "0 12px 32px rgba(0, 0, 0, 0.2)",
-  },
-  fontFamily: { sans: "Inter, sans-serif", mono: "Menlo, monospace" },
-  fontSize: { xs: "0.75rem", sm: "0.875rem", md: "1rem", lg: "1.25rem", xl: "1.75rem" },
-  fontWeight: { regular: "400", medium: "500", bold: "700" },
-  lineHeight: { tight: "1.2", normal: "1.5", relaxed: "1.7" },
-};
+});
 
-const DARK_THEME: FacetTheme = {
-  color: {
-    background: "#0b0b0f",
-    surface: "#17171d",
-    border: "#33333d",
-    text: "#f2f2f5",
-    textMuted: "#9a9aa6",
-    accent: "#7dd3fc",
-    onAccent: "#04121b",
-    success: "#4ade80",
-    warning: "#fbbf24",
-    danger: "#f87171",
+const DARK_THEME: FacetTheme = validTestTheme({
+  semantic: {
+    surface: { default: "#17171d" },
+    text: { default: "#f2f2f5", muted: "#9a9aa6" },
   },
-  space: { xs: "0.2rem", sm: "0.45rem", md: "0.7rem", lg: "1.1rem", xl: "1.6rem" },
-  radius: { sm: "3px", md: "7px", lg: "14px", full: "8888px" },
-  borderWidth: { thin: "2px", thick: "4px" },
-  shadow: {
-    sm: "0 1px 3px rgba(0, 0, 0, 0.5)",
-    md: "0 5px 9px rgba(0, 0, 0, 0.6)",
-    lg: "0 14px 36px rgba(0, 0, 0, 0.7)",
-  },
-  fontFamily: { sans: "Iosevka Aile, sans-serif", mono: "Iosevka, monospace" },
-  fontSize: { xs: "0.7rem", sm: "0.8rem", md: "0.95rem", lg: "1.2rem", xl: "1.7rem" },
-  fontWeight: { regular: "350", medium: "550", bold: "750" },
-  lineHeight: { tight: "1.1", normal: "1.45", relaxed: "1.8" },
-};
+});
 
 const THEME_VARS = themeToCssVars(THEME);
 const DARK_VARS = themeToCssVars(DARK_THEME);
@@ -1450,9 +1411,11 @@ describe("the modal seam this module owns", () => {
     openTrigger("Filter");
     const dialog = requirePart("frame");
 
-    expect(DARK_VARS["--facet-color-surface"]).not.toBe(THEME_VARS["--facet-color-surface"]);
-    expect(dialog.style.getPropertyValue("--facet-color-surface")).toBe(
-      DARK_VARS["--facet-color-surface"],
+    expect(DARK_VARS["--facet-semantic-surface-default"]).not.toBe(
+      THEME_VARS["--facet-semantic-surface-default"],
+    );
+    expect(dialog.style.getPropertyValue("--facet-semantic-surface-default")).toBe(
+      DARK_VARS["--facet-semantic-surface-default"],
     );
   });
 

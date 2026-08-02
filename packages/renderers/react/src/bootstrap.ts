@@ -10,11 +10,11 @@
  * registry, theme or copy, so a host has nothing to render a partially matched
  * document with.
  *
- * **One object form.** `bootstrapRenderer({ catalog, registry, theme, copy? })`
- * is the only spelling. The form is closed — an option it does not declare is a
- * rejection, not an ignored extra — because a silently dropped option is how a
- * host ends up believing it configured something it did not. Closed against the
- * **own property names**, and every option read is an own read: an option
+ * **One object form.** `bootstrapRenderer({ catalog, registry, theme,
+ * themeExtensions?, copy? })` is the only spelling. The form is closed — an
+ * option it does not declare is a rejection, not an ignored extra — because a
+ * silently dropped option is how a host ends up believing it configured
+ * something it did not. Closed against the **own property names**, and every option read is an own read: an option
  * defined non-enumerably still counts, and one reachable only through a
  * prototype is not an option at all, so the check and the read agree on what an
  * option is. An unknown key inherited from a prototype is deliberately *not* a
@@ -73,13 +73,20 @@
  * keys. Bootstrap is host configuration, so a fault is a result a host can read.
  */
 
-import type { ComponentSpec, FacetCatalog, FacetTheme, NeutralCopy } from "@facet/core";
+import type {
+  ComponentSpec,
+  FacetCatalog,
+  FacetTheme,
+  FacetThemeExtensionDeclaration,
+  NeutralCopy,
+} from "@facet/core";
 import {
   buildCatalogIndex,
   resolveNeutralCopy,
   validateCatalog,
   validateModalConformance,
   validateTheme,
+  validateThemeExtensionDeclarations,
 } from "@facet/core";
 
 import type { ComponentRegistry } from "./registry.js";
@@ -106,6 +113,8 @@ export type RendererBootstrap =
       readonly registry: ComponentRegistry;
       /** The validated theme every registered component styles itself from. */
       readonly theme: FacetTheme;
+      /** Host-declared theme extension namespaces active for this session. */
+      readonly themeExtensions: readonly FacetThemeExtensionDeclaration[];
       /** The framework copy this session shows when it has nothing else to show. */
       readonly copy: NeutralCopy;
     }
@@ -123,7 +132,7 @@ export type RendererBootstrap =
 type BootstrapRejection = Extract<RendererBootstrap, { readonly ok: false }>;
 
 /** The closed option form. An option outside this set is a rejection. */
-const OPTION_KEYS: readonly string[] = ["catalog", "registry", "theme", "copy"];
+const OPTION_KEYS: readonly string[] = ["catalog", "registry", "theme", "themeExtensions", "copy"];
 
 /** The tag whose registered spec the framework overlap frame projects. */
 const MODAL_TAG = "Modal";
@@ -173,6 +182,8 @@ export function bootstrapRenderer(options: {
   readonly registry: ComponentRegistry;
   /** The complete token contract this session renders with. */
   readonly theme: FacetTheme;
+  /** Optional host extension token declarations for `theme.extensions`. */
+  readonly themeExtensions?: unknown;
   /** The host's neutral copy override. Omit it for the framework defaults. */
   readonly copy?: unknown;
 }): RendererBootstrap {
@@ -192,7 +203,7 @@ function bootstrap(options: unknown): RendererBootstrap {
     return reject(
       "bootstrap_not_an_object",
       "",
-      "Bootstrap takes one object: { catalog, registry, theme, copy? }.",
+      "Bootstrap takes one object: { catalog, registry, theme, themeExtensions?, copy? }.",
     );
   }
   // `getOwnPropertyNames`, not `Object.keys`: an option defined non-enumerably
@@ -227,7 +238,15 @@ function bootstrap(options: unknown): RendererBootstrap {
       return modal;
     }
   }
-  const theme = validateTheme(read(options, "theme"));
+  const themeExtensions = validateThemeExtensionDeclarations(read(options, "themeExtensions"));
+  if (!themeExtensions.ok) {
+    return themeExtensions;
+  }
+
+  const theme = validateTheme(read(options, "theme"), {
+    catalog: catalog.catalog,
+    extensions: themeExtensions.extensions,
+  });
   if (!theme.ok) {
     return theme;
   }
@@ -248,6 +267,7 @@ function bootstrap(options: unknown): RendererBootstrap {
     index: buildCatalogIndex(catalog.catalog),
     registry: registry.registry,
     theme: theme.theme,
+    themeExtensions: themeExtensions.extensions,
     copy: copy.copy,
   };
 }

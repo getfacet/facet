@@ -96,6 +96,26 @@ describe("validateComponentSpec — the accepted spec form", () => {
     expect(Object.keys(spec.props)).toHaveLength(6);
   });
 
+  it("accepts a closed themeRecipe declaration on a component spec", () => {
+    const spec = accept({
+      ...minimalSpec(),
+      themeRecipe: {
+        tokens: {
+          background: "color",
+          padding: "length",
+          focusRing: "shadow",
+        },
+      },
+    });
+    expect(spec.themeRecipe?.tokens).toEqual({
+      background: "color",
+      focusRing: "shadow",
+      padding: "length",
+    });
+    expect(Object.isFrozen(spec.themeRecipe)).toBe(true);
+    expect(Object.isFrozen(spec.themeRecipe?.tokens)).toBe(true);
+  });
+
   it("accepts a record with a null prototype — a plain data record is still a spec", () => {
     const spec = Object.assign(Object.create(null) as Record<string, unknown>, minimalSpec());
     expect(validateComponentSpec(spec).ok).toBe(true);
@@ -174,6 +194,44 @@ describe("validateComponentSpec — no category field (deliberately absent)", ()
 
   it("rejects any other unknown top-level key", () => {
     expect(rejectionCode({ ...minimalSpec(), examples: ["<Card />"] })).toBe("unknown_spec_key");
+  });
+});
+
+describe("validateComponentSpec — themeRecipe declarations", () => {
+  it("rejects an unknown themeRecipe key", () => {
+    expect(rejectionCode({ ...minimalSpec(), themeRecipe: { tokens: {}, examples: [] } })).toBe(
+      "unknown_theme_recipe_key",
+    );
+    expect(rejectionAt({ ...minimalSpec(), themeRecipe: { tokens: {}, examples: [] } })).toBe(
+      "themeRecipe.examples",
+    );
+  });
+
+  it("rejects a recipe token name outside the Facet identifier grammar", () => {
+    expect(
+      rejectionCode({ ...minimalSpec(), themeRecipe: { tokens: { "bad token": "color" } } }),
+    ).toBe("invalid_theme_recipe_token");
+  });
+
+  it("rejects a recipe token kind Facet does not declare", () => {
+    expect(
+      rejectionCode({ ...minimalSpec(), themeRecipe: { tokens: { background: "gradient" } } }),
+    ).toBe("invalid_theme_recipe_token_kind");
+  });
+
+  it("rejects recipe token names that collide after CSS variable projection", () => {
+    expect(
+      rejectionCode({
+        ...minimalSpec(),
+        themeRecipe: { tokens: { focusRing: "shadow", "focus-ring": "shadow" } },
+      }),
+    ).toBe("duplicate_theme_recipe_token");
+    expect(
+      rejectionCode({
+        ...minimalSpec(),
+        themeRecipe: { tokens: { "focus-ring": "shadow", focus_ring: "shadow" } },
+      }),
+    ).toBe("duplicate_theme_recipe_token");
   });
 });
 

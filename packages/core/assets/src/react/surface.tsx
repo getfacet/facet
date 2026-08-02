@@ -27,7 +27,16 @@
 import type { ComponentMountProps, MountedComponent } from "@facet/core";
 import type { ReactNode } from "react";
 
-import { enumProp, flowStyle, mountStyle, space, textProp, token } from "./style.js";
+import {
+  enumProp,
+  flowStyle,
+  foundation,
+  mountStyle,
+  recipe,
+  semantic,
+  space,
+  textProp,
+} from "./style.js";
 
 const CARD_TONES = ["neutral", "accent", "success", "warning", "danger"] as const;
 const CARD_PADDINGS = ["none", "sm", "md", "lg"] as const;
@@ -38,15 +47,15 @@ const CARD_PADDINGS = ["none", "sm", "md", "lg"] as const;
  * same level: a surface naming itself, one step down from the screen's own
  * heading. Frozen, since every mount of both components shares the object.
  */
-const SURFACE_HEADING = Object.freeze(
-  flowStyle({
+function surfaceHeading(color: string): ReturnType<typeof flowStyle> {
+  return flowStyle({
     margin: 0,
-    fontSize: token("fontSize", "lg"),
-    fontWeight: token("fontWeight", "medium"),
-    lineHeight: token("lineHeight", "tight"),
-    color: token("color", "text"),
-  }),
-);
+    fontSize: foundation("typography", "fontSizeLg"),
+    fontWeight: foundation("typography", "fontWeightMedium"),
+    lineHeight: foundation("typography", "lineHeightTight"),
+    color,
+  });
+}
 
 /**
  * The quieter second line — `Empty`'s description and `Modal`'s. Also one
@@ -56,19 +65,19 @@ const SURFACE_HEADING = Object.freeze(
 const SURFACE_DESCRIPTION = Object.freeze(
   flowStyle({
     margin: 0,
-    fontSize: token("fontSize", "sm"),
-    lineHeight: token("lineHeight", "normal"),
-    color: token("color", "textMuted"),
+    fontSize: foundation("typography", "fontSizeSm"),
+    lineHeight: foundation("typography", "lineHeightNormal"),
+    color: semantic("text", "muted"),
   }),
 );
 
 /** The theme colour each declared card tone draws its edge from. */
 const TONE_EDGES = {
-  neutral: token("color", "border"),
-  accent: token("color", "accent"),
-  success: token("color", "success"),
-  warning: token("color", "warning"),
-  danger: token("color", "danger"),
+  neutral: recipe("card", "border"),
+  accent: semantic("action", "primaryBorder"),
+  success: semantic("status", "successBorder"),
+  warning: semantic("status", "warningBorder"),
+  danger: semantic("status", "dangerBorder"),
 } as const satisfies Readonly<Record<string, string>>;
 
 /** A bounded surface that groups related content and separates it from the rest. */
@@ -90,17 +99,20 @@ export const Card: MountedComponent<ReactNode, ReactNode> = function Card({
         flexDirection: "column",
         boxSizing: "border-box",
         minWidth: 0,
-        gap: token("space", "sm"),
-        padding: space(padding),
-        background: token("color", "surface"),
-        color: token("color", "text"),
+        gap: foundation("space", "sm"),
+        padding: padding === "md" ? recipe("card", "padding") : space(padding),
+        background: recipe("card", "background"),
+        color: recipe("card", "text"),
         borderStyle: "solid",
-        borderWidth: token("borderWidth", "thin"),
+        borderWidth: foundation("borderWidth", "thin"),
         borderColor: TONE_EDGES[edge],
-        borderRadius: token("radius", "md"),
+        borderRadius: recipe("card", "radius"),
+        boxShadow: recipe("card", "shadow"),
       })}
     >
-      {title === undefined ? null : <h2 style={SURFACE_HEADING}>{title}</h2>}
+      {title === undefined ? null : (
+        <h2 style={surfaceHeading(recipe("card", "titleColor"))}>{title}</h2>
+      )}
       {children}
     </section>
   );
@@ -124,17 +136,18 @@ export const Empty: MountedComponent<ReactNode, ReactNode> = function Empty({
         alignItems: "center",
         boxSizing: "border-box",
         minWidth: 0,
-        gap: token("space", "sm"),
-        padding: token("space", "xl"),
+        gap: foundation("space", "sm"),
+        padding: recipe("empty", "padding"),
         textAlign: "center",
         borderStyle: "dashed",
-        borderWidth: token("borderWidth", "thin"),
-        borderColor: token("color", "border"),
-        borderRadius: token("radius", "md"),
-        color: token("color", "textMuted"),
+        borderWidth: foundation("borderWidth", "thin"),
+        borderColor: recipe("empty", "border"),
+        borderRadius: recipe("empty", "radius"),
+        background: recipe("empty", "background"),
+        color: recipe("empty", "text"),
       })}
     >
-      <p style={SURFACE_HEADING}>{title}</p>
+      <p style={surfaceHeading(recipe("empty", "titleColor"))}>{title}</p>
       {description === undefined ? null : <p style={SURFACE_DESCRIPTION}>{description}</p>}
       {children}
     </div>
@@ -160,8 +173,8 @@ export const Modal: MountedComponent<ReactNode, ReactNode> = function Modal({
         flexDirection: "column",
         boxSizing: "border-box",
         minWidth: 0,
-        gap: token("space", "md"),
-        color: token("color", "text"),
+        gap: foundation("space", "md"),
+        color: recipe("modal", "frameText"),
       })}
     >
       {description === undefined ? null : <p style={SURFACE_DESCRIPTION}>{description}</p>}

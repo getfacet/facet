@@ -17,7 +17,7 @@ plane.
 
 ## Bootstrap
 
-`bootstrapRenderer({ catalog, registry, theme })` closes the browser trust
+`bootstrapRenderer({ catalog, registry, theme, themeExtensions? })` closes the browser trust
 boundary before a session renders. The catalog is what an agent may author; the
 registry is the trusted React code that mounts those tags. The two tag sets must
 match exactly, the catalog must pass Core validation, and the returned boundary

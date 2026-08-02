@@ -215,7 +215,14 @@ export function StageRenderer({
   // One store per session, created once. Two stages on one page therefore share
   // no collected value, and there is no module-level store for them to share.
   const [store] = useState(createFieldStore);
-  const themeVars = useMemo(() => themeToCssVars(bootstrap.theme), [bootstrap.theme]);
+  const themeVars = useMemo(
+    () =>
+      themeToCssVars(bootstrap.theme, {
+        catalog: bootstrap.catalog,
+        extensions: bootstrap.themeExtensions,
+      }),
+    [bootstrap.catalog, bootstrap.theme, bootstrap.themeExtensions],
+  );
   const active = stageDocument ?? NO_DOCUMENT;
   const { current, navigate } = useScreenView(active);
   const screen = current === null ? "" : current.name;

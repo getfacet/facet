@@ -42,7 +42,7 @@ import type { ComponentMountProps, MountedComponent } from "@facet/core";
 import type { ReactNode } from "react";
 
 import type { FlowStyle } from "./style.js";
-import { flowStyle, mountStyle, token } from "./style.js";
+import { flowStyle, foundation, mountStyle, recipe } from "./style.js";
 
 /** What one of these components is handed. React supplies both element types. */
 type Mount = ComponentMountProps<ReactNode>;
@@ -79,16 +79,23 @@ function readEnum<Value extends string>(
  */
 const BUTTON_TONES = {
   primary: {
-    background: token("color", "accent"),
-    color: token("color", "onAccent"),
+    background: recipe("button", "primaryBg"),
+    color: recipe("button", "primaryText"),
+    border: recipe("button", "primaryBorder"),
     bordered: true,
   },
   secondary: {
-    background: token("color", "surface"),
-    color: token("color", "text"),
+    background: recipe("button", "secondaryBg"),
+    color: recipe("button", "secondaryText"),
+    border: recipe("button", "secondaryBorder"),
     bordered: true,
   },
-  quiet: { background: "transparent", color: token("color", "textMuted"), bordered: false },
+  quiet: {
+    background: "transparent",
+    color: recipe("button", "quietText"),
+    border: "transparent",
+    bordered: false,
+  },
 } as const;
 
 const BUTTON_TONE_NAMES = Object.keys(BUTTON_TONES) as readonly (keyof typeof BUTTON_TONES)[];
@@ -110,18 +117,17 @@ export const Button: MountedComponent<ReactNode, ReactNode> = (mount) => {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: token("space", "xs"),
-    padding: `${token("space", "sm")} ${token("space", "md")}`,
-    borderRadius: token("radius", "md"),
-    border: tone.bordered
-      ? `${token("borderWidth", "thin")} solid ${token("color", "border")}`
-      : "none",
+    gap: foundation("space", "xs"),
+    padding: `${recipe("button", "paddingBlock")} ${recipe("button", "paddingInline")}`,
+    borderRadius: recipe("button", "radius"),
+    border: tone.bordered ? `${foundation("borderWidth", "thin")} solid ${tone.border}` : "none",
     background: tone.background,
     color: tone.color,
-    fontFamily: token("fontFamily", "sans"),
-    fontSize: token("fontSize", "sm"),
-    fontWeight: token("fontWeight", "medium"),
-    lineHeight: token("lineHeight", "tight"),
+    boxShadow: recipe("button", "focusRing"),
+    fontFamily: foundation("typography", "fontFamilySans"),
+    fontSize: foundation("typography", "fontSizeSm"),
+    fontWeight: foundation("typography", "fontWeightMedium"),
+    lineHeight: foundation("typography", "lineHeightTight"),
     cursor: "pointer",
   };
 
@@ -166,23 +172,23 @@ export const Field: MountedComponent<ReactNode, ReactNode> = (mount) => {
   const rootStyle: FlowStyle = {
     display: "flex",
     flexDirection: "column",
-    gap: token("space", "xs"),
-    fontFamily: token("fontFamily", "sans"),
+    gap: foundation("space", "xs"),
+    fontFamily: foundation("typography", "fontFamilySans"),
   };
   const labelStyle: FlowStyle = {
-    fontSize: token("fontSize", "sm"),
-    fontWeight: token("fontWeight", "medium"),
-    color: token("color", "text"),
+    fontSize: foundation("typography", "fontSizeSm"),
+    fontWeight: foundation("typography", "fontWeightMedium"),
+    color: recipe("field", "labelText"),
   };
   const inputStyle: FlowStyle = {
-    padding: `${token("space", "sm")} ${token("space", "sm")}`,
-    borderRadius: token("radius", "sm"),
-    border: `${token("borderWidth", "thin")} solid ${token("color", "border")}`,
-    background: token("color", "background"),
-    color: token("color", "text"),
-    fontFamily: token("fontFamily", "sans"),
-    fontSize: token("fontSize", "md"),
-    lineHeight: token("lineHeight", "normal"),
+    padding: recipe("field", "inputPadding"),
+    borderRadius: recipe("field", "inputRadius"),
+    border: `${foundation("borderWidth", "thin")} solid ${recipe("field", "inputBorder")}`,
+    background: recipe("field", "inputBg"),
+    color: recipe("field", "inputText"),
+    fontFamily: foundation("typography", "fontFamilySans"),
+    fontSize: foundation("typography", "fontSizeMd"),
+    lineHeight: foundation("typography", "lineHeightNormal"),
   };
 
   return (
@@ -259,25 +265,26 @@ export const Table: MountedComponent<ReactNode, ReactNode> = (mount) => {
   const tableStyle: FlowStyle = {
     width: "100%",
     borderCollapse: "collapse",
-    fontFamily: token("fontFamily", "sans"),
-    fontSize: token("fontSize", "sm"),
-    color: token("color", "text"),
+    fontFamily: foundation("typography", "fontFamilySans"),
+    fontSize: foundation("typography", "fontSizeSm"),
+    color: recipe("table", "text"),
   };
   const captionStyle: FlowStyle = {
     textAlign: "left",
-    paddingBottom: token("space", "xs"),
-    color: token("color", "textMuted"),
-    fontSize: token("fontSize", "xs"),
+    paddingBottom: foundation("space", "xs"),
+    color: recipe("table", "captionText"),
+    fontSize: foundation("typography", "fontSizeXs"),
   };
   const cellStyle: FlowStyle = {
     textAlign: "left",
-    padding: `${token("space", "xs")} ${token("space", "sm")}`,
-    borderBottom: `${token("borderWidth", "thin")} solid ${token("color", "border")}`,
+    padding: recipe("table", "cellPadding"),
+    borderBottom: `${foundation("borderWidth", "thin")} solid ${recipe("table", "rowBorder")}`,
   };
   const headerStyle: FlowStyle = {
     ...cellStyle,
-    fontWeight: token("fontWeight", "medium"),
-    color: token("color", "textMuted"),
+    fontWeight: foundation("typography", "fontWeightMedium"),
+    color: recipe("table", "headerText"),
+    background: recipe("table", "headerBg"),
   };
 
   return (

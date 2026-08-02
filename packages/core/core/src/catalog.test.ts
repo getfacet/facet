@@ -169,6 +169,40 @@ describe("validateCatalog — duplicate tags are rejected (one tag, one componen
   });
 });
 
+describe("validateCatalog — component recipe namespaces stay unique", () => {
+  const recipe = { tokens: { background: "color" } };
+
+  it("rejects two recipe-owning components whose tags collide after CSS projection", () => {
+    expect(
+      catalogRejection(
+        catalogWithScreen(
+          spec("MetricCard", { themeRecipe: recipe }),
+          spec("Metric-Card", { themeRecipe: recipe }),
+        ),
+      ),
+    ).toBe("duplicate_theme_recipe_namespace");
+  });
+
+  it("names the second component whose recipe namespace collides", () => {
+    expect(
+      catalogRejectionAt(
+        catalogWithScreen(
+          spec("MetricCard", { themeRecipe: recipe }),
+          spec("Metric-Card", { themeRecipe: recipe }),
+        ),
+      ),
+    ).toBe("components[1].tag");
+  });
+
+  it("does not reject a non-recipe component that shares the projected spelling", () => {
+    expect(
+      validateCatalog(
+        catalogWithScreen(spec("MetricCard", { themeRecipe: recipe }), spec("Metric-Card")),
+      ).ok,
+    ).toBe(true);
+  });
+});
+
 describe("validateCatalog — `Facet` is the one reserved grammar position", () => {
   it("rejects a component registered under the `Facet` grammar position", () => {
     expect(catalogRejection(catalogOf(spec("Facet")))).toBe("reserved_structural_tag");

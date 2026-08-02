@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { FacetCatalog, FacetTheme } from "@facet/core";
+import type { FacetCatalog, FacetTheme, FacetThemeExtensionDeclaration } from "@facet/core";
 import { FacetRuntime, MemorySink, MemoryStageStore, bootstrapSession } from "@facet/runtime";
 import type { Sink, StageStore } from "@facet/runtime";
 import { createAgentChannel } from "./agent-channel.js";
@@ -27,6 +27,7 @@ export interface FacetServerOptions {
   readonly host?: string;
   readonly catalog: FacetCatalog;
   readonly theme: FacetTheme;
+  readonly themeExtensions?: readonly FacetThemeExtensionDeclaration[];
   readonly copy?: unknown;
   readonly initialMarkup?: string;
   readonly agent?: FacetServerAgent | undefined;
@@ -93,6 +94,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   const boot = bootstrapSession({
     catalog: options.catalog,
     theme: options.theme,
+    ...(options.themeExtensions === undefined ? {} : { themeExtensions: options.themeExtensions }),
     ...(options.copy === undefined ? {} : { copy: options.copy }),
     ...(options.initialMarkup === undefined ? {} : { initialMarkup: options.initialMarkup }),
   });

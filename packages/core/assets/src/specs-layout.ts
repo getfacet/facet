@@ -83,6 +83,17 @@ export const SCREEN_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: true,
+  themeRecipe: {
+    tokens: {
+      background: "color",
+      text: "color",
+      contentGap: "length",
+      titleColor: "color",
+      titleFontSize: "length",
+      titleFontWeight: "fontWeight",
+      titleLineHeight: "lineHeight",
+    },
+  },
 };
 
 /** Children in vertical reading order — the default container for anything. */
@@ -114,6 +125,12 @@ export const STACK_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: true,
+  themeRecipe: {
+    tokens: {
+      defaultGap: "length",
+      padding: "length",
+    },
+  },
 };
 
 /** Children side by side on one line, wrapping when the line runs out. */
@@ -150,6 +167,12 @@ export const ROW_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: true,
+  themeRecipe: {
+    tokens: {
+      defaultGap: "length",
+      padding: "length",
+    },
+  },
 };
 
 /** An even grid of equal columns, for repeated content of one kind. */
@@ -180,6 +203,12 @@ export const GRID_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: true,
+  themeRecipe: {
+    tokens: {
+      defaultGap: "length",
+      minColumnWidth: "length",
+    },
+  },
 };
 
 /** The layout group, in the order the default catalog lists it. */

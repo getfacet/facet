@@ -108,6 +108,7 @@ import { MountNode } from "./mount-node.js";
 import type { ModalMountRequest, MountContext } from "./mount-node.js";
 import type { ComponentRegistry } from "./registry.js";
 import { errorsDuring } from "../../../../test-support/errors-during.js";
+import { validTestTheme } from "../../../../test-support/theme-fixture.js";
 
 /**
  * The switch the withheld-target tests flip. `vi.hoisted` is what lets the mock
@@ -152,59 +153,31 @@ const DISMISS_GLYPH = "×";
 // looks correct under a single theme, and only a second set of values makes the
 // projection observable as a projection.
 
-const THEME: FacetTheme = {
-  color: {
-    background: "#f7f7f7",
-    surface: "#ffffff",
-    border: "#dcdcdc",
-    text: "#101010",
-    textMuted: "#6b6b6b",
-    accent: "#1d4ed8",
-    onAccent: "#ffffff",
-    success: "#15803d",
-    warning: "#b45309",
-    danger: "#b91c1c",
+const THEME: FacetTheme = validTestTheme({
+  foundation: {
+    radius: { lg: "12px" },
+    space: { lg: "1rem" },
   },
-  space: { xs: "0.25rem", sm: "0.5rem", md: "0.75rem", lg: "1rem", xl: "1.5rem" },
-  radius: { sm: "2px", md: "6px", lg: "12px", full: "9999px" },
-  borderWidth: { thin: "1px", thick: "2px" },
-  shadow: {
-    sm: "0 1px 2px rgba(0, 0, 0, 0.08)",
-    md: "0 4px 8px rgba(0, 0, 0, 0.1)",
-    lg: "0 12px 32px rgba(0, 0, 0, 0.2)",
+  semantic: {
+    border: { default: "#dcdcdc" },
+    layer: { modalShadow: "0 12px 32px rgba(0, 0, 0, 0.2)" },
+    surface: { default: "#ffffff" },
+    text: { default: "#101010", muted: "#6b6b6b" },
   },
-  fontFamily: { sans: "Inter, sans-serif", mono: "Menlo, monospace" },
-  fontSize: { xs: "0.75rem", sm: "0.875rem", md: "1rem", lg: "1.25rem", xl: "1.75rem" },
-  fontWeight: { regular: "400", medium: "500", bold: "700" },
-  lineHeight: { tight: "1.2", normal: "1.5", relaxed: "1.7" },
-};
+});
 
-const DARK_THEME: FacetTheme = {
-  color: {
-    background: "#0b0b0f",
-    surface: "#17171d",
-    border: "#33333d",
-    text: "#f2f2f5",
-    textMuted: "#9a9aa6",
-    accent: "#7dd3fc",
-    onAccent: "#04121b",
-    success: "#4ade80",
-    warning: "#fbbf24",
-    danger: "#f87171",
+const DARK_THEME: FacetTheme = validTestTheme({
+  foundation: {
+    radius: { lg: "14px" },
+    space: { lg: "1.1rem" },
   },
-  space: { xs: "0.2rem", sm: "0.45rem", md: "0.7rem", lg: "1.1rem", xl: "1.6rem" },
-  radius: { sm: "3px", md: "7px", lg: "14px", full: "8888px" },
-  borderWidth: { thin: "2px", thick: "4px" },
-  shadow: {
-    sm: "0 1px 3px rgba(0, 0, 0, 0.5)",
-    md: "0 5px 9px rgba(0, 0, 0, 0.6)",
-    lg: "0 14px 36px rgba(0, 0, 0, 0.7)",
+  semantic: {
+    border: { default: "#33333d" },
+    layer: { modalShadow: "0 14px 36px rgba(0, 0, 0, 0.7)" },
+    surface: { default: "#17171d" },
+    text: { default: "#f2f2f5", muted: "#9a9aa6" },
   },
-  fontFamily: { sans: "Iosevka Aile, sans-serif", mono: "Iosevka, monospace" },
-  fontSize: { xs: "0.7rem", sm: "0.8rem", md: "0.95rem", lg: "1.2rem", xl: "1.7rem" },
-  fontWeight: { regular: "350", medium: "550", bold: "750" },
-  lineHeight: { tight: "1.1", normal: "1.45", relaxed: "1.8" },
-};
+});
 
 /** The projection itself, from Core. The frame may name no property outside it. */
 const THEME_VARS = themeToCssVars(THEME);
@@ -870,12 +843,12 @@ describe("the dialog surface, which the framework paints from the theme", () => 
     }
     // The surface a custom conforming Modal would otherwise have to draw itself.
     const dialog = requirePart("frame");
-    expect(dialog.style.background).toBe("var(--facet-color-surface)");
-    expect(dialog.style.color).toBe("var(--facet-color-text)");
-    expect(dialog.style.padding).toBe("var(--facet-space-lg)");
-    expect(dialog.style.borderRadius).toBe("var(--facet-radius-lg)");
-    expect(dialog.style.boxShadow).toBe("var(--facet-shadow-lg)");
-    expect(requirePart("dismiss").style.color).toBe("var(--facet-color-text-muted)");
+    expect(dialog.style.background).toBe("var(--facet-semantic-surface-default)");
+    expect(dialog.style.color).toBe("var(--facet-semantic-text-default)");
+    expect(dialog.style.padding).toBe("var(--facet-foundation-space-lg)");
+    expect(dialog.style.borderRadius).toBe("var(--facet-foundation-radius-lg)");
+    expect(dialog.style.boxShadow).toBe("var(--facet-semantic-layer-modal-shadow)");
+    expect(requirePart("dismiss").style.color).toBe("var(--facet-semantic-text-muted)");
   });
 
   it("carries no fallback value behind any reference", () => {
@@ -895,9 +868,11 @@ describe("the dialog surface, which the framework paints from the theme", () => 
     // Same names, different values: the surface is a projection rather than a
     // colour this file and the frame happen to agree on.
     expect(declaredVars(dialog)).toEqual({ ...DARK_VARS });
-    expect(dialog.style.getPropertyValue("--facet-color-surface")).toBe(DARK_THEME.color.surface);
-    expect(DARK_THEME.color.surface).not.toBe(THEME.color.surface);
-    expect(dialog.style.background).toBe("var(--facet-color-surface)");
+    expect(dialog.style.getPropertyValue("--facet-semantic-surface-default")).toBe(
+      DARK_THEME.semantic.surface.default,
+    );
+    expect(DARK_THEME.semantic.surface.default).not.toBe(THEME.semantic.surface.default);
+    expect(dialog.style.background).toBe("var(--facet-semantic-surface-default)");
   });
 
   it("keeps a custom Modal's own content inside the frame it was given", () => {

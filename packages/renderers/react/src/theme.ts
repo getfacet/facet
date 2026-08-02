@@ -34,7 +34,7 @@
  */
 
 import { validateTheme } from "@facet/core";
-import type { FacetTheme } from "@facet/core";
+import type { FacetTheme, FacetThemeValidationOptions } from "@facet/core";
 
 /**
  * The two spellings of "the host supplied nothing".
@@ -59,7 +59,10 @@ function isAbsent(value: unknown): boolean {
  * the Barrel Export Contract lists no name for it and a public signature may not
  * refer to an off-barrel one.
  */
-export function resolveTheme(bootstrapTheme: unknown):
+export function resolveTheme(
+  bootstrapTheme: unknown,
+  options: FacetThemeValidationOptions = {},
+):
   | { readonly ok: true; readonly theme: FacetTheme }
   | {
       readonly ok: false;
@@ -78,5 +81,5 @@ export function resolveTheme(bootstrapTheme: unknown):
   // Relayed verbatim on both branches. The accepted value is the contract's own
   // frozen rebuild, so the session holds the tokens the contract admits and
   // nothing the host happened to attach to the object it passed in.
-  return validateTheme(bootstrapTheme);
+  return validateTheme(bootstrapTheme, options);
 }

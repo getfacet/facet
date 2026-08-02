@@ -7,7 +7,9 @@
  * rather than dropping a member — a partially accepted trust boundary is not a
  * trust boundary — and rejects duplicate tags outright, because one tag must
  * resolve to exactly one spec for the renderer's registry match to mean
- * anything.
+ * anything. A component that declares a theme recipe also reserves the CSS
+ * recipe namespace derived from its tag; two recipe-owning tags that project to
+ * the same namespace are rejected for the same reason duplicate tags are.
  *
  * `Facet` is a **grammar position, not a component**, so a registration under
  * that tag is rejected. It is the single registry-side reservation; the
@@ -77,6 +79,7 @@
 import { BOUNDS } from "./bounds.js";
 import { validateComponentSpec } from "./component-spec.js";
 import type { ComponentSpec, PropSchema } from "./component-spec.js";
+import { facetThemeToKebabCase } from "./theme-contract.js";
 
 /** The immutable component set for one session. */
 export interface FacetCatalog {
@@ -216,6 +219,7 @@ function validateCatalogShape(value: unknown): CatalogValidationResult {
 
   const components: ComponentSpec[] = [];
   const tags = new Set<string>();
+  const recipeNamespaces = new Set<string>();
   // Captured with its position so the refinement below can name the offending
   // member and key, the way every other member-level rejection here does.
   let screen: { readonly spec: ComponentSpec; readonly position: string } | undefined;
@@ -236,6 +240,17 @@ function validateCatalogShape(value: unknown): CatalogValidationResult {
       return reject("duplicate_tag", `${position}.tag`, "One tag resolves to exactly one spec.");
     }
     tags.add(result.spec.tag);
+    if (result.spec.themeRecipe !== undefined) {
+      const namespace = facetThemeToKebabCase(result.spec.tag);
+      if (recipeNamespaces.has(namespace)) {
+        return reject(
+          "duplicate_theme_recipe_namespace",
+          `${position}.tag`,
+          "Component recipe namespaces must not collide after CSS variable projection.",
+        );
+      }
+      recipeNamespaces.add(namespace);
+    }
     if (result.spec.tag === SCREEN_TAG) {
       screen = { spec: result.spec, position };
     }

@@ -25,6 +25,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { DEFAULT_CATALOG } from "../catalog.js";
 import { GRID_SPEC, ROW_SPEC, SCREEN_SPEC, STACK_SPEC } from "../specs-layout.js";
 import { CARD_SPEC, EMPTY_SPEC, MODAL_SPEC } from "../specs-surface.js";
 import { DEFAULT_THEME } from "../theme-default.js";
@@ -32,7 +33,7 @@ import { Grid, Row, Screen, Stack } from "./layout.js";
 import { Card, Empty, Modal } from "./surface.js";
 
 /** The custom properties a real bootstrap hands every mount. */
-const THEME_VARS = themeToCssVars(DEFAULT_THEME);
+const THEME_VARS = themeToCssVars(DEFAULT_THEME, { catalog: DEFAULT_CATALOG });
 
 /** The scalar prop record a renderer hands a mounted component. */
 type MountProps = Readonly<Record<string, string | number | boolean>>;
@@ -424,7 +425,7 @@ describe("Screen", () => {
     expect(none.style.getPropertyValue("padding")).toBe("0px");
     cleanup();
     const large = renderComponent(Screen, { name: "invoices", padding: "lg" });
-    expect(large.style.getPropertyValue("padding")).toBe("var(--facet-space-lg)");
+    expect(large.style.getPropertyValue("padding")).toBe("var(--facet-foundation-space-lg)");
   });
 });
 
@@ -493,7 +494,7 @@ describe("Card and Empty", () => {
   it("gives the card an edge and its own padding", () => {
     const root = renderComponent(Card, {}, <span>body</span>);
     expect(root.style.getPropertyValue("border-style")).toBe("solid");
-    expect(root.style.getPropertyValue("padding")).toBe("var(--facet-space-md)");
+    expect(root.style.getPropertyValue("padding")).toBe("var(--facet-recipe-card-padding)");
   });
 
   it("draws each declared card tone from a different theme color", () => {

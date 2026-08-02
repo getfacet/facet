@@ -3,8 +3,8 @@
  *
  * Two jobs, and nothing else. The first is **naming**: a trusted component
  * styles itself out of the theme's closed token vocabulary, so it needs the CSS
- * custom property one token projects to — `token("color", "textMuted")` rather
- * than a hand-written `--facet-color-text-muted` that no compiler checks. The
+ * custom property one token projects to — `semantic("text", "muted")` rather
+ * than a hand-written `--facet-semantic-text-muted` that no compiler checks. The
  * lookup is typed against `FacetTheme` itself, so a group or token the contract
  * does not declare is a type error here rather than a variable that silently
  * resolves to nothing in a browser. That the names produced match the ones
@@ -30,11 +30,16 @@
  * barrel-exported; nothing outside `@facet/assets` may import it.
  */
 
-import type { ComponentMountProps, FacetTheme } from "@facet/core";
+import { themeTokenRef } from "@facet/core";
+import type {
+  ComponentMountProps,
+  FacetFoundationGroupName,
+  FacetFoundationTokenRef,
+  FacetSemanticGroupName,
+  FacetSemanticTokenRef,
+  FacetThemeTokenRef,
+} from "@facet/core";
 import type { CSSProperties } from "react";
-
-/** The prefix every projected theme custom property carries. */
-const CSS_VAR_PREFIX = "--facet";
 
 /** The resolved prop record one mounted component receives. */
 export type ResolvedProps = ComponentMountProps["props"];
@@ -64,21 +69,44 @@ export type FlowStyle = Omit<
   | "float"
 >;
 
-/** camelCase to kebab-case. Every group and token name is ASCII camelCase. */
-function toKebabCase(name: string): string {
-  return name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
-}
+type FoundationToken<Group extends FacetFoundationGroupName> = Extract<
+  FacetFoundationTokenRef,
+  { readonly group: Group }
+>["token"];
+
+type SemanticToken<Group extends FacetSemanticGroupName> = Extract<
+  FacetSemanticTokenRef,
+  { readonly group: Group }
+>["token"];
 
 /**
- * The `var()` reference for one theme token, checked against the token
- * contract: `token("color", "textMuted")` is `var(--facet-color-text-muted)`,
- * and `token("color", "brand")` does not compile.
+ * The `var()` reference for one theme token. Foundation and semantic helpers
+ * are typed against the closed contract; recipe references are checked by the
+ * component's catalog declaration at theme validation.
  */
-export function token<Group extends keyof FacetTheme>(
+export function token(ref: FacetThemeTokenRef): string {
+  return themeTokenRef(ref);
+}
+
+/** A typed reference to one foundation token. */
+export function foundation<Group extends FacetFoundationGroupName>(
   group: Group,
-  name: keyof FacetTheme[Group] & string,
+  name: FoundationToken<Group>,
 ): string {
-  return `var(${CSS_VAR_PREFIX}-${toKebabCase(group)}-${toKebabCase(name)})`;
+  return token({ layer: "foundation", group, token: name } as FacetFoundationTokenRef);
+}
+
+/** A typed reference to one semantic token. */
+export function semantic<Group extends FacetSemanticGroupName>(
+  group: Group,
+  name: SemanticToken<Group>,
+): string {
+  return token({ layer: "semantic", group, token: name } as FacetSemanticTokenRef);
+}
+
+/** A reference to a component recipe token declared by `ComponentSpec.themeRecipe`. */
+export function recipe(namespace: string, name: string): string {
+  return token({ layer: "recipe", namespace, token: name });
 }
 
 /**
@@ -87,11 +115,11 @@ export function token<Group extends keyof FacetTheme>(
  */
 const SPACE_VALUES = {
   none: "0",
-  xs: token("space", "xs"),
-  sm: token("space", "sm"),
-  md: token("space", "md"),
-  lg: token("space", "lg"),
-  xl: token("space", "xl"),
+  xs: foundation("space", "xs"),
+  sm: foundation("space", "sm"),
+  md: foundation("space", "md"),
+  lg: foundation("space", "lg"),
+  xl: foundation("space", "xl"),
 } as const satisfies Readonly<Record<string, string>>;
 
 /** Every space name an authored prop may carry. */

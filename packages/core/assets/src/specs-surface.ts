@@ -59,6 +59,19 @@ export const MODAL_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: true,
+  themeRecipe: {
+    tokens: {
+      triggerBg: "color",
+      triggerText: "color",
+      frameBg: "color",
+      frameText: "color",
+      frameBorder: "color",
+      frameRadius: "length",
+      frameShadow: "shadow",
+      framePadding: "length",
+      titleColor: "color",
+    },
+  },
 };
 
 /** A bounded surface that groups related content and separates it from the rest. */
@@ -86,6 +99,17 @@ export const CARD_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: true,
+  themeRecipe: {
+    tokens: {
+      background: "color",
+      text: "color",
+      border: "color",
+      radius: "length",
+      shadow: "shadow",
+      padding: "length",
+      titleColor: "color",
+    },
+  },
 };
 
 /**
@@ -110,6 +134,16 @@ export const EMPTY_SPEC: ComponentSpec = {
     },
   },
   acceptsChildren: true,
+  themeRecipe: {
+    tokens: {
+      background: "color",
+      text: "color",
+      border: "color",
+      radius: "length",
+      padding: "length",
+      titleColor: "color",
+    },
+  },
 };
 
 /** The surface group, in the order the default catalog lists it. */

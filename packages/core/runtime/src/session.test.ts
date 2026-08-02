@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { validateCatalog, validateTheme } from "@facet/core";
+import { validateCatalog } from "@facet/core";
 import type { ComponentDocument, FacetCatalog, FacetTheme } from "@facet/core";
 
+import { validTestTheme } from "../../../../test-support/theme-fixture.js";
 import { bootstrapSession } from "./bootstrap.js";
 
 function component(tag: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -43,32 +44,19 @@ function catalog(): FacetCatalog {
 }
 
 function theme(): FacetTheme {
-  const result = validateTheme({
-    color: {
-      background: "#fff",
-      surface: "#f9fafb",
-      border: "#e5e7eb",
-      text: "#111827",
-      textMuted: "#6b7280",
-      accent: "#1d4ed8",
-      onAccent: "#fff",
-      success: "#15803d",
-      warning: "#a16207",
-      danger: "#b91c1c",
+  return validTestTheme({
+    foundation: {
+      typography: { fontWeightBold: "800" },
     },
-    space: { xs: "2px", sm: "4px", md: "8px", lg: "16px", xl: "32px" },
-    radius: { sm: "3px", md: "6px", lg: "9px", full: "999px" },
-    borderWidth: { thin: "1px", thick: "3px" },
-    shadow: { sm: "none", md: "0 2px 8px #0002", lg: "0 8px 24px #0003" },
-    fontFamily: { sans: "system-ui", mono: "ui-monospace" },
-    fontSize: { xs: "11px", sm: "13px", md: "15px", lg: "18px", xl: "22px" },
-    fontWeight: { regular: "400", medium: "500", bold: "800" },
-    lineHeight: { tight: "1", normal: "1.4", relaxed: "1.75" },
+    semantic: {
+      action: { primaryBg: "#1d4ed8" },
+      status: {
+        successText: "#15803d",
+        warningText: "#a16207",
+        dangerText: "#b91c1c",
+      },
+    },
   });
-  if (!result.ok) {
-    throw new Error(`expected theme acceptance, got ${result.code}`);
-  }
-  return result.theme;
 }
 
 describe("Session", () => {
@@ -112,7 +100,7 @@ describe("Session", () => {
     if (result.ok) {
       expect(Object.isFrozen(result.session)).toBe(true);
       expect(Object.isFrozen(result.session.catalog.components)).toBe(true);
-      expect(Object.isFrozen(result.session.theme.color)).toBe(true);
+      expect(Object.isFrozen(result.session.theme.semantic.action)).toBe(true);
       expect(Object.isFrozen(result.session.copy.render)).toBe(true);
       expect(result.session.copy.render.preparing).toBe("Booting");
     }

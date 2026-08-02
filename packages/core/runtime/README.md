@@ -50,6 +50,10 @@ should be delivered for that turn. The agent may return a single batch or an
 async stream of batches. Runtime folds, persists, and emits each batch before
 pulling the next one, preserving revision order.
 
+`bootstrapSession` validates the catalog, theme, and optional `themeExtensions`
+together. Persisted sessions keep those extension declarations so restore checks
+theme data against the same active contract.
+
 ```ts
 import { defineAgent } from "@facet/agent";
 import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";

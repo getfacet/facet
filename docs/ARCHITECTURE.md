@@ -44,8 +44,10 @@ action/collection contracts atomically with one deterministic author error.
 ## Catalog and registry trust boundary
 
 The catalog is what an agent may author. The registry is trusted React code that
-mounts those tags. `bootstrapRenderer` validates the catalog, validates the
-theme, snapshots the registry, and requires exact tag-set equality before a
+mounts those tags. `bootstrapRenderer` validates the catalog, validates any
+host theme extension declarations, validates the theme against the fixed
+foundation/semantic contract plus active catalog recipes and declared
+extensions, snapshots the registry, and requires exact tag-set equality before a
 session can render.
 
 Registration is pre-session only. There is no mid-session component

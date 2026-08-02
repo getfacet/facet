@@ -1,4 +1,4 @@
-import { deriveMessageId, validateCatalog, validateTheme } from "@facet/core";
+import { deriveMessageId, validateCatalog } from "@facet/core";
 import type {
   VisitorEvent,
   ComponentDocument,
@@ -8,6 +8,7 @@ import type {
   FacetTheme,
   ServerFrame,
 } from "@facet/core";
+import { validTestTheme } from "../../../../test-support/theme-fixture.js";
 import { createFacetServer, type FacetServer, type FacetServerOptions } from "./server.js";
 
 export const MARKUP = `<Facet entry="home"><Screen name="home"><Text value="Ready" /></Screen></Facet>`;
@@ -43,30 +44,18 @@ export function testCatalog(): FacetCatalog {
 }
 
 export function testTheme(): FacetTheme {
-  const result = validateTheme({
-    color: {
-      background: "#fff",
-      surface: "#f9fafb",
-      border: "#e5e7eb",
-      text: "#111827",
-      textMuted: "#6b7280",
-      accent: "#2563eb",
-      onAccent: "#fff",
-      success: "#16a34a",
-      warning: "#ca8a04",
-      danger: "#dc2626",
+  return validTestTheme({
+    semantic: {
+      action: { primaryBg: "#2563eb" },
+      canvas: { background: "#fff" },
+      text: { default: "#111827", muted: "#6b7280" },
+      status: {
+        successText: "#16a34a",
+        warningText: "#ca8a04",
+        dangerText: "#dc2626",
+      },
     },
-    space: { xs: "2px", sm: "4px", md: "8px", lg: "16px", xl: "24px" },
-    radius: { sm: "4px", md: "8px", lg: "12px", full: "999px" },
-    borderWidth: { thin: "1px", thick: "2px" },
-    shadow: { sm: "none", md: "0 2px 8px #0002", lg: "0 8px 24px #0003" },
-    fontFamily: { sans: "system-ui", mono: "ui-monospace" },
-    fontSize: { xs: "12px", sm: "14px", md: "16px", lg: "18px", xl: "22px" },
-    fontWeight: { regular: "400", medium: "500", bold: "700" },
-    lineHeight: { tight: "1.1", normal: "1.4", relaxed: "1.8" },
   });
-  if (!result.ok) throw new Error(result.code);
-  return result.theme;
 }
 
 export function visitorEvent(overrides: Partial<VisitorEvent> = {}): VisitorEvent {

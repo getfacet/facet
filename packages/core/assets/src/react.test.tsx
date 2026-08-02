@@ -92,7 +92,7 @@ const EXPECTED: readonly (readonly [string, MountedComponent<ReactNode, ReactNod
 ];
 
 /** The custom properties a real bootstrap hands every mount. */
-const THEME_VARS = themeToCssVars(DEFAULT_THEME);
+const THEME_VARS = themeToCssVars(DEFAULT_THEME, { catalog: DEFAULT_CATALOG });
 
 /**
  * A second projection in which every token holds a different value.
@@ -104,7 +104,7 @@ const THEME_VARS = themeToCssVars(DEFAULT_THEME);
  *
  * The alternate values are deliberately not kind-matched: a colour may land on
  * a spacing token. That is harmless and, where it is not, it is informative. A
- * component that references `var(--facet-space-md)` emits the identical
+ * component that references `var(--facet-foundation-space-md)` emits the identical
  * declaration either way, because a `var()` reference is not resolved at
  * declaration time. A component that inlines the value emits something
  * different — or something jsdom drops as invalid. Both are differences, and a
@@ -542,7 +542,7 @@ describe("DEFAULT_REGISTRY — one theme mechanism, across all thirteen", () => 
 
   it("styles by reference, not by value: a different theme changes no declaration", () => {
     // The one decisive discriminator between the two strategies. A component
-    // that writes `var(--facet-color-text)` emits the same declaration whatever
+    // that writes `var(--facet-semantic-text-default)` emits the same declaration whatever
     // the token holds; a component that reads the value out of `themeVars` and
     // inlines it emits a different one. Nothing else about a rendered subtree
     // separates the mechanisms this cleanly.
@@ -568,7 +568,7 @@ describe("DEFAULT_REGISTRY — one theme mechanism, across all thirteen", () => 
 
   it("carries no var() fallback: a missing token is a host failure, not a component's to paper over", () => {
     // Bootstrap validates the complete theme before anything mounts, so
-    // `var(--facet-color-text, inherit)` would be a component absorbing a
+    // `var(--facet-semantic-text-default, inherit)` would be a component absorbing a
     // configuration error the trust boundary already refuses to let through.
     for (const tag of Object.keys(DEFAULT_REGISTRY)) {
       const references = varReferences(mountRoot(tag, THEME_VARS));
