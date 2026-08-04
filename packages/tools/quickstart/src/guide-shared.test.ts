@@ -12,6 +12,7 @@ describe("quickstart guide markup helpers", () => {
     for (const item of QUICKSTART_NAV_ITEMS) {
       expect(markup).toContain(`label="${item.label}"`);
       expect(markup).toContain(`action="nav:${item.to}"`);
+      expect(markup).toContain(`action="nav:${item.to}" tone="quiet"`);
     }
     expect(markup).not.toContain("local:"); // component-hard-cut: allowed-negative
   });

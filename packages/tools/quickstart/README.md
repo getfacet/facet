@@ -33,13 +33,17 @@ Brain: openai (gpt-5.4-mini)
 ```
 
 With no `facet.md`, Quickstart starts from a validated four-screen product tour:
-**What is Facet?**, **Runtime Loop**, **Component Catalog**, and **Use Cases**.
-The seed is ordinary default-catalog component markup. The runtime validates it
-before the wrapper listens, inlines the derived first-paint document into the
+**What is Facet?**, **What can it build?**, **Design System**, and **Try It Live**.
+The seed is ordinary default-catalog component markup that uses the service-surface
+components to explain Facet and invite a live page change. The runtime validates
+it before the wrapper listens, inlines the derived first-paint document into the
 HTML shell, and passes the same author markup to the reference server bootstrap.
-The browser also includes an **Assets** view where the default service groups,
-component vocabulary, and validated screen examples can be inspected without
-mutating the live stage.
+The Live view keeps chat in a right-attached bottom floating drawer that expands
+from the launcher icon, so the page remains the primary answer surface. The
+seeded tour uses one consistent top navigation treatment across its four
+screens. The browser also includes an
+**Assets** view where the default service groups, component vocabulary, and
+validated screen examples can be inspected without mutating the live stage.
 
 ## Flags
 
@@ -108,7 +112,11 @@ loopback port with a per-boot agent token. `/agent/*` is never exposed by the
 wrapper because the reference brain runs in-process.
 
 The browser bundle uses `@facet/react`, `@facet/assets/react`, `@facet/client`,
-and the default catalog/theme to mount the live page and conversation surface.
+and the default catalog/theme to mount the live page and floating conversation
+surface. Quickstart gives local provider-backed turns a retry-budget-sized
+runtime authority window, 125.25 seconds by default, and a browser POST timeout
+five seconds longer so first-run LLM calls do not fail just after the default
+server/client turn windows.
 The same bundle exposes a local Assets view for the default catalog: service
 groups, component role groups, and full-screen examples rendered through the
 default catalog, registry, and theme. Selecting an Assets example is local UI

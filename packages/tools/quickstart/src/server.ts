@@ -37,6 +37,7 @@ import {
 } from "@facet/core";
 import type { Sink, StageStore } from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "@facet/server";
+import { REFERENCE_AGENT_BUDGET_PRESETS, TURN_TIMEOUT_MS } from "@facet/reference-agent";
 
 export interface QuickstartServerOptions {
   /** Public port the wrapper listens on (the one printed to the deployer). */
@@ -51,6 +52,8 @@ export interface QuickstartServerOptions {
   readonly host?: string;
   readonly agentId: string;
   readonly agent: InProcessFacetAgent;
+  /** Runtime turn authority window for local provider calls. Defaults to the built-in retry budget. */
+  readonly turnTimeoutMs?: number;
   /** Shared with the built-in agent so prompt layer ③ reads real history. */
   readonly sink?: Sink;
   readonly stageStore?: StageStore;
@@ -72,6 +75,15 @@ export interface QuickstartServerOptions {
 
 /** Loopback default for the public wrapper (see `QuickstartServerOptions.host`). */
 const DEFAULT_PUBLIC_HOST = "127.0.0.1";
+const MAX_BROWSER_POST_TIMEOUT_MS = 2_147_483_647;
+const QUICKSTART_TURN_TIMEOUT_MARGIN_MS = 5_000;
+const QUICKSTART_POST_TIMEOUT_MARGIN_MS = 5_000;
+const QUICKSTART_PROVIDER_ATTEMPTS =
+  REFERENCE_AGENT_BUDGET_PRESETS.quickstart.maxProviderRetries + 1;
+const QUICKSTART_TURN_TIMEOUT_MS =
+  TURN_TIMEOUT_MS * QUICKSTART_PROVIDER_ATTEMPTS +
+  REFERENCE_AGENT_BUDGET_PRESETS.quickstart.retryBackoffMs +
+  QUICKSTART_TURN_TIMEOUT_MARGIN_MS;
 const NUNITO_STYLESHEET =
   "https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700&display=swap";
 
@@ -104,6 +116,16 @@ function resolveQuickstartBoot(options: QuickstartServerOptions): QuickstartBoot
   };
 }
 
+function resolveQuickstartTurnTimeoutMs(requested: number | undefined): number {
+  if (requested === undefined) return QUICKSTART_TURN_TIMEOUT_MS;
+  if (!Number.isSafeInteger(requested) || requested < 1) return QUICKSTART_TURN_TIMEOUT_MS;
+  return Math.min(requested, MAX_BROWSER_POST_TIMEOUT_MS - QUICKSTART_POST_TIMEOUT_MARGIN_MS);
+}
+
+function quickstartPostTimeoutMs(turnTimeoutMs: number): number {
+  return Math.min(turnTimeoutMs + QUICKSTART_POST_TIMEOUT_MARGIN_MS, MAX_BROWSER_POST_TIMEOUT_MS);
+}
+
 /**
  * Serialize a value for inline `<script>` injection: JSON with every `<`
  * escaped to `<` so a hostile `</script>` in the data can't break out of
@@ -115,16 +137,20 @@ function escapeForScript(value: unknown): string {
 }
 
 /**
- * The HTML shell. Two optional boot seams ship inline in ONE `<script>` (Decision
- * 2): the effective Theme as `window.__FACET_THEME__`, and a seed stage as
- * `window.__FACET_INITIAL_STAGE__` so the first paint isn't gated on the first
- * model turn. Both are `escapeForScript`-escaped (defense in depth; `validateTheme`
- * already refuses `<` in theme values, but descriptions are freer text and the
- * seed carries agent-authored node values). Neither present ⇒ no script,
- * byte-identical to the no-assets boot; a single seam present ⇒ exactly its one
- * assignment (the join adds no leading/trailing separator).
+ * The HTML shell. Boot seams ship inline in ONE `<script>` (Decision 2): the
+ * effective Theme as `window.__FACET_THEME__`, a seed stage as
+ * `window.__FACET_INITIAL_STAGE__` so first paint is not gated on the first model
+ * turn, and the POST timeout as `window.__FACET_POST_TIMEOUT_MS__` so the browser
+ * waits longer than the runtime turn authority. Values are `escapeForScript`-
+ * escaped (defense in depth; `validateTheme` already refuses `<` in theme values,
+ * but descriptions are freer text and the seed carries agent-authored node
+ * values).
  */
-function shellHtml(theme?: FacetTheme, initialStage?: ComponentDocument): string {
+function shellHtml(
+  theme: FacetTheme | undefined,
+  initialStage: ComponentDocument | undefined,
+  postTimeoutMs: number,
+): string {
   const globals: string[] = [];
   if (theme !== undefined) {
     globals.push(`window.__FACET_THEME__ = ${escapeForScript(theme)}`);
@@ -132,6 +158,7 @@ function shellHtml(theme?: FacetTheme, initialStage?: ComponentDocument): string
   if (initialStage !== undefined) {
     globals.push(`window.__FACET_INITIAL_STAGE__ = ${escapeForScript(initialStage)}`);
   }
+  globals.push(`window.__FACET_POST_TIMEOUT_MS__ = ${escapeForScript(postTimeoutMs)}`);
   const bootScript = globals.length > 0 ? `<script>${globals.join(";")}</script>` : "";
   const fontLink = `<link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin /><link rel="stylesheet" href="${NUNITO_STYLESHEET}" />`;
   return `<!doctype html>
@@ -302,6 +329,7 @@ function handleRequest(
   options: QuickstartServerOptions,
   internalPort: number,
   boot: QuickstartBoot,
+  postTimeoutMs: number,
 ): void {
   // Node delivers malformed request-targets (e.g. `//[`) verbatim, and
   // `new URL` throws on them — an unguarded throw here becomes an
@@ -340,7 +368,7 @@ function handleRequest(
       res.end();
       return;
     }
-    res.end(shellHtml(boot.theme, boot.initialStage));
+    res.end(shellHtml(boot.theme, boot.initialStage, postTimeoutMs));
     return;
   }
   if ((req.method === "GET" || req.method === "HEAD") && pathname === "/app.js") {
@@ -370,6 +398,7 @@ function handleRequest(
 async function bootInternalServer(
   options: QuickstartServerOptions,
   boot: QuickstartBoot,
+  turnTimeoutMs: number,
 ): Promise<{ server: FacetServer; port: number }> {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
@@ -381,6 +410,7 @@ async function bootInternalServer(
       ...(boot.initialMarkup === undefined ? {} : { initialMarkup: boot.initialMarkup }),
       agentToken: randomUUID(),
       agent: options.agent,
+      turnTimeoutMs,
       ...(options.sink !== undefined ? { sink: options.sink } : {}),
       ...(options.stageStore !== undefined ? { stageStore: options.stageStore } : {}),
     });
@@ -400,8 +430,12 @@ export async function startQuickstart(
   options: QuickstartServerOptions,
 ): Promise<RunningQuickstart> {
   const boot = resolveQuickstartBoot(options);
-  const internal = await bootInternalServer(options, boot);
-  const wrapper = createServer((req, res) => handleRequest(req, res, options, internal.port, boot));
+  const turnTimeoutMs = resolveQuickstartTurnTimeoutMs(options.turnTimeoutMs);
+  const postTimeoutMs = quickstartPostTimeoutMs(turnTimeoutMs);
+  const internal = await bootInternalServer(options, boot, turnTimeoutMs);
+  const wrapper = createServer((req, res) =>
+    handleRequest(req, res, options, internal.port, boot, postTimeoutMs),
+  );
 
   try {
     await new Promise<void>((resolve, reject) => {

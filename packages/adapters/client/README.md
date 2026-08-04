@@ -38,7 +38,9 @@ import {
 } from "@facet/client";
 
 const sessionKey = browserSessionKey();
-const transport = new SseTransport("http://localhost:5291", sessionKey);
+const transport = new SseTransport("http://localhost:5291", sessionKey, {
+  postTimeoutMs: 35_000,
+});
 const screen = loadPersistedScreen("quickstart")?.screen ?? "home";
 
 const unsubscribe = transport.subscribe((frame: ServerFrame) => {
@@ -65,6 +67,10 @@ void transport.sendMessage({
 });
 unsubscribe();
 ```
+
+`postTimeoutMs` is optional and defaults to 35 seconds. Local wrappers can raise
+it for slower provider-backed turns; oversized values are clamped before the
+transport calls `AbortSignal.timeout`.
 
 ## Event boundary
 

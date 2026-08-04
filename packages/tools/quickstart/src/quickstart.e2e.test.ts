@@ -331,8 +331,10 @@ describe("quickstart E2E — static shell + proxy plumbing", () => {
     expect(body).toContain('<div id="root">');
     expect(body).toContain("https://fonts.googleapis.com/css2?family=Nunito");
     expect(body).toContain('src="/app.js"');
-    expect(bootGlobals(body).__FACET_THEME__).toEqual(DEFAULT_THEME);
-    expect(bootGlobals(body).__FACET_INITIAL_STAGE__).toBeUndefined();
+    const globals = bootGlobals(body);
+    expect(globals.__FACET_THEME__).toEqual(DEFAULT_THEME);
+    expect(globals.__FACET_INITIAL_STAGE__).toBeUndefined();
+    expect(globals.__FACET_POST_TIMEOUT_MS__).toBe(130_250);
   });
 
   it("GET /app.js serves the injected fixture bundle", async () => {
@@ -603,25 +605,30 @@ describe("quickstart E2E — initialMarkup seeding", () => {
 });
 
 describe("quickstart E2E — CLI default seed and barrel surface", () => {
-  it("quickstart CLI ships the exact 84-node component seed before provider output", async () => {
+  it("quickstart CLI ships the exact 121-node component seed before provider output", async () => {
     const booted = await bootCli([]);
     try {
       const shell = await (await fetch(`${booted.running.url}/`)).text();
       const inline = bootGlobals(shell).__FACET_INITIAL_STAGE__;
       expect(inline).toEqual(QUICKSTART_INITIAL_STAGE);
-      expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(84);
+      expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(121);
 
       const seedText = JSON.stringify(inline);
-      expect(seedText).toHaveLength(12_495);
+      expect(seedText).toHaveLength(24_685);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "fb8786b4bc321b6c0e40b5e0e9493913cd9c890134a96860a64e70672c5f9bd2",
+        "418a30dcbd952311f962ff717f64949bfea1ef5d01c261a1e6d11f4b789aa7de",
       );
       for (const tag of [
         "Screen",
         "Stack",
         "Row",
+        "Split",
         "Grid",
         "Card",
+        "Hero",
+        "ProductShowcase",
+        "VisualPanel",
+        "MediaCard",
         "Text",
         "Badge",
         "Field",

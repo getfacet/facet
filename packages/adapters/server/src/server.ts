@@ -32,6 +32,7 @@ export interface FacetServerOptions {
   readonly initialMarkup?: string;
   readonly agent?: FacetServerAgent | undefined;
   readonly agentTimeoutMs?: number | undefined;
+  readonly turnTimeoutMs?: number | undefined;
   readonly agentToken?: string;
   readonly stageStore?: StageStore;
   readonly sink?: Sink;
@@ -121,6 +122,9 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
 
   const channel = createAgentChannel({
     ...(options.agentTimeoutMs === undefined ? {} : { agentTimeoutMs: options.agentTimeoutMs }),
+    ...(options.turnTimeoutMs === undefined
+      ? {}
+      : { runtimeAuthorityTimeoutMs: options.turnTimeoutMs }),
     ...(fallbackAgent === undefined ? {} : { fallbackAgent }),
   });
 
@@ -131,6 +135,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       store,
       sink,
       agent: channel.agent,
+      ...(options.turnTimeoutMs === undefined ? {} : { turnTimeoutMs: options.turnTimeoutMs }),
       deliver: (entry) => {
         const stamped = frameLog.append(sessionKey, entry);
         emitFacetServerObservation(options.observer, {

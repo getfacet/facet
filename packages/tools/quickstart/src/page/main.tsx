@@ -8,7 +8,7 @@
  * that served it — no new client network capability (invariant #7).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
 import { DEFAULT_REGISTRY } from "@facet/assets/react";
@@ -32,6 +32,7 @@ declare global {
   interface Window {
     __FACET_THEME__?: unknown;
     __FACET_INITIAL_STAGE__?: unknown;
+    __FACET_POST_TIMEOUT_MS__?: unknown;
   }
 }
 
@@ -40,18 +41,70 @@ type AcceptedBootstrap = Extract<RendererBootstrap, { readonly ok: true }>;
 
 const EMPTY_DATA: FacetStage["data"] = Object.freeze({});
 const QUICKSTART_SPACES: readonly QuickstartSpace[] = ["live", "assets"];
+const QUICKSTART_POST_TIMEOUT_MS = 130_250;
+const CHAT_SURFACE_CSS = `
+[data-facet-chat-conversation] [data-facet-conversation] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  max-height: min(14rem, calc(100vh - 18rem));
+  overflow-y: auto;
+  padding: 0.125rem;
+}
+
+[data-facet-chat-conversation] [data-facet-message-role],
+[data-facet-chat-conversation] [data-facet-conversation-error] {
+  box-sizing: border-box;
+  max-width: 86%;
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[data-facet-chat-conversation] [data-facet-message-role="visitor"] {
+  align-self: flex-end;
+  background: #1f4f52;
+  color: #ffffff;
+}
+
+[data-facet-chat-conversation] [data-facet-message-role="assistant"] {
+  align-self: flex-start;
+  background: #f6ead2;
+  color: #171410;
+}
+
+[data-facet-chat-conversation] [data-facet-conversation-error] {
+  align-self: stretch;
+  max-width: 100%;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+`;
 let localEventId = 0;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readWindowValue(key: "__FACET_THEME__" | "__FACET_INITIAL_STAGE__"): unknown {
+function readWindowValue(
+  key: "__FACET_THEME__" | "__FACET_INITIAL_STAGE__" | "__FACET_POST_TIMEOUT_MS__",
+): unknown {
   try {
     return window[key];
   } catch {
     return undefined;
   }
+}
+
+function readPostTimeoutMs(): number {
+  const raw = readWindowValue("__FACET_POST_TIMEOUT_MS__");
+  return typeof raw === "number" && Number.isFinite(raw) && raw >= 1
+    ? raw
+    : QUICKSTART_POST_TIMEOUT_MS;
 }
 
 function readInitialDocument(): ComponentDocument | undefined {
@@ -158,6 +211,8 @@ export function Page({ assetExplorer }: PageProps = {}): ReactNode {
   const [draft, setDraft] = useState("");
   const [initialPending, setInitialPending] = useState(false);
   const [activeSpace, setActiveSpace] = useState<QuickstartSpace>("live");
+  const [chatOpen, setChatOpen] = useState(false);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const assetsTabRef = useRef<HTMLButtonElement>(null);
   const stageRevisionRef = useRef<StageRevision>(0);
   const visitSent = useRef(false);
@@ -167,7 +222,11 @@ export function Page({ assetExplorer }: PageProps = {}): ReactNode {
   }, []);
   const registry = useMemo(() => quickstartRegistry(openAssets), [openAssets]);
   const bootstrap = useMemo(() => resolvedBootstrap(registry), [registry]);
-  const transport = useMemo(() => new SseTransport("", sessionKey), [sessionKey]);
+  const postTimeoutMs = useMemo(readPostTimeoutMs, []);
+  const transport = useMemo(
+    () => new SseTransport("", sessionKey, { postTimeoutMs }),
+    [postTimeoutMs, sessionKey],
+  );
 
   const sendVisitorEvent = useCallback(
     (event: VisitorEvent): Promise<void> =>
@@ -210,7 +269,7 @@ export function Page({ assetExplorer }: PageProps = {}): ReactNode {
   }, [bootstrap.theme]);
 
   useEffect(() => {
-    if (visitSent.current) {
+    if (visitSent.current || initialDocument !== undefined) {
       return;
     }
     visitSent.current = true;
@@ -219,7 +278,7 @@ export function Page({ assetExplorer }: PageProps = {}): ReactNode {
       .send(
         visitorEvent(
           "visit",
-          facet.stage.document?.entry ?? initialDocument?.entry ?? "home",
+          facet.stage.document?.entry ?? "home",
           facet.transition.stageRevision,
         ),
       )
@@ -229,15 +288,14 @@ export function Page({ assetExplorer }: PageProps = {}): ReactNode {
       .finally(() => {
         setInitialPending(false);
       });
-  }, [
-    facet.stage.document?.entry,
-    facet.transition.stageRevision,
-    initialDocument?.entry,
-    transport,
-  ]);
+  }, [facet.stage.document?.entry, facet.transition.stageRevision, initialDocument, transport]);
 
-  const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
+  const draftHasContent = draft.trim().length > 0;
+  const sendDisabled = !draftHasContent || facet.pending || initialPending;
+  const submitDraft = useCallback((): void => {
+    if (draft.trim().length === 0) {
+      return;
+    }
     const draftIsValid = validateVisitorText(draft);
     if (!draftIsValid) {
       facet.sendMessage(draft);
@@ -248,6 +306,17 @@ export function Page({ assetExplorer }: PageProps = {}): ReactNode {
     }
     facet.sendMessage(draft);
     setDraft("");
+  }, [draft, facet, initialPending]);
+  const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    submitDraft();
+  };
+  const onMessageKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+      return;
+    }
+    event.preventDefault();
+    submitDraft();
   };
   const pageStyle = useMemo(
     () => ({ ...styles.page, fontFamily: bootstrap.theme.foundation.typography.fontFamilySans }),
@@ -256,6 +325,7 @@ export function Page({ assetExplorer }: PageProps = {}): ReactNode {
 
   return (
     <div style={pageStyle}>
+      <style>{CHAT_SURFACE_CSS}</style>
       <header style={styles.pageHeader}>
         <div aria-label="Quickstart spaces" role="group" style={styles.spaceTabs}>
           {QUICKSTART_SPACES.map((space) => (
@@ -297,22 +367,95 @@ export function Page({ assetExplorer }: PageProps = {}): ReactNode {
             onEvent={facet.sendEvent}
           />
         </div>
-        <section style={styles.conversationPanel}>
-          <ConversationSurface items={facet.conversation} validationError={facet.validationError} />
+        <button
+          aria-controls="facet-quickstart-chat"
+          aria-expanded={chatOpen}
+          aria-label={chatOpen ? "Close chat" : "Open chat"}
+          data-facet-chat-toggle
+          onClick={() => {
+            setChatOpen((open) => !open);
+          }}
+          style={styles.chatToggle}
+          title={chatOpen ? "Close chat" : "Open chat"}
+          type="button"
+        >
+          {chatOpen ? (
+            <span aria-hidden="true" style={styles.closeToggleIcon}>
+              <span style={styles.closeToggleLineA} />
+              <span style={styles.closeToggleLineB} />
+            </span>
+          ) : (
+            <span aria-hidden="true" style={styles.chatIcon}>
+              <span style={styles.chatIconLineWide} />
+              <span style={styles.chatIconLine} />
+              <span style={styles.chatIconTail} />
+            </span>
+          )}
+        </button>
+        <section
+          aria-hidden={!chatOpen}
+          aria-label="Chat"
+          data-facet-chat-drawer
+          id="facet-quickstart-chat"
+          style={chatOpen ? styles.conversationPanel : styles.conversationPanelClosed}
+        >
+          <div style={styles.chatHeader}>
+            <div style={styles.chatIdentity}>
+              <div>
+                <div style={styles.chatTitle}>Facet agent</div>
+              </div>
+            </div>
+            <div style={styles.chatHeaderActions}>
+              <span
+                data-facet-chat-status
+                style={facet.pending ? styles.chatStatusBusy : styles.chatStatus}
+              >
+                {facet.pending ? "Working" : "Ready"}
+              </span>
+            </div>
+          </div>
+          {facet.conversation.length > 0 || facet.validationError !== undefined ? (
+            <div data-facet-chat-conversation style={styles.chatConversation}>
+              <ConversationSurface
+                items={facet.conversation}
+                validationError={facet.validationError}
+              />
+            </div>
+          ) : null}
           <form data-facet-message-form style={styles.messageForm} onSubmit={onSubmit}>
-            <textarea
-              aria-label="Message"
-              value={draft}
-              onChange={(event) => setDraft(event.currentTarget.value)}
-              style={styles.messageInput}
-            />
-            <button
-              type="submit"
-              disabled={facet.pending || initialPending}
-              style={styles.messageButton}
-            >
-              Send
-            </button>
+            <div style={styles.composerBox}>
+              <textarea
+                aria-label="Message"
+                placeholder="Ask Facet to build or revise this live page..."
+                ref={messageInputRef}
+                tabIndex={chatOpen ? 0 : -1}
+                value={draft}
+                onChange={(event) => setDraft(event.currentTarget.value)}
+                onKeyDown={onMessageKeyDown}
+                style={styles.messageInput}
+              />
+              <div style={styles.composerActions}>
+                <div style={styles.composerMeta}>
+                  <span style={styles.composerHint}>
+                    {initialPending ? "Connecting..." : "Enter to send, Shift+Enter for newline"}
+                  </span>
+                </div>
+                <button
+                  aria-label="Send message"
+                  type="submit"
+                  disabled={sendDisabled || !chatOpen}
+                  style={
+                    sendDisabled || !chatOpen ? styles.messageButtonDisabled : styles.messageButton
+                  }
+                >
+                  <span style={styles.visuallyHidden}>Send</span>
+                  <span aria-hidden="true" style={styles.sendArrow}>
+                    <span style={styles.sendArrowStem} />
+                    <span style={styles.sendArrowHead} />
+                  </span>
+                </button>
+              </div>
+            </div>
           </form>
         </section>
       </div>
@@ -402,27 +545,296 @@ const styles = {
     display: "none",
   },
   stage: { flex: 1, minWidth: 0 },
+  chatToggle: {
+    position: "fixed",
+    right: "1.5rem",
+    bottom: "1.5rem",
+    zIndex: 21,
+    width: "3.25rem",
+    height: "3.25rem",
+    border: "1px solid #1f4f52",
+    borderRadius: "9999px",
+    background: "#1f4f52",
+    color: "#ffffff",
+    boxShadow: "0 12px 32px rgba(15, 23, 42, 0.2)",
+    cursor: "pointer",
+    display: "grid",
+    placeItems: "center",
+    transition: "transform 180ms ease, box-shadow 180ms ease, background 180ms ease",
+  },
+  chatIcon: {
+    position: "relative",
+    width: "1.45rem",
+    height: "1.1rem",
+    border: "2px solid #ffffff",
+    borderRadius: "0.375rem",
+    boxSizing: "border-box",
+    display: "block",
+  },
+  chatIconLineWide: {
+    position: "absolute",
+    left: "0.25rem",
+    right: "0.25rem",
+    top: "0.25rem",
+    height: "2px",
+    borderRadius: "9999px",
+    background: "#ffffff",
+  },
+  chatIconLine: {
+    position: "absolute",
+    left: "0.25rem",
+    right: "0.45rem",
+    top: "0.55rem",
+    height: "2px",
+    borderRadius: "9999px",
+    background: "#ffffff",
+  },
+  chatIconTail: {
+    position: "absolute",
+    right: "0.15rem",
+    bottom: "-0.35rem",
+    width: "0.45rem",
+    height: "0.45rem",
+    borderRight: "2px solid #ffffff",
+    borderBottom: "2px solid #ffffff",
+    background: "#1f4f52",
+    transform: "rotate(45deg)",
+  },
+  closeToggleIcon: {
+    position: "relative",
+    width: "1.25rem",
+    height: "1.25rem",
+    display: "block",
+  },
+  closeToggleLineA: {
+    position: "absolute",
+    left: "0.125rem",
+    right: "0.125rem",
+    top: "0.5625rem",
+    height: "2px",
+    borderRadius: "9999px",
+    background: "#ffffff",
+    transform: "rotate(45deg)",
+  },
+  closeToggleLineB: {
+    position: "absolute",
+    left: "0.125rem",
+    right: "0.125rem",
+    top: "0.5625rem",
+    height: "2px",
+    borderRadius: "9999px",
+    background: "#ffffff",
+    transform: "rotate(-45deg)",
+  },
   conversationPanel: {
+    position: "fixed",
+    right: "1.5rem",
+    bottom: "5.25rem",
+    zIndex: 19,
+    width: "min(28rem, calc(100vw - 2rem))",
+    maxHeight: "min(30rem, calc(100vh - 7rem))",
     minWidth: 0,
     display: "flex",
     flexDirection: "column",
     gap: "0.75rem",
-    borderTop: `1px solid ${DEFAULT_THEME.semantic.border.default}`,
-    paddingTop: "1rem",
+    boxSizing: "border-box",
+    border: `1px solid ${DEFAULT_THEME.semantic.border.default}`,
+    borderRadius: "0.5rem",
+    background: DEFAULT_THEME.semantic.surface.default,
+    boxShadow: "0 24px 80px rgba(23, 20, 16, 0.22)",
+    padding: "1rem",
+    overflow: "hidden",
+    opacity: 1,
+    pointerEvents: "auto",
+    transform: "translateY(0) scale(1)",
+    transformOrigin: "bottom right",
+    transition:
+      "opacity 160ms ease, transform 180ms cubic-bezier(0.2, 0, 0, 1), visibility 180ms ease",
+    visibility: "visible",
+  },
+  conversationPanelClosed: {
+    position: "fixed",
+    right: "1.5rem",
+    bottom: "5.25rem",
+    zIndex: 19,
+    width: "min(28rem, calc(100vw - 2rem))",
+    maxHeight: "min(30rem, calc(100vh - 7rem))",
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.75rem",
+    boxSizing: "border-box",
+    border: `1px solid ${DEFAULT_THEME.semantic.border.default}`,
+    borderRadius: "0.5rem",
+    background: DEFAULT_THEME.semantic.surface.default,
+    boxShadow: "0 12px 40px rgba(23, 20, 16, 0.12)",
+    padding: "1rem",
+    overflow: "hidden",
+    opacity: 0,
+    pointerEvents: "none",
+    transform: "translateY(0.75rem) scale(0.94)",
+    transformOrigin: "bottom right",
+    transition:
+      "opacity 160ms ease, transform 180ms cubic-bezier(0.2, 0, 0, 1), visibility 180ms ease",
+    visibility: "hidden",
+  },
+  chatHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "1rem",
+  },
+  chatIdentity: {
+    minWidth: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: "0.75rem",
+  },
+  chatTitle: {
+    color: DEFAULT_THEME.semantic.text.default,
+    fontSize: "0.9375rem",
+    fontWeight: 900,
+    lineHeight: 1.2,
+  },
+  chatHeaderActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+  },
+  chatStatus: {
+    border: `1px solid ${DEFAULT_THEME.semantic.border.default}`,
+    borderRadius: "9999px",
+    background: DEFAULT_THEME.semantic.surface.muted,
+    color: DEFAULT_THEME.semantic.text.muted,
+    fontSize: "0.75rem",
+    fontWeight: 800,
+    lineHeight: 1,
+    padding: "0.4375rem 0.625rem",
+    whiteSpace: "nowrap",
+  },
+  chatStatusBusy: {
+    border: `1px solid ${DEFAULT_THEME.semantic.status.infoBorder}`,
+    borderRadius: "9999px",
+    background: DEFAULT_THEME.semantic.status.infoBg,
+    color: DEFAULT_THEME.semantic.status.infoText,
+    fontSize: "0.75rem",
+    fontWeight: 800,
+    lineHeight: 1,
+    padding: "0.4375rem 0.625rem",
+    whiteSpace: "nowrap",
+  },
+  chatConversation: {
+    border: `1px solid ${DEFAULT_THEME.semantic.border.muted}`,
+    borderRadius: "0.5rem",
+    background: DEFAULT_THEME.semantic.surface.raised,
+    padding: "0.75rem",
+    overflow: "hidden",
   },
   messageForm: {
-    display: "flex",
-    gap: "0.5rem",
-    alignItems: "flex-start",
+    display: "block",
+  },
+  composerBox: {
+    border: `1px solid ${DEFAULT_THEME.semantic.border.strong}`,
+    borderRadius: "0.5rem",
+    background: "#ffffff",
+    boxShadow: "0 1px 2px rgba(23, 20, 16, 0.08)",
+    padding: "0.75rem",
   },
   messageInput: {
-    flex: 1,
+    width: "100%",
     minHeight: "4rem",
+    maxHeight: "8rem",
     boxSizing: "border-box",
+    border: 0,
+    outline: "none",
+    resize: "vertical",
+    background: "transparent",
+    color: DEFAULT_THEME.semantic.text.default,
     font: "inherit",
+    fontSize: "0.9375rem",
+    lineHeight: 1.45,
+    padding: 0,
+  },
+  composerActions: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "0.75rem",
+    marginTop: "0.625rem",
+  },
+  composerMeta: {
+    minWidth: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+  },
+  composerHint: {
+    color: DEFAULT_THEME.semantic.text.subtle,
+    fontSize: "0.75rem",
+    lineHeight: 1.35,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
   messageButton: {
-    font: "inherit",
+    width: "2.25rem",
+    height: "2.25rem",
+    border: "1px solid #171410",
+    borderRadius: "9999px",
+    background: "#171410",
+    color: "#ffffff",
+    cursor: "pointer",
+    display: "grid",
+    flexShrink: 0,
+    placeItems: "center",
+  },
+  messageButtonDisabled: {
+    width: "2.25rem",
+    height: "2.25rem",
+    border: `1px solid ${DEFAULT_THEME.semantic.border.default}`,
+    borderRadius: "9999px",
+    background: DEFAULT_THEME.semantic.disabled.background,
+    color: DEFAULT_THEME.semantic.disabled.text,
+    cursor: "not-allowed",
+    display: "grid",
+    flexShrink: 0,
+    placeItems: "center",
+  },
+  sendArrow: {
+    position: "relative",
+    width: "1rem",
+    height: "1rem",
+    display: "block",
+  },
+  sendArrowStem: {
+    position: "absolute",
+    left: "0.4375rem",
+    top: "0.1875rem",
+    width: "0.125rem",
+    height: "0.625rem",
+    borderRadius: "9999px",
+    background: "currentColor",
+  },
+  sendArrowHead: {
+    position: "absolute",
+    left: "0.3125rem",
+    top: "0.1875rem",
+    width: "0.4375rem",
+    height: "0.4375rem",
+    borderLeft: "0.125rem solid currentColor",
+    borderTop: "0.125rem solid currentColor",
+    transform: "rotate(45deg)",
+  },
+  visuallyHidden: {
+    position: "absolute",
+    width: "1px",
+    height: "1px",
+    padding: 0,
+    margin: "-1px",
+    overflow: "hidden",
+    clip: "rect(0, 0, 0, 0)",
+    whiteSpace: "nowrap",
+    border: 0,
   },
   modalAssetsButton: {
     alignSelf: "flex-start",

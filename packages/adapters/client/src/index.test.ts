@@ -13,6 +13,7 @@ const BARREL_EXPORT_CONTRACT = [
 ] as const;
 const BARREL_SOURCE_EXPORT_CONTRACT = [
   ...BARREL_EXPORT_CONTRACT,
+  "SseTransportOptions",
   "SseVisitorMessageInput",
 ] as const;
 

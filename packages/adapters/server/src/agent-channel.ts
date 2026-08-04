@@ -22,6 +22,7 @@ interface Pending {
 
 export interface AgentChannelDeps {
   readonly agentTimeoutMs?: number;
+  readonly runtimeAuthorityTimeoutMs?: number;
   readonly maxPendingTurns?: number;
   readonly fallbackAgent?: RuntimeLikeAgent;
 }
@@ -36,9 +37,10 @@ export interface AgentChannel {
   close(): void;
 }
 
-const RUNTIME_AUTHORITY_TIMEOUT_MS = 30_000;
+const DEFAULT_RUNTIME_AUTHORITY_TIMEOUT_MS = 30_000;
 const REMOTE_TIMEOUT_SAFETY_MARGIN_MS = 1_000;
 const MAX_REMOTE_PENDING_TURNS = 256;
+const MAX_TIMER_TIMEOUT_MS = 2_147_483_647;
 
 export const REMOTE_TIMEOUT_TEXT =
   "(still working — this is taking longer than usual; the answer will appear here when it's ready)";
@@ -59,17 +61,18 @@ function controlCorrelationId(frame: AgentControlFrame): string {
   return frame.correlationId ?? frame.eventId;
 }
 
-function resolveAgentTimeoutMs(requested: number | undefined): number {
-  const candidate =
-    requested === undefined || !Number.isFinite(requested)
-      ? RUNTIME_AUTHORITY_TIMEOUT_MS
-      : requested;
-  return Math.floor(
-    Math.max(
-      1,
-      Math.min(candidate, RUNTIME_AUTHORITY_TIMEOUT_MS - REMOTE_TIMEOUT_SAFETY_MARGIN_MS),
-    ),
+function resolveAgentTimeoutMs(
+  requested: number | undefined,
+  runtimeAuthorityTimeoutMs: number,
+): number {
+  const cap = Math.max(
+    1,
+    runtimeAuthorityTimeoutMs > REMOTE_TIMEOUT_SAFETY_MARGIN_MS
+      ? runtimeAuthorityTimeoutMs - REMOTE_TIMEOUT_SAFETY_MARGIN_MS
+      : runtimeAuthorityTimeoutMs,
   );
+  const candidate = positiveIntegerOption(requested, cap);
+  return Math.min(candidate, cap);
 }
 
 function remoteFrameTimeoutMs(timeoutMs: number): number {
@@ -83,12 +86,16 @@ function remoteFrameTimeoutMs(timeoutMs: number): number {
 
 function positiveIntegerOption(value: number | undefined, fallback: number): number {
   if (value === undefined) return fallback;
-  if (!Number.isFinite(value) || value < 1) return fallback;
-  return Math.floor(value);
+  if (!Number.isSafeInteger(value) || value < 1) return fallback;
+  return Math.min(value, MAX_TIMER_TIMEOUT_MS);
 }
 
 export function createAgentChannel(deps: AgentChannelDeps = {}): AgentChannel {
-  const timeoutMs = resolveAgentTimeoutMs(deps.agentTimeoutMs);
+  const runtimeAuthorityTimeoutMs = positiveIntegerOption(
+    deps.runtimeAuthorityTimeoutMs,
+    DEFAULT_RUNTIME_AUTHORITY_TIMEOUT_MS,
+  );
+  const timeoutMs = resolveAgentTimeoutMs(deps.agentTimeoutMs, runtimeAuthorityTimeoutMs);
   const maxPendingTurns = positiveIntegerOption(deps.maxPendingTurns, MAX_REMOTE_PENDING_TURNS);
   const pending = new Map<string, Pending>();
   let stream: ServerResponse | null = null;
@@ -151,7 +158,7 @@ export function createAgentChannel(deps: AgentChannelDeps = {}): AgentChannel {
 
   const reaper = setInterval(() => {
     if (stream === null) return;
-    if (Date.now() - lastHeartbeat >= RUNTIME_AUTHORITY_TIMEOUT_MS) {
+    if (Date.now() - lastHeartbeat >= runtimeAuthorityTimeoutMs) {
       stream.end();
       stream = null;
       settleAll(REMOTE_TIMEOUT_TEXT);

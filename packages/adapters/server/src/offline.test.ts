@@ -151,6 +151,39 @@ describe("offline and agent channel", () => {
     });
   });
 
+  it("derives remote agent frame timeouts from the configured runtime turn window", async () => {
+    const { server, base } = await start({ agent: undefined, turnTimeoutMs: 90_000 });
+    active = server;
+    const agentStream = await fetch(`${base}/agent/stream`);
+    const agent = agentReader(agentStream);
+    const browser = eventReader(await fetch(`${base}/stream?sessionKey=s1`));
+    await browser.next(); // root resync
+
+    const pending = postEvent(base, "s1", visitorEvent({ eventId: "long-turn" }));
+    const frame = await agent.next();
+    const control = await fetch(`${base}/agent/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "agent_control",
+        eventId: frame.event.eventId,
+        correlationId: frame.correlationId,
+        outcome: {
+          stageRevision: 0,
+          patches: [],
+          conversation: conversation(frame.event.eventId, "assistant", "remote answer"),
+        },
+      }),
+    });
+    await browser.next();
+    await browser.close();
+    await agent.close();
+
+    expect(frame.timeoutMs).toBe(88_000);
+    expect(control.status).toBe(202);
+    expect((await pending).status).toBe(202);
+  });
+
   it("rejects non-empty external control patches instead of dropping them", async () => {
     const { server, base } = await start({ agent: undefined });
     active = server;
@@ -324,6 +357,23 @@ describe("offline and agent channel", () => {
     const pending = channel.agent.run({ event: visitorEvent({ eventId: "slow" }) });
     await vi.advanceTimersByTimeAsync(29_000);
 
+    await expect(pending).resolves.toEqual({ text: REMOTE_TIMEOUT_TEXT });
+    channel.close();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("extends direct remote channel timeout when its runtime authority is extended", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const channel = createAgentChannel({ runtimeAuthorityTimeoutMs: 90_000 });
+    const res = responseDouble();
+    channel.attach(res.response);
+
+    const pending = channel.agent.run({ event: visitorEvent({ eventId: "slow" }) });
+    const frame = visitorFrames(res.writes)[0];
+    await vi.advanceTimersByTimeAsync(89_000);
+
+    expect(frame?.timeoutMs).toBe(88_000);
     await expect(pending).resolves.toEqual({ text: REMOTE_TIMEOUT_TEXT });
     channel.close();
     expect(vi.getTimerCount()).toBe(0);

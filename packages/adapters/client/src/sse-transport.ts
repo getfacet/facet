@@ -3,6 +3,7 @@ import type { VisitorEvent, ConversationMessage, FacetTransport, ServerFrame } f
 const MAX_QUEUE = 100;
 const POST_TIMEOUT_MS = 35_000;
 const STREAM_OPEN_TIMEOUT_MS = 10_000;
+const MAX_ABORT_TIMEOUT_MS = 2_147_483_647;
 
 function isConversationFrame(frame: ServerFrame): frame is ConversationMessage {
   return frame.kind === "conversation";
@@ -21,6 +22,10 @@ export interface SseVisitorMessageInput {
   readonly text: string;
   readonly screen: string;
   readonly stageRevision: number;
+}
+
+export interface SseTransportOptions {
+  readonly postTimeoutMs?: number;
 }
 
 type PendingSend =
@@ -49,11 +54,15 @@ export class SseTransport implements FacetTransport {
   private sendChain: Promise<void> = Promise.resolve();
   private lastEventId: string | undefined;
   private subscribed = false;
+  private readonly postTimeoutMs: number;
 
   constructor(
     private readonly baseUrl: string,
     private readonly sessionKey: string,
-  ) {}
+    options: SseTransportOptions = {},
+  ) {
+    this.postTimeoutMs = positiveIntegerOption(options.postTimeoutMs, POST_TIMEOUT_MS);
+  }
 
   send(event: VisitorEvent): Promise<void> {
     return this.enqueue({ kind: "event", event });
@@ -109,7 +118,7 @@ export class SseTransport implements FacetTransport {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(target.body),
-      signal: AbortSignal.timeout(POST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(this.postTimeoutMs),
     });
     if (!response.ok) {
       throw new Error(`POST ${target.path} failed: ${String(response.status)}`);
@@ -174,6 +183,12 @@ export class SseTransport implements FacetTransport {
       this.discardQueuedSends("transport disconnected");
     };
   }
+}
+
+function positiveIntegerOption(value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (!Number.isFinite(value) || value < 1) return fallback;
+  return Math.min(Math.floor(value), MAX_ABORT_TIMEOUT_MS);
 }
 
 function unrefTimer(timer: ReturnType<typeof setTimeout>): void {

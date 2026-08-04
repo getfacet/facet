@@ -1,8 +1,8 @@
 export const QUICKSTART_NAV_ITEMS = [
   { label: "What is Facet?", to: "what" },
-  { label: "Runtime Loop", to: "structure" },
-  { label: "Component Catalog", to: "system" },
-  { label: "Use Cases", to: "usecases" },
+  { label: "What can it build?", to: "build" },
+  { label: "Design System", to: "system" },
+  { label: "Try It Live", to: "try" },
 ] as const;
 
 function attr(value: string): string {
@@ -16,11 +16,11 @@ function attr(value: string): string {
 /** Builds one markup navigation row for the quickstart's four seeded screens. */
 export function quickstartNavigationMarkup(): string {
   const buttons = QUICKSTART_NAV_ITEMS.map(
-    (item) => `<Button label="${attr(item.label)}" action="nav:${attr(item.to)}" />`,
+    (item) => `<Button label="${attr(item.label)}" action="nav:${attr(item.to)}" tone="quiet" />`,
   ).join("\n      ");
-  return `<Row gap="sm">
+  return `<Nav brand="Facet" mark="F" label="Quickstart">
       ${buttons}
-    </Row>`;
+    </Nav>`;
 }
 
 /** Builds a small explanatory card without reintroducing the retired seed model. */

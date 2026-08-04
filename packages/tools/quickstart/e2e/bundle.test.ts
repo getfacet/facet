@@ -5,7 +5,7 @@
  * build`, `dist/page/app.js` is evaluated inside jsdom with a `#root` element
  * present, and the test asserts (a) no bare `process.env.NODE_ENV` token
  * survived the tsup define, (b) evaluation does not throw, and (c) React mounts
- * the default component renderer plus conversation surface.
+ * the default component renderer plus the floating chat shell.
  */
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -132,10 +132,12 @@ async function evalBundle(bundleText: string): Promise<HTMLElement> {
 function bootWindow(): {
   __FACET_INITIAL_STAGE__?: unknown;
   __FACET_THEME__?: unknown;
+  __FACET_POST_TIMEOUT_MS__?: unknown;
 } {
   return window as unknown as {
     __FACET_INITIAL_STAGE__?: unknown;
     __FACET_THEME__?: unknown;
+    __FACET_POST_TIMEOUT_MS__?: unknown;
   };
 }
 
@@ -149,6 +151,7 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
   beforeEach(() => {
     delete bootWindow().__FACET_INITIAL_STAGE__;
     delete bootWindow().__FACET_THEME__;
+    delete bootWindow().__FACET_POST_TIMEOUT_MS__;
     installBrowserStubs();
   });
 
@@ -181,7 +184,8 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
     const backgroundProbe = document.createElement("div");
     backgroundProbe.style.background = background;
     expect(root.querySelector("[data-facet-stage]")).not.toBeNull();
-    expect(root.querySelector("[data-facet-conversation]")).not.toBeNull();
+    expect(root.querySelector("[data-facet-chat-drawer]")).not.toBeNull();
+    expect(root.querySelector("[data-facet-chat-conversation]")).toBeNull();
     expect(root.textContent).toContain(seedText);
     expect(document.body.style.background).toBe(backgroundProbe.style.background);
     expect(bootWindow().__FACET_INITIAL_STAGE__).toEqual(documentWithText(seedText));
@@ -196,7 +200,8 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
     const defaultProbe = document.createElement("div");
     defaultProbe.style.background = DEFAULT_THEME.semantic.canvas.background;
     expect(root.querySelector("[data-facet-stage]")).not.toBeNull();
-    expect(root.querySelector("[data-facet-conversation]")).not.toBeNull();
+    expect(root.querySelector("[data-facet-chat-drawer]")).not.toBeNull();
+    expect(root.querySelector("[data-facet-chat-conversation]")).toBeNull();
     expect(root.textContent).not.toContain("retired-tree");
     expect(document.body.style.background).toBe(defaultProbe.style.background);
   });

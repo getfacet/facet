@@ -47,7 +47,7 @@ describe("quickstart guide brief", () => {
 
     expect(QUICKSTART_PAGE_BRIEF).not.toMatch(retiredContainerTerms);
     expect(QUICKSTART_PAGE_BRIEF).toMatch(/safe declarative\s+component markup/);
-    expect(QUICKSTART_PAGE_BRIEF).toContain("Screen, Stack, Row, Grid, Modal");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Screen, AppShell, Stack, Row, Split, Grid, Modal");
     expect(QUICKSTART_PAGE_BRIEF).toContain("ProfileHeader");
     expect(QUICKSTART_PAGE_BRIEF).toContain("ProductShowcase");
     expect(QUICKSTART_PAGE_BRIEF).toContain("StatStrip, Gallery");
@@ -72,6 +72,7 @@ function capture(): Captured {
 interface ShellGlobals {
   __FACET_THEME__?: unknown;
   __FACET_INITIAL_STAGE__?: unknown;
+  __FACET_POST_TIMEOUT_MS__?: unknown;
 }
 
 function readShellGlobals(body: string): ShellGlobals {
@@ -221,7 +222,9 @@ describe("runCli — default bootstrap (DC-009)", () => {
       expect(shell).toContain("window.__FACET_THEME__");
       expect(shell).not.toContain("__FACET_THEMES__");
       expect(shell).not.toContain("__FACET_PATTERNS__");
-      expect(readShellGlobals(shell).__FACET_THEME__).toEqual(DEFAULT_THEME);
+      const globals = readShellGlobals(shell);
+      expect(globals.__FACET_THEME__).toEqual(DEFAULT_THEME);
+      expect(globals.__FACET_POST_TIMEOUT_MS__).toBe(130_250);
       expect(await fetch(`${running.url}/patterns`)).toMatchObject({ status: 404 });
       expect(await fetch(`${running.url}/assets`)).toMatchObject({ status: 404 });
     } finally {
@@ -230,7 +233,7 @@ describe("runCli — default bootstrap (DC-009)", () => {
   });
 });
 
-describe("runCli — quickstart brick default", () => {
+describe("runCli — quickstart built-in default", () => {
   it("inlines the exact post-migration seeded first paint on the built-in guide path", async () => {
     const { captured, running } = await bootCli();
     try {
@@ -240,10 +243,10 @@ describe("runCli — quickstart brick default", () => {
       const seedText = JSON.stringify(globals.__FACET_INITIAL_STAGE__);
 
       expect(globals.__FACET_INITIAL_STAGE__).toEqual(QUICKSTART_INITIAL_STAGE);
-      expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(84);
-      expect(seedText).toHaveLength(12_495);
+      expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(121);
+      expect(seedText).toHaveLength(24_685);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "fb8786b4bc321b6c0e40b5e0e9493913cd9c890134a96860a64e70672c5f9bd2",
+        "418a30dcbd952311f962ff717f64949bfea1ef5d01c261a1e6d11f4b789aa7de",
       );
     } finally {
       await running.close();

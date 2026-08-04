@@ -36,7 +36,7 @@ describe("quickstart guide", () => {
 
     expect(QUICKSTART_INITIAL_STAGE.entry).toBe("what");
     expect(QUICKSTART_INITIAL_STAGE.screens).toHaveLength(4);
-    expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(84);
+    expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(121);
     for (const node of Object.values(QUICKSTART_INITIAL_STAGE.nodes)) {
       expect(catalogTags.has(node.tag)).toBe(true);
     }
@@ -46,8 +46,14 @@ describe("quickstart guide", () => {
     const serialized = serializeDocument(QUICKSTART_INITIAL_STAGE).text;
 
     expect(serialized).toContain('<Screen name="what"');
-    expect(serialized).toContain('<Button label="Show runtime loop" action="nav:structure"');
-    expect(serialized).toContain('<Modal triggerLabel="Why immutable?"');
+    expect(serialized).toContain('<Nav brand="Facet" mark="F" label="Quickstart"');
+    expect(serialized).toContain('<Button label="Design System" action="nav:system" tone="quiet"');
+    expect(serialized).toContain('<Button label="Try a surface" action="nav:try"');
+    expect(serialized).toContain('<ProductShowcase eyebrow="Live contract"');
+    expect(serialized).toContain('<Gallery title="Starter surfaces" columns="3" rhythm="even"');
+    expect(serialized).toContain('<Modal triggerLabel="How should I ask?"');
+    expect(serialized).not.toContain("<AppShell");
+    expect(serialized).not.toContain("<SideNav");
     expect(serialized).not.toContain("Pattern"); // component-hard-cut: allowed-negative
     expect(serialized).not.toContain("Preset"); // component-hard-cut: allowed-negative
     expect(serialized).not.toContain("Brick"); // component-hard-cut: allowed-negative
@@ -56,8 +62,8 @@ describe("quickstart guide", () => {
   it("pins the regenerated seed size and sha256 golden", () => {
     const json = JSON.stringify(QUICKSTART_INITIAL_STAGE);
 
-    expect(json).toHaveLength(12495);
-    expect(sha256(json)).toBe("fb8786b4bc321b6c0e40b5e0e9493913cd9c890134a96860a64e70672c5f9bd2");
+    expect(json).toHaveLength(24685);
+    expect(sha256(json)).toBe("418a30dcbd952311f962ff717f64949bfea1ef5d01c261a1e6d11f4b789aa7de");
   });
 
   it("keeps the seed within the quickstart prompt budget", () => {
@@ -72,12 +78,17 @@ describe("quickstart guide", () => {
       .filter(([, candidate]) => candidate.tag === "Button")
       .map(([id]) => ({ id, label: propText(id, "label"), action: propText(id, "action") }));
 
-    expect(values).toContainEqual(expect.objectContaining({ label: "Show runtime loop" }));
+    expect(values).toContainEqual(
+      expect.objectContaining({ label: "Try a surface", action: "nav:try" }),
+    );
     expect(values).toContainEqual(
       expect.objectContaining({ label: "Build dashboard", action: "agent:build_dashboard" }),
     );
     expect(values).toContainEqual(
-      expect.objectContaining({ label: "Component Catalog", action: "nav:system" }),
+      expect.objectContaining({ label: "Build my surface", action: "agent:build_surface" }),
+    );
+    expect(values).toContainEqual(
+      expect.objectContaining({ label: "Design System", action: "nav:system" }),
     );
   });
 
@@ -86,6 +97,10 @@ describe("quickstart guide", () => {
     expect(QUICKSTART_PAGE_BRIEF).toContain("safe declarative");
     expect(QUICKSTART_PAGE_BRIEF).toContain("component markup");
     expect(QUICKSTART_PAGE_BRIEF).toContain("registered default-catalog components");
+    expect(QUICKSTART_PAGE_BRIEF).toContain(
+      "Do not say the page changed unless a mutation tool returned an accepted patch",
+    );
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Keep the seeded tour layout stable");
     expect(QUICKSTART_PAGE_BRIEF).not.toContain("Pattern"); // component-hard-cut: allowed-negative
     expect(QUICKSTART_PAGE_BRIEF).not.toContain("Preset"); // component-hard-cut: allowed-negative
     expect(QUICKSTART_PAGE_BRIEF).not.toContain("Brick"); // component-hard-cut: allowed-negative

@@ -63,6 +63,7 @@ export interface RuntimeOptions {
   readonly deliver?: (entry: OutboxEntry) => Promise<void> | void;
   readonly diagnostics?: (diagnostic: RuntimeDiagnostic) => void;
   readonly now?: () => number;
+  readonly turnTimeoutMs?: number;
 }
 
 export interface RuntimeEventInput {
@@ -196,6 +197,7 @@ export class FacetRuntime {
   readonly #deliver: (entry: OutboxEntry) => Promise<void> | void;
   readonly #diagnostics: (diagnostic: RuntimeDiagnostic) => void;
   readonly #now: () => number;
+  readonly #turnTimeoutMs: number | undefined;
   readonly #lanes = new Map<string, LaneState>();
 
   constructor(options: RuntimeOptions) {
@@ -205,6 +207,7 @@ export class FacetRuntime {
     this.#deliver = options.deliver ?? (() => {});
     this.#diagnostics = options.diagnostics ?? (() => {});
     this.#now = options.now ?? Date.now;
+    this.#turnTimeoutMs = options.turnTimeoutMs;
   }
 
   async handle(input: RuntimeEventInput): Promise<RuntimeHandleResult> {
@@ -293,7 +296,10 @@ export class FacetRuntime {
     if (existing !== undefined) {
       return existing;
     }
-    const gate = new TurnGate({ now: this.#now });
+    const gate = new TurnGate({
+      now: this.#now,
+      ...(this.#turnTimeoutMs === undefined ? {} : { timeoutMs: this.#turnTimeoutMs }),
+    });
     const lane = Object.freeze({ gate, outbox: new ConversationOutbox(gate) });
     this.#lanes.set(sessionKey, lane);
     return lane;

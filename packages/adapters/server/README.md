@@ -44,10 +44,16 @@ const server = createFacetServer({
   catalog: DEFAULT_CATALOG,
   theme: DEFAULT_THEME,
   agent,
+  turnTimeoutMs: 30_000,
 });
 
 await server.listen();
 ```
+
+`turnTimeoutMs` is optional and defaults to the runtime's 30 second turn
+authority window. Raise it only for local or self-hosted agents that need longer
+provider calls. External-agent frames derive their pending timeout from the same
+turn window and settle before the runtime write authority expires.
 
 ## Browser channel
 

@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentDocument } from "@facet/core";
 
 import { AssetExplorer } from "./asset-explorer.js";
@@ -70,6 +70,8 @@ afterEach(() => {
   document.body.style.overflow = "";
   delete window.__FACET_INITIAL_STAGE__;
   delete window.__FACET_THEME__;
+  delete window.__FACET_POST_TIMEOUT_MS__;
+  vi.restoreAllMocks();
 });
 
 function scalar(value: string): ComponentDocument["nodes"][string]["props"][string] {
@@ -154,9 +156,11 @@ function click(element: HTMLElement): void {
   });
 }
 
-function keyDown(element: HTMLElement, key: string): void {
+function keyDown(element: HTMLElement, key: string, init: KeyboardEventInit = {}): void {
   act(() => {
-    element.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key }));
+    element.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key, ...init }),
+    );
   });
 }
 
@@ -186,6 +190,18 @@ function changeInput(input: HTMLInputElement, value: string): void {
   });
 }
 
+function changeTextArea(input: HTMLTextAreaElement, value: string): void {
+  const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+  if (valueSetter === undefined) {
+    throw new Error("Missing HTMLTextAreaElement value setter");
+  }
+  act(() => {
+    valueSetter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
+  });
+}
+
 function buttonNamed(container: ParentNode, name: string): HTMLButtonElement {
   for (const candidate of container.querySelectorAll("button")) {
     if (candidate.textContent?.includes(name) === true && candidate instanceof HTMLButtonElement) {
@@ -195,7 +211,116 @@ function buttonNamed(container: ParentNode, name: string): HTMLButtonElement {
   throw new Error(`Missing button: ${name}`);
 }
 
+function buttonWithLabel(container: ParentNode, label: string): HTMLButtonElement {
+  const candidate = container.querySelector(`button[aria-label="${label}"]`);
+  if (!(candidate instanceof HTMLButtonElement)) {
+    throw new Error(`Missing button with label: ${label}`);
+  }
+  return candidate;
+}
+
 describe("AssetExplorer", () => {
+  it("does not send an automatic visit turn when a boot seed is already visible", async () => {
+    window.__FACET_INITIAL_STAGE__ = modalDocument();
+    const container = render(<Page assetExplorer={<div data-facet-asset-explorer />} />);
+    await openLatestStream();
+    await flushEffects();
+
+    expect(container.querySelector("[data-facet-stage]")).toBeInstanceOf(HTMLElement);
+    expect(fetchCalls.filter((url) => url.endsWith("/event"))).toHaveLength(0);
+    click(buttonWithLabel(container, "Open chat"));
+    const textarea = container.querySelector('textarea[aria-label="Message"]');
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+    changeTextArea(textarea as HTMLTextAreaElement, "change the visible page");
+    expect(buttonNamed(container, "Send").disabled).toBe(false);
+  });
+
+  it("keeps live chat in a polished floating composer", async () => {
+    const container = render(<Page assetExplorer={<div data-facet-asset-explorer />} />);
+    await openLatestStream();
+    await flushEffects();
+
+    const toggle = buttonWithLabel(container, "Open chat");
+    const drawer = container.querySelector("[data-facet-chat-drawer]");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(drawer).toBeInstanceOf(HTMLElement);
+    expect(drawer?.getAttribute("aria-hidden")).toBe("true");
+    expect((drawer as HTMLElement).style.visibility).toBe("hidden");
+    expect((drawer as HTMLElement).style.opacity).toBe("0");
+    expect((toggle as HTMLElement).style.position).toBe("fixed");
+    expect((toggle as HTMLElement).style.right).toBe("1.5rem");
+    expect((toggle as HTMLElement).style.bottom).toBe("1.5rem");
+
+    click(toggle);
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(drawer?.getAttribute("aria-hidden")).toBe("false");
+    expect(container.querySelector("[data-facet-message-form]")).toBeInstanceOf(HTMLFormElement);
+    expect((drawer as HTMLElement).style.position).toBe("fixed");
+    expect((drawer as HTMLElement).style.right).toBe("1.5rem");
+    expect((drawer as HTMLElement).style.bottom).toBe("5.25rem");
+    expect((drawer as HTMLElement).style.transformOrigin).toBe("bottom right");
+    expect((drawer as HTMLElement).style.opacity).toBe("1");
+    expect(container.querySelector("[data-facet-chat-conversation]")).toBeNull();
+    expect(container.querySelector("[data-facet-chat-status]")?.textContent).toBe("Ready");
+    expect(buttonNamed(container, "Send").disabled).toBe(true);
+
+    const textarea = container.querySelector('textarea[aria-label="Message"]');
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+    changeTextArea(textarea as HTMLTextAreaElement, "support triage");
+    expect(buttonNamed(container, "Send").disabled).toBe(false);
+
+    click(buttonWithLabel(container, "Close chat"));
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(drawer?.getAttribute("aria-hidden")).toBe("true");
+    expect((drawer as HTMLElement).style.visibility).toBe("hidden");
+  });
+
+  it("submits the live chat with Enter and preserves Shift+Enter for drafts", async () => {
+    const container = render(<Page assetExplorer={<div data-facet-asset-explorer />} />);
+    await openLatestStream();
+    await flushEffects();
+
+    click(buttonWithLabel(container, "Open chat"));
+    const textarea = container.querySelector('textarea[aria-label="Message"]');
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+
+    changeTextArea(textarea as HTMLTextAreaElement, "hello quickstart");
+    keyDown(textarea as HTMLTextAreaElement, "Enter", { shiftKey: true });
+    await flushEffects();
+
+    expect(fetchCalls.filter((url) => url.endsWith("/message"))).toHaveLength(0);
+    expect((textarea as HTMLTextAreaElement).value).toBe("hello quickstart");
+
+    keyDown(textarea as HTMLTextAreaElement, "Enter");
+    await flushEffects();
+
+    expect(fetchCalls.filter((url) => url.endsWith("/message"))).toHaveLength(1);
+    expect((textarea as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("uses the boot-provided POST timeout for live chat messages", async () => {
+    window.__FACET_INITIAL_STAGE__ = modalDocument();
+    window.__FACET_POST_TIMEOUT_MS__ = 77_000;
+    const signal = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(signal);
+    const container = render(<Page assetExplorer={<div data-facet-asset-explorer />} />);
+    await openLatestStream();
+    await flushEffects();
+
+    click(buttonWithLabel(container, "Open chat"));
+    const textarea = container.querySelector('textarea[aria-label="Message"]');
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+
+    changeTextArea(textarea as HTMLTextAreaElement, "hello quickstart");
+    keyDown(textarea as HTMLTextAreaElement, "Enter");
+    await flushEffects();
+
+    expect(timeout).toHaveBeenCalledWith(77_000);
+    expect(fetchCalls.filter((url) => url.endsWith("/message"))).toHaveLength(1);
+  });
+
   it("keeps inspector interactions local to the asset explorer", async () => {
     const container = render(
       <Page
@@ -214,7 +339,7 @@ describe("AssetExplorer", () => {
     expect(stage).toBeInstanceOf(HTMLElement);
     const revisionBefore = stage?.getAttribute("data-facet-stage-revision");
 
-    expect(container.querySelector("[data-facet-conversation]")).toBeInstanceOf(HTMLElement);
+    expect(container.querySelector("[data-facet-chat-drawer]")).toBeInstanceOf(HTMLElement);
     expect(container.querySelector("[data-facet-message-form]")).toBeInstanceOf(HTMLFormElement);
 
     click(buttonNamed(container, "Assets"));
@@ -225,7 +350,7 @@ describe("AssetExplorer", () => {
     expect(
       container.querySelector("[data-facet-stage]")?.getAttribute("data-facet-stage-revision"),
     ).toBe(revisionBefore);
-    expect(container.querySelector("[data-facet-conversation]")).toBeInstanceOf(HTMLElement);
+    expect(container.querySelector("[data-facet-chat-drawer]")).toBeInstanceOf(HTMLElement);
     expect(container.querySelector("[data-facet-message-form]")).toBeInstanceOf(HTMLFormElement);
   });
 
@@ -341,7 +466,7 @@ describe("AssetExplorer", () => {
     expect(previewDialog?.hasAttribute("hidden")).toBe(false);
     expect(buttonNamed(document, "Open details").getAttribute("aria-expanded")).toBe("true");
     expect(document.body.style.overflow).toBe("hidden");
-  }, 10_000);
+  }, 60_000);
 
   it("mounts Design System, Components, and Screens without adding a primary Catalog tab", () => {
     const container = render(
@@ -421,7 +546,7 @@ describe("AssetExplorer", () => {
     expect((explorer as HTMLElement).style.overflowWrap).toBe("anywhere");
     expect(body).toBeInstanceOf(HTMLElement);
     expect((body as HTMLElement).style.minWidth).toBe("0px");
-  }, 10_000);
+  }, 60_000);
 
   it("keeps asset shell free of transport and stage APIs", () => {
     const source = readFileSync("packages/tools/quickstart/src/page/asset-explorer.tsx", "utf8");

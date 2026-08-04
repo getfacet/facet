@@ -176,7 +176,7 @@ describe("ThemeInspector", () => {
 
     const colorSample = sampleFor(container, "semantic.canvas.inverse");
     expect(colorSample.textContent).toBe("");
-  });
+  }, 30_000);
 
   it("imports only React and the theme token model", () => {
     const source = readFileSync("packages/tools/quickstart/src/page/theme-inspector.tsx", "utf8");

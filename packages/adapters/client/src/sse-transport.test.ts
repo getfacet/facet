@@ -106,6 +106,36 @@ describe("SseTransport", () => {
     expect(JSON.parse(init.body)).toEqual({ sessionKey: "session/a", event: event() });
   });
 
+  it("lets local hosts extend the POST timeout without changing the default", async () => {
+    const signal = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(signal);
+    const transport = new SseTransport("http://s", "session/a", { postTimeoutMs: 95_000 });
+    transport.subscribe(() => {});
+    const sent = transport.send(event());
+
+    FakeEventSource.instances[0]?.onopen?.();
+    await expect(sent).resolves.toBeUndefined();
+
+    expect(timeout).toHaveBeenCalledWith(95_000);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { signal: AbortSignal }];
+    expect(init.signal).toBe(signal);
+  });
+
+  it("clamps oversized POST timeouts to the timer-safe maximum", async () => {
+    const signal = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(signal);
+    const transport = new SseTransport("http://s", "session/a", {
+      postTimeoutMs: Number.MAX_SAFE_INTEGER,
+    });
+    transport.subscribe(() => {});
+    const sent = transport.send(event());
+
+    FakeEventSource.instances[0]?.onopen?.();
+    await expect(sent).resolves.toBeUndefined();
+
+    expect(timeout).toHaveBeenCalledWith(2_147_483_647);
+  });
+
   it("posts visitor messages through the same ordered send queue as events", async () => {
     const transport = new SseTransport("http://s", "session/a");
     transport.subscribe(() => {});

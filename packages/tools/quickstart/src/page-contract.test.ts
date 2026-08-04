@@ -16,6 +16,9 @@ describe("quickstart page transport contract", () => {
     expect(source).toContain("validateVisitorText(draft)");
     expect(source).toContain("globalThis.crypto");
     expect(source).not.toContain("typeof crypto.randomUUID");
-    expect(source).toContain("disabled={facet.pending || initialPending}");
+    expect(source).toContain(
+      "const sendDisabled = !draftHasContent || facet.pending || initialPending;",
+    );
+    expect(source).toContain("disabled={sendDisabled || !chatOpen}");
   });
 });

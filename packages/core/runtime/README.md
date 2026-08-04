@@ -78,6 +78,7 @@ const runtime = new FacetRuntime({
   agent,
   sink: new MemorySink(),
   store,
+  turnTimeoutMs: 30_000,
 });
 
 const turn = await runtime.handle({
@@ -96,6 +97,8 @@ console.log(turn.outcome);
 
 The example uses the code-authored `@facet/agent` helper for brevity. A custom
 LLM loop can provide the same `run({ event, session })` contract directly.
+`turnTimeoutMs` is optional and defaults to 30 seconds; local tools can raise it
+when an in-process provider regularly needs more time.
 
 ## Fail-safe boundaries
 

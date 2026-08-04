@@ -206,10 +206,14 @@ async function capture(page: Page, outDir: string, index: number, label: string)
 
 /** Type a message into the conversation surface and send it. */
 async function sendChat(page: Page, message: string): Promise<void> {
-  // The current quickstart shell exposes a textarea labelled "Message"; stage
-  // fields live inside [data-facet-stage], so this selector targets the
-  // conversation surface directly rather than inferring it from the absence of an
-  // old field stamp.
+  const toggle = page.locator("button[data-facet-chat-toggle]").first();
+  if ((await toggle.count()) > 0 && (await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+  // The current quickstart shell exposes a textarea labelled "Message" inside a
+  // floating chat drawer. Stage fields live inside [data-facet-stage], so this
+  // selector targets the conversation surface directly rather than inferring it
+  // from the absence of an old field stamp.
   const input = page.locator('textarea[aria-label="Message"]').first();
   await input.fill(message);
   await input.press("Enter");

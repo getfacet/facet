@@ -270,6 +270,30 @@ describe("FacetRuntime", () => {
     ]);
   });
 
+  it("honors a custom turn timeout for slower in-process agents", async () => {
+    const store = await seededStore();
+    const sink = new RecordingSink();
+    let now = 0;
+    const runtime = new FacetRuntime({
+      store,
+      sink,
+      now: () => now,
+      turnTimeoutMs: 60_000,
+      agent: {
+        run: async () => {
+          now = 45_000;
+          return { text: "slow but still active" };
+        },
+      },
+      deliver: async () => {},
+    });
+
+    const result = await runtime.handle({ sessionKey: "session-a", event: visitorEvent() });
+
+    expect(result.outcome).toBe("accepted");
+    expect(sink.records.map((record) => record.text)).toEqual(["slow but still active"]);
+  });
+
   it("commits explicit targeted session mutations through the runtime lane", async () => {
     const store = await seededStore();
     const delivered: string[] = [];

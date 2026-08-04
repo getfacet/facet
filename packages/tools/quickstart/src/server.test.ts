@@ -8,6 +8,7 @@ import { startQuickstart, type RunningQuickstart } from "./server.js";
 interface ShellGlobals {
   readonly __FACET_INITIAL_STAGE__?: unknown;
   readonly __FACET_THEME__?: unknown;
+  readonly __FACET_POST_TIMEOUT_MS__?: unknown;
 }
 
 interface SseFrame {
@@ -35,7 +36,7 @@ function readShellGlobals(body: string): ShellGlobals {
     (body.match(/<script>[\s\S]*?<\/script>/g) ?? []).find((tag) => tag.includes("__FACET_")) ?? "";
   expect(bootTag).not.toBe("");
   const scriptBody = bootTag.slice("<script>".length, -"</script>".length);
-  const fakeWindow: { __FACET_INITIAL_STAGE__?: unknown; __FACET_THEME__?: unknown } = {};
+  const fakeWindow: ShellGlobals = {};
   new Function("window", scriptBody)(fakeWindow);
   return fakeWindow;
 }
@@ -84,7 +85,9 @@ describe("startQuickstart initial markup bootstrap", () => {
       });
 
       const shell = await (await fetch(`${running.url}/`)).text();
-      expect(readShellGlobals(shell).__FACET_INITIAL_STAGE__).toEqual(QUICKSTART_INITIAL_STAGE);
+      const globals = readShellGlobals(shell);
+      expect(globals.__FACET_INITIAL_STAGE__).toEqual(QUICKSTART_INITIAL_STAGE);
+      expect(globals.__FACET_POST_TIMEOUT_MS__).toBe(130_250);
 
       const [frame] = await readFrames(await fetch(`${running.url}/stream?sessionKey=seed`), 1);
       expect(frame?.data).toMatchObject({
@@ -96,6 +99,23 @@ describe("startQuickstart initial markup bootstrap", () => {
       const document = (operation as { readonly value?: { readonly document?: unknown } }).value
         ?.document;
       expect(document).toEqual(QUICKSTART_INITIAL_STAGE);
+    } finally {
+      await running?.close();
+    }
+  });
+
+  it("inlines a browser POST timeout derived from a custom turn window", async () => {
+    let running: RunningQuickstart | undefined;
+    try {
+      running = await startQuickstart({
+        port: await freePort(),
+        agentId: "quickstart",
+        agent: createStubAgent(),
+        turnTimeoutMs: 60_000,
+      });
+
+      const shell = await (await fetch(`${running.url}/`)).text();
+      expect(readShellGlobals(shell).__FACET_POST_TIMEOUT_MS__).toBe(65_000);
     } finally {
       await running?.close();
     }
