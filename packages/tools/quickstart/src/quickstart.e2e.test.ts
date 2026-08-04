@@ -612,9 +612,9 @@ describe("quickstart E2E — CLI default seed and barrel surface", () => {
       expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(84);
 
       const seedText = JSON.stringify(inline);
-      expect(seedText).toHaveLength(12_483);
+      expect(seedText).toHaveLength(12_495);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "3990dcdd1b25f6d8e7e149060409e523d37bde2b2faaab9a530c969a2a57504d",
+        "fb8786b4bc321b6c0e40b5e0e9493913cd9c890134a96860a64e70672c5f9bd2",
       );
       for (const tag of [
         "Screen",

@@ -2,20 +2,35 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { BOUNDS, validateCatalog, validateComponentSpec } from "@facet/core";
-import type { ComponentSpec, PropSchema } from "@facet/core";
+import {
+  BOUNDS,
+  parseMarkup,
+  validateAuthorMarkup,
+  validateCatalog,
+  validateComponentSpec,
+} from "@facet/core";
+import type { ComponentSpec, DataModel, FacetCatalog, PropSchema } from "@facet/core";
 
-import { BADGE_SPEC, CONTENT_SPECS, METRIC_SPEC, TEXT_SPEC } from "./specs-content.js";
+import { BADGE_SPEC, CONTENT_SPECS, METRIC_SPEC, TABLE_SPEC, TEXT_SPEC } from "./specs-content.js";
 
-/** The three content tags this module owns, in declaration order. */
-const CONTENT_TAGS: readonly string[] = ["Text", "Metric", "Badge"];
+/** The four content tags this module owns, in declaration order. */
+const CONTENT_TAGS: readonly string[] = ["Text", "Metric", "Badge", "Table"];
 
 /** The one prop of each content component that carries its data (DC-019). */
 const BINDABLE_CONTENT_PROPS: readonly (readonly [string, string])[] = [
   ["Text", "value"],
   ["Metric", "value"],
   ["Badge", "label"],
+  ["Table", "rows"],
 ];
+
+/**
+ * The exact `Table.rows` declaration the structured branch admits: the type, the
+ * guidance, `required`, and a literal `bindable: true`. Nothing else — no
+ * `items`, no domain, no default — because the value never comes from the
+ * markup.
+ */
+const TABLE_ROWS_KEYS: readonly string[] = ["type", "guidance", "required", "bindable"];
 
 /**
  * The three prop names the framework reserves: the collection address a request
@@ -33,8 +48,8 @@ const FRAMEWORK_PROPS: readonly string[] = ["name", "collect", "arg"];
  * Every valid catalog carries exactly one `Screen` — the renderer mounts a
  * stored screen root like any other node — so a catalog assembled from content
  * specs alone is incomplete by construction. This stub supplies that one member
- * and nothing else, which keeps the assertions below about Text, Metric and
- * Badge instead of about whatever the real `Screen` happens to declare.
+ * and nothing else, which keeps the assertions below about Text, Metric, Badge
+ * and Table instead of about whatever the real `Screen` happens to declare.
  */
 const SCREEN_STUB: Record<string, unknown> = {
   tag: "Screen",
@@ -46,6 +61,9 @@ const SCREEN_STUB: Record<string, unknown> = {
 };
 
 const SOURCE = readFileSync(new URL("./specs-content.ts", import.meta.url), "utf8");
+
+/** The registered set an authored document actually reaches: the stub plus the four. */
+const REGISTERED_SPECS: readonly unknown[] = [SCREEN_STUB, ...CONTENT_SPECS];
 
 function specFor(tag: string): ComponentSpec {
   const found = CONTENT_SPECS.find((candidate) => candidate.tag === tag);
@@ -69,6 +87,27 @@ function rejection(value: unknown): string {
   return result.ok ? "accepted" : result.code;
 }
 
+/** The location the first rejection names, so a negative case pins where it failed. */
+function rejectionAt(value: unknown): string {
+  const result = validateComponentSpec(value);
+  return result.ok ? "accepted" : result.at;
+}
+
+function acceptCatalog(components: readonly unknown[]): FacetCatalog {
+  const result = validateCatalog({ components });
+  if (!result.ok) {
+    throw new Error(`expected acceptance, got ${result.code} at ${result.at}: ${result.detail}`);
+  }
+  return result.catalog;
+}
+
+function catalogPropOf(tag: string, name: string): unknown {
+  const spec = acceptCatalog(REGISTERED_SPECS).components.find(
+    (candidate) => candidate.tag === tag,
+  );
+  return spec?.props[name];
+}
+
 function withWhenToUse(spec: ComponentSpec, whenToUse: string): unknown {
   return { ...spec, whenToUse };
 }
@@ -77,18 +116,34 @@ function withProp(spec: ComponentSpec, name: string, schema: unknown): unknown {
   return { ...spec, props: { ...spec.props, [name]: schema } };
 }
 
+/**
+ * Validates one authored document against a catalog of exactly these content
+ * specs plus the Screen every valid catalog registers.
+ */
+function authorOutcome(body: string, model: DataModel = {}): string {
+  const source = `<Facet entry="home"><Screen name="home">${body}</Screen></Facet>`;
+  const parsed = parseMarkup(source);
+  if (!parsed.ok) {
+    return parsed.error.code;
+  }
+  const result = validateAuthorMarkup(parsed.ast, acceptCatalog(REGISTERED_SPECS), model);
+  return result.ok ? "accepted" : result.error.code;
+}
+
 /** A string of exactly `length` characters, so a bound can be met and then passed. */
 function text(length: number): string {
   return "x".repeat(length);
 }
 
-describe("content specs — the three tags register", () => {
-  it("declares exactly Text, Metric and Badge", () => {
+const ROWS_MODEL: DataModel = { sales: { rows: [{ month: "2026-07", revenue: 23 }] } };
+
+describe("content specs — the four tags register", () => {
+  it("declares exactly Text, Metric, Badge and Table", () => {
     expect(CONTENT_SPECS.map((spec) => spec.tag)).toEqual(CONTENT_TAGS);
   });
 
-  it("groups the three named specs in registration order", () => {
-    expect(CONTENT_SPECS).toEqual([TEXT_SPEC, METRIC_SPEC, BADGE_SPEC]);
+  it("groups the four named specs in registration order", () => {
+    expect(CONTENT_SPECS).toEqual([TEXT_SPEC, METRIC_SPEC, BADGE_SPEC, TABLE_SPEC]);
   });
 
   it("accepts every spec on its own", () => {
@@ -97,7 +152,7 @@ describe("content specs — the three tags register", () => {
     }
   });
 
-  it("registers all three as ordinary members alongside the required Screen", () => {
+  it("registers all four as ordinary members alongside the required Screen", () => {
     const result = validateCatalog({ components: [SCREEN_STUB, ...CONTENT_SPECS] });
     expect(result.ok ? result.catalog.components.map((spec) => spec.tag) : result.code).toEqual([
       "Screen",
@@ -174,16 +229,50 @@ describe("content specs — bindable prop declarations (DC-019)", () => {
     expect(metric?.props["value"]).toEqual(propOf("Metric", "value"));
   });
 
-  it("declares only scalar props — content carries no structured payload", () => {
+  it("declares only scalar props except Table.rows, the one bindable record collection", () => {
     for (const spec of CONTENT_SPECS) {
       for (const [name, schema] of Object.entries(spec.props)) {
         const located = `${spec.tag}.${name}`;
-        expect([located, ["string", "number", "boolean"].includes(schema.type)]).toEqual([
-          located,
-          true,
-        ]);
+        const allowed =
+          located === "Table.rows"
+            ? schema.type === "array"
+            : ["string", "number", "boolean"].includes(schema.type);
+        expect([located, allowed]).toEqual([located, true]);
       }
     }
+  });
+});
+
+describe("content specs — Table.rows is a required bindable array", () => {
+  it("declares exactly the four keys the structured branch admits", () => {
+    const rows = propOf("Table", "rows");
+    expect(Object.keys(rows).sort()).toEqual([...TABLE_ROWS_KEYS].sort());
+    expect({ type: rows.type, required: rows.required, bindable: rows.bindable }).toEqual({
+      type: "array",
+      required: true,
+      bindable: true,
+    });
+  });
+
+  it("round-trips through validateCatalog unchanged", () => {
+    expect(catalogPropOf("Table", "rows")).toEqual(propOf("Table", "rows"));
+  });
+
+  it("is rejected the moment bindable is dropped, naming the flag", () => {
+    const spec = specFor("Table");
+    const rows = propOf("Table", "rows");
+    const unbindable = { type: rows.type, guidance: rows.guidance, required: true };
+    expect(rejection(withProp(spec, "rows", unbindable))).toBe("structured_prop_not_bindable");
+    expect(rejectionAt(withProp(spec, "rows", unbindable))).toBe("props.rows.bindable");
+  });
+
+  it("is filled by a data: reference and refuses an inline scalar", () => {
+    expect(authorOutcome(`<Table rows="data:sales.rows" />`, ROWS_MODEL)).toBe("accepted");
+    expect(authorOutcome(`<Table rows="none" />`, ROWS_MODEL)).toBe("invalid-value");
+  });
+
+  it("refuses a binding whose published value is not an array", () => {
+    expect(authorOutcome(`<Table rows="data:sales" />`, ROWS_MODEL)).toBe("unresolved-binding");
   });
 });
 

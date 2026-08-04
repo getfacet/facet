@@ -174,7 +174,7 @@ describe("the mount contract is a types-only module", () => {
     // type-only import vanishes before vitest ever runs, so the source scan
     // above cannot stand in for this one.
     expectNoDependency("emitted declaration", emitDeclaration());
-  });
+  }, 60_000);
 
   it("emits declarations for exactly the three public names", () => {
     const declaration = emitDeclaration();

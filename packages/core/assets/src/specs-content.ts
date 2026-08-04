@@ -1,18 +1,20 @@
 /**
- * The default content components: `Text`, `Metric` and `Badge`.
+ * The default content components: `Text`, `Metric`, `Badge` and `Table`.
  *
  * These three are what a page says rather than how it is arranged. Each one
  * takes no children and carries its content in props, because the author
- * grammar admits quoted scalars and explicit references only — content that
- * arrives as a nested tree would need a shape the grammar cannot express.
+ * grammar admits quoted scalars and explicit references only. `Table` is the
+ * data-display exception inside the same group: it reads a published collection
+ * through a required `data:` binding, never through inline structured markup.
  *
  * One rule governs `bindable` across the group: **the single prop that carries
  * the component's data is bindable, and nothing else is.** `Text.value`,
- * `Metric.value` and `Badge.label` read published data through a `data:path`
- * reference, so republishing that path refreshes the page with no markup
- * rewrite at all (DC-019). Every other prop is a closed vocabulary or a piece of
- * authored framing; binding one would let published data choose a component's
- * appearance, which is a decision the author makes and the catalog bounds.
+ * `Metric.value`, `Badge.label` and `Table.rows` read published data through a
+ * `data:path` reference, so republishing that path refreshes the page with no
+ * markup rewrite at all (DC-019). Every other prop is a closed vocabulary or a
+ * piece of authored framing; binding one would let published data choose a
+ * component's appearance, which is a decision the author makes and the catalog
+ * bounds.
  *
  * `Metric.value` is a **number**, not a display string. A binding is checked
  * against the declared type exactly, so a metric bound to a published `42000000`
@@ -20,6 +22,14 @@
  * every host into pre-formatting its own numbers before publishing them, and
  * would silently fail against an ordinary numeric model. Formatting belongs to
  * the trusted React implementation, which is where locale and currency live.
+ *
+ * **`Table.rows` is a required bindable array.** The structured branch of a prop
+ * schema is shallow, closed and binding-only: the type, the guidance, `required`
+ * and a literal `bindable: true`, and nothing else. There is no `items` contract
+ * because the rows never come from the markup — they arrive from the bounded
+ * data model, where their size and shape are already governed. Inline structured
+ * JSON stays forbidden by the grammar, so `rows="…"` written as a literal is an
+ * author error, not a second way in.
  *
  * The module is **private**: it is not barrel-exported and is not a package
  * entry point. `catalog.ts` composes it into the one public default catalog.
@@ -132,6 +142,38 @@ export const BADGE_SPEC: ComponentSpec = {
   },
 };
 
+export const TABLE_SPEC: ComponentSpec = {
+  tag: "Table",
+  whenToUse: "Show a published collection of records as rows and columns.",
+  props: {
+    rows: {
+      type: "array",
+      required: true,
+      bindable: true,
+      guidance:
+        "The rows to render, bound from the data model with `data:<path>`. Rows are never written inline; publish them first, then bind the path.",
+    },
+    caption: {
+      type: "string",
+      guidance: "One line saying what the rows are, shown with the table.",
+    },
+  },
+  acceptsChildren: false,
+  themeRecipe: {
+    tokens: {
+      background: "color",
+      border: "color",
+      radius: "length",
+      captionText: "color",
+      text: "color",
+      headerText: "color",
+      headerBg: "color",
+      rowBorder: "color",
+      cellPadding: "length",
+    },
+  },
+};
+
 /**
  * The content group, in the order the default catalog registers it. Frozen so a
  * host reading the assembled catalog cannot lengthen the group; the specs
@@ -141,4 +183,5 @@ export const CONTENT_SPECS: readonly ComponentSpec[] = Object.freeze([
   TEXT_SPEC,
   METRIC_SPEC,
   BADGE_SPEC,
+  TABLE_SPEC,
 ]);

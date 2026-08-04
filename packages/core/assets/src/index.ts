@@ -13,7 +13,7 @@
  * This entry is **Node-safe**: it imports no React and touches no browser
  * global, so a server that only needs the catalog and the theme never pulls a
  * renderer in behind them. The trusted React implementations of these same
- * thirteen components live behind the explicit `@facet/assets/react` subpath,
+ * default components live behind the explicit `@facet/assets/react` subpath,
  * which is the one place in this package React appears.
  */
 

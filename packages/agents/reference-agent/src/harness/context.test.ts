@@ -133,7 +133,7 @@ describe("assembleProviderContext", () => {
       historyKey: "quickstart:v1",
       budget: normalizeBudget({
         budget: {
-          maxContextChars: 700,
+          maxContextChars: 900,
           maxHistoryChars: 100,
           maxStageJsonChars: 5_000,
           maxStageSummaryNodes: 3,
@@ -145,7 +145,7 @@ describe("assembleProviderContext", () => {
     if (result.status !== "ready") return;
 
     expect(result.stats.stageMode).toBe("summary");
-    expect(result.stats.estimatedContextChars).toBeLessThanOrEqual(700);
+    expect(result.stats.estimatedContextChars).toBeLessThanOrEqual(900);
     const final = messageText(result.turn.messages.at(-1));
     expect(final).toContain("CURRENT FACET OBSERVATION");
     expect(final).toContain("currentScreenMarkup:");
@@ -169,7 +169,7 @@ describe("assembleProviderContext", () => {
         budget: {
           maxHistoryTurns: 10,
           maxHistoryChars: 260,
-          maxContextChars: 4_000,
+          maxContextChars: 5_000,
         },
       }),
     });

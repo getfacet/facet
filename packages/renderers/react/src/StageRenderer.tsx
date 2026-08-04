@@ -148,6 +148,16 @@ export interface StageRendererProps {
   /** The Data Model in force. A publish is a **new** model object, never a mutation. */
   readonly data: DataModel;
   /**
+   * Hides currently open framework modals and suspends their page side effects
+   * while true.
+   *
+   * Host chrome can use this when the rendered stage becomes hidden or
+   * backgrounded. It does not unmount the renderer, close the modal, replace
+   * modal chrome, or mutate document/data state; field values, the active
+   * screen, and open modal state remain in the same session.
+   */
+  readonly suppressModals?: boolean;
+  /**
    * Receives one forwarded `agent:` event.
    *
    * The renderer knows the event's name, the node it came from, the screen it
@@ -210,6 +220,7 @@ export function StageRenderer({
   bootstrap,
   document: stageDocument,
   data,
+  suppressModals,
   onEvent,
 }: StageRendererProps): ReactNode {
   // One store per session, created once. Two stages on one page therefore share
@@ -331,7 +342,7 @@ export function StageRenderer({
   );
 
   return (
-    <ModalHost>
+    <ModalHost {...(suppressModals === undefined ? {} : { suppressModals })}>
       <OverlayRootProvider>
         <DataProvider model={data}>
           {stageDocument === null ? (

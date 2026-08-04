@@ -20,10 +20,13 @@ import type {
   ConversationMessage,
   FacetStage,
   FacetTheme,
+  MountedComponent,
   StageRevision,
 } from "@facet/core";
 import { bootstrapRenderer, ConversationSurface, StageRenderer, useFacet } from "@facet/react";
-import type { RendererBootstrap } from "@facet/react";
+import type { ComponentRegistry, RendererBootstrap } from "@facet/react";
+
+import { AssetExplorer } from "./asset-explorer.js";
 
 declare global {
   interface Window {
@@ -32,9 +35,11 @@ declare global {
   }
 }
 
+type QuickstartSpace = "live" | "assets";
 type AcceptedBootstrap = Extract<RendererBootstrap, { readonly ok: true }>;
 
 const EMPTY_DATA: FacetStage["data"] = Object.freeze({});
+const QUICKSTART_SPACES: readonly QuickstartSpace[] = ["live", "assets"];
 let localEventId = 0;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -65,12 +70,35 @@ function readInitialDocument(): ComponentDocument | undefined {
   return raw as unknown as ComponentDocument;
 }
 
-function resolvedBootstrap(): AcceptedBootstrap {
+function quickstartRegistry(onOpenAssets: () => void): ComponentRegistry {
+  const DefaultModal = DEFAULT_REGISTRY["Modal"];
+  if (DefaultModal === undefined) {
+    return DEFAULT_REGISTRY;
+  }
+  const QuickstartModal: MountedComponent<ReactNode, ReactNode> = function QuickstartModal(mount) {
+    return (
+      <DefaultModal {...mount}>
+        {mount.children}
+        <button
+          type="button"
+          data-facet-open-assets-from-modal
+          style={styles.modalAssetsButton}
+          onClick={onOpenAssets}
+        >
+          Open Assets
+        </button>
+      </DefaultModal>
+    );
+  };
+  return Object.freeze({ ...DEFAULT_REGISTRY, Modal: QuickstartModal });
+}
+
+function resolvedBootstrap(registry: ComponentRegistry = DEFAULT_REGISTRY): AcceptedBootstrap {
   const rawTheme = readWindowValue("__FACET_THEME__");
   const theme = isRecord(rawTheme) ? (rawTheme as unknown as FacetTheme) : DEFAULT_THEME;
   const candidate = bootstrapRenderer({
     catalog: DEFAULT_CATALOG,
-    registry: DEFAULT_REGISTRY,
+    registry,
     theme,
   });
   if (candidate.ok) {
@@ -78,7 +106,7 @@ function resolvedBootstrap(): AcceptedBootstrap {
   }
   const fallback = bootstrapRenderer({
     catalog: DEFAULT_CATALOG,
-    registry: DEFAULT_REGISTRY,
+    registry,
     theme: DEFAULT_THEME,
   });
   if (fallback.ok) {
@@ -120,15 +148,26 @@ function visitorEvent(
   });
 }
 
-function Page(): ReactNode {
+export interface PageProps {
+  readonly assetExplorer?: ReactNode;
+}
+
+export function Page({ assetExplorer }: PageProps = {}): ReactNode {
   const sessionKey = useMemo(() => browserSessionKey(), []);
   const initialDocument = useMemo(readInitialDocument, []);
-  const bootstrap = useMemo(resolvedBootstrap, []);
-  const transport = useMemo(() => new SseTransport("", sessionKey), [sessionKey]);
   const [draft, setDraft] = useState("");
   const [initialPending, setInitialPending] = useState(false);
+  const [activeSpace, setActiveSpace] = useState<QuickstartSpace>("live");
+  const assetsTabRef = useRef<HTMLButtonElement>(null);
   const stageRevisionRef = useRef<StageRevision>(0);
   const visitSent = useRef(false);
+  const openAssets = useCallback((): void => {
+    setActiveSpace("assets");
+    assetsTabRef.current?.focus();
+  }, []);
+  const registry = useMemo(() => quickstartRegistry(openAssets), [openAssets]);
+  const bootstrap = useMemo(() => resolvedBootstrap(registry), [registry]);
+  const transport = useMemo(() => new SseTransport("", sessionKey), [sessionKey]);
 
   const sendVisitorEvent = useCallback(
     (event: VisitorEvent): Promise<void> =>
@@ -217,36 +256,73 @@ function Page(): ReactNode {
 
   return (
     <div style={pageStyle}>
+      <header style={styles.pageHeader}>
+        <div aria-label="Quickstart spaces" role="group" style={styles.spaceTabs}>
+          {QUICKSTART_SPACES.map((space) => (
+            <button
+              aria-pressed={activeSpace === space}
+              data-facet-quickstart-tab={space}
+              key={space}
+              onClick={() => {
+                if (space === "assets") {
+                  openAssets();
+                  return;
+                }
+                setActiveSpace(space);
+              }}
+              ref={space === "assets" ? assetsTabRef : undefined}
+              style={activeSpace === space ? styles.spaceTabActive : styles.spaceTab}
+              type="button"
+            >
+              {space === "live" ? "Live" : "Assets"}
+            </button>
+          ))}
+        </div>
+      </header>
       <div
-        style={styles.stage}
-        data-facet-stage
-        data-facet-stage-revision={facet.transition.stageRevision}
+        data-facet-live-space
+        hidden={activeSpace !== "live"}
+        style={activeSpace === "live" ? styles.spacePanel : styles.spacePanelHidden}
       >
-        <StageRenderer
-          bootstrap={bootstrap}
-          document={facet.stage.document}
-          data={facet.stage.data}
-          onEvent={facet.sendEvent}
-        />
-      </div>
-      <section style={styles.conversationPanel}>
-        <ConversationSurface items={facet.conversation} validationError={facet.validationError} />
-        <form data-facet-message-form style={styles.messageForm} onSubmit={onSubmit}>
-          <textarea
-            aria-label="Message"
-            value={draft}
-            onChange={(event) => setDraft(event.currentTarget.value)}
-            style={styles.messageInput}
+        <div
+          style={styles.stage}
+          data-facet-stage
+          data-facet-stage-revision={facet.transition.stageRevision}
+        >
+          <StageRenderer
+            bootstrap={bootstrap}
+            document={facet.stage.document}
+            data={facet.stage.data}
+            suppressModals={activeSpace !== "live"}
+            onEvent={facet.sendEvent}
           />
-          <button
-            type="submit"
-            disabled={facet.pending || initialPending}
-            style={styles.messageButton}
-          >
-            Send
-          </button>
-        </form>
-      </section>
+        </div>
+        <section style={styles.conversationPanel}>
+          <ConversationSurface items={facet.conversation} validationError={facet.validationError} />
+          <form data-facet-message-form style={styles.messageForm} onSubmit={onSubmit}>
+            <textarea
+              aria-label="Message"
+              value={draft}
+              onChange={(event) => setDraft(event.currentTarget.value)}
+              style={styles.messageInput}
+            />
+            <button
+              type="submit"
+              disabled={facet.pending || initialPending}
+              style={styles.messageButton}
+            >
+              Send
+            </button>
+          </form>
+        </section>
+      </div>
+      <div
+        data-facet-assets-space
+        hidden={activeSpace !== "assets"}
+        style={activeSpace === "assets" ? styles.spacePanel : styles.spacePanelHidden}
+      >
+        {assetExplorer ?? <AssetExplorer suppressPreviewModals={activeSpace !== "assets"} />}
+      </div>
     </div>
   );
 }
@@ -274,7 +350,7 @@ function useFacetWithStableInitialStage(
 
 const styles = {
   page: {
-    maxWidth: "760px",
+    maxWidth: "1120px",
     margin: "0 auto",
     minHeight: "100vh",
     boxSizing: "border-box",
@@ -283,8 +359,51 @@ const styles = {
     flexDirection: "column",
     gap: "16px",
   },
-  stage: { flex: 1 },
+  pageHeader: {
+    display: "flex",
+    justifyContent: "flex-start",
+  },
+  spaceTabs: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "0.5rem",
+  },
+  spaceTab: {
+    border: `1px solid ${DEFAULT_THEME.semantic.border.default}`,
+    borderRadius: "0.375rem",
+    background: "#ffffff",
+    color: DEFAULT_THEME.semantic.text.default,
+    cursor: "pointer",
+    font: "inherit",
+    fontSize: "0.875rem",
+    fontWeight: 700,
+    lineHeight: 1,
+    padding: "0.625rem 0.75rem",
+  },
+  spaceTabActive: {
+    border: "1px solid #1f4f52",
+    borderRadius: "0.375rem",
+    background: "#1f4f52",
+    color: "#ffffff",
+    cursor: "pointer",
+    font: "inherit",
+    fontSize: "0.875rem",
+    fontWeight: 700,
+    lineHeight: 1,
+    padding: "0.625rem 0.75rem",
+  },
+  spacePanel: {
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+  },
+  spacePanelHidden: {
+    display: "none",
+  },
+  stage: { flex: 1, minWidth: 0 },
   conversationPanel: {
+    minWidth: 0,
     display: "flex",
     flexDirection: "column",
     gap: "0.75rem",
@@ -304,6 +423,19 @@ const styles = {
   },
   messageButton: {
     font: "inherit",
+  },
+  modalAssetsButton: {
+    alignSelf: "flex-start",
+    border: "1px solid #1f4f52",
+    borderRadius: "0.375rem",
+    background: "#1f4f52",
+    color: "#ffffff",
+    cursor: "pointer",
+    font: "inherit",
+    fontSize: "0.875rem",
+    fontWeight: 700,
+    lineHeight: 1,
+    padding: "0.625rem 0.75rem",
   },
 } as const;
 

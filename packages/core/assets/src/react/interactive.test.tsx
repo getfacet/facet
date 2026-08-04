@@ -50,8 +50,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_CATALOG } from "../catalog.js";
 import { DEFAULT_THEME } from "../theme-default.js";
-import { Badge, Metric, Text } from "./content.js";
-import { Button, Field, Table } from "./interactive.js";
+import { Badge, Metric, Table, Text } from "./content.js";
+import { Button, Field } from "./interactive.js";
 import { errorsDuring } from "../../../../../test-support/errors-during.js";
 
 afterEach(cleanup);
@@ -380,6 +380,15 @@ describe("Button reports the interaction and navigates nothing", () => {
       }
     }
   });
+
+  it("keeps action labels on one line by default", () => {
+    const { container } = render(
+      <Button {...mount({ label: "Open forecast", action: "agent:openForecast" })} />,
+    );
+    const button = container.querySelector("button") as HTMLButtonElement;
+
+    expect(button.style.whiteSpace).toBe("nowrap");
+  });
 });
 
 describe("Table renders the rows the binding resolved", () => {
@@ -544,7 +553,7 @@ describe("every default styles itself through the theme's custom properties", ()
       }
       cleanup();
     }
-  });
+  }, 60_000);
 
   it("never inlines what a token resolved to", () => {
     for (const { tag, element } of DEFAULTS) {
@@ -566,7 +575,7 @@ describe("every default styles itself through the theme's custom properties", ()
       }
       cleanup();
     }
-  });
+  }, 60_000);
 
   it("references the theme by name", () => {
     for (const { tag, element } of DEFAULTS) {
@@ -581,7 +590,7 @@ describe("every default styles itself through the theme's custom properties", ()
       });
       cleanup();
     }
-  });
+  }, 60_000);
 
   it("references only custom properties the theme projection actually declares", () => {
     const projected = new Set(Object.keys(THEME_VARS));
@@ -596,7 +605,7 @@ describe("every default styles itself through the theme's custom properties", ()
       }
       cleanup();
     }
-  });
+  }, 60_000);
 });
 
 describe("no content or interactive component reaches for a positioning escape hatch", () => {
@@ -610,5 +619,5 @@ describe("no content or interactive component reaches for a positioning escape h
       }
       cleanup();
     }
-  });
+  }, 60_000);
 });

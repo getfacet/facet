@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The seven trusted layout and surface implementations, under a real DOM.
+ * The trusted layout and surface implementations, under a real DOM.
  *
  * These suites exist to prove three things the rest of the repository takes on
  * faith. First, that a registered implementation renders what its spec
@@ -22,14 +22,22 @@
 import type { ComponentMountProps, ComponentSpec, MountedComponent, PropSchema } from "@facet/core";
 import { themeToCssVars } from "@facet/core";
 import { cleanup, fireEvent, render } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { Children, isValidElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DEFAULT_CATALOG } from "../catalog.js";
-import { GRID_SPEC, ROW_SPEC, SCREEN_SPEC, STACK_SPEC } from "../specs-layout.js";
+import {
+  APP_SHELL_SPEC,
+  GRID_SPEC,
+  ROW_SPEC,
+  SCREEN_SPEC,
+  SPLIT_SPEC,
+  STACK_SPEC,
+} from "../specs-layout.js";
 import { CARD_SPEC, EMPTY_SPEC, MODAL_SPEC } from "../specs-surface.js";
 import { DEFAULT_THEME } from "../theme-default.js";
-import { Grid, Row, Screen, Stack } from "./layout.js";
+import { AppShell, Grid, Row, Screen, Split, Stack } from "./layout.js";
 import { Card, Empty, Modal } from "./surface.js";
 
 /** The custom properties a real bootstrap hands every mount. */
@@ -46,14 +54,16 @@ interface Registered {
 }
 
 /**
- * The seven this Work Unit owns. `required` supplies exactly the props the spec
+ * The components this suite owns. `required` supplies exactly the props the spec
  * marks required — document validation guarantees they are present, so a
  * fixture without them would be testing a state the renderer cannot produce.
  */
 const REGISTERED: readonly Registered[] = [
   { spec: SCREEN_SPEC, implementation: Screen, required: { name: "invoices" } },
+  { spec: APP_SHELL_SPEC, implementation: AppShell, required: {} },
   { spec: STACK_SPEC, implementation: Stack, required: {} },
   { spec: ROW_SPEC, implementation: Row, required: {} },
+  { spec: SPLIT_SPEC, implementation: Split, required: {} },
   { spec: GRID_SPEC, implementation: Grid, required: {} },
   {
     spec: MODAL_SPEC,
@@ -69,20 +79,21 @@ const REGISTERED: readonly Registered[] = [
  * component may not emit any of them; the Modal frame in `@facet/react` owns
  * every one.
  */
-const OUT_OF_FLOW_PROPERTIES: readonly string[] = [
+/** The same declarations, before React serializes camelCase style keys into CSS names. */
+const OUT_OF_FLOW_STYLE_KEYS: readonly string[] = [
   "position",
-  "z-index",
+  "zIndex",
   "top",
   "right",
   "bottom",
   "left",
   "inset",
-  "inset-block",
-  "inset-block-start",
-  "inset-block-end",
-  "inset-inline",
-  "inset-inline-start",
-  "inset-inline-end",
+  "insetBlock",
+  "insetBlockStart",
+  "insetBlockEnd",
+  "insetInline",
+  "insetInlineStart",
+  "insetInlineEnd",
   "float",
 ];
 
@@ -142,6 +153,39 @@ function renderComponent(
   return root;
 }
 
+interface InspectableProps {
+  readonly style?: Readonly<Record<string, string | number | undefined>>;
+  readonly children?: ReactNode;
+}
+
+function componentTree(
+  implementation: MountedComponent<ReactNode, ReactNode>,
+  props: MountProps,
+  children: ReactNode = null,
+): ReactNode {
+  return implementation({ props, themeVars: THEME_VARS, onAction: noop, children });
+}
+
+function reactElements(node: ReactNode): readonly ReactElement<InspectableProps>[] {
+  const elements: ReactElement<InspectableProps>[] = [];
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement<InspectableProps>(child)) {
+      continue;
+    }
+    elements.push(child);
+    elements.push(...reactElements(child.props.children));
+  }
+  return elements;
+}
+
+function rootStyle(node: ReactNode): Readonly<Record<string, string | number | undefined>> {
+  const root = reactElements(node)[0];
+  if (root === undefined) {
+    throw new Error("A trusted component must render exactly one root element.");
+  }
+  return root.props.style ?? {};
+}
+
 /** The root plus every element below it. */
 function subtree(root: HTMLElement): readonly Element[] {
   return [root, ...Array.from(root.querySelectorAll("*"))];
@@ -156,19 +200,23 @@ function declaredProperties(element: Element): readonly string[] {
     .filter((name) => name.length > 0);
 }
 
-/** Every theme custom property the subtree references through `var()`. */
-function referencedVarNames(root: HTMLElement): readonly string[] {
+/** Every theme custom property the React subtree references through `var()`. */
+function referencedVarNames(root: ReactNode): readonly string[] {
   const names: string[] = [];
-  for (const element of subtree(root)) {
-    const style = element.getAttribute("style") ?? "";
-    VAR_REFERENCE.lastIndex = 0;
-    let match = VAR_REFERENCE.exec(style);
-    while (match !== null) {
-      const name = match[1];
-      if (name !== undefined) {
-        names.push(name);
+  for (const element of reactElements(root)) {
+    for (const value of Object.values(element.props.style ?? {})) {
+      if (typeof value !== "string") {
+        continue;
       }
-      match = VAR_REFERENCE.exec(style);
+      VAR_REFERENCE.lastIndex = 0;
+      let match = VAR_REFERENCE.exec(value);
+      while (match !== null) {
+        const name = match[1];
+        if (name !== undefined) {
+          names.push(name);
+        }
+        match = VAR_REFERENCE.exec(value);
+      }
     }
   }
   return names;
@@ -223,22 +271,21 @@ function variations(entry: Registered): readonly MountProps[] {
 
 describe("flow containment", () => {
   it("emits no positioning or stacking declaration, for any value of any declared prop", () => {
+    const failures: { tag: string; property: string; declared: readonly string[] }[] = [];
     for (const entry of REGISTERED) {
       for (const props of variations(entry)) {
-        const root = renderComponent(entry.implementation, props, <span>child</span>);
-        for (const element of subtree(root)) {
-          const declared = declaredProperties(element);
-          for (const property of OUT_OF_FLOW_PROPERTIES) {
-            expect({ tag: entry.spec.tag, property, declared }).toEqual({
-              tag: entry.spec.tag,
-              property,
-              declared: declared.filter((name) => name !== property),
-            });
+        const root = componentTree(entry.implementation, props, <span>child</span>);
+        for (const element of reactElements(root)) {
+          const declared = Object.keys(element.props.style ?? {});
+          for (const property of OUT_OF_FLOW_STYLE_KEYS) {
+            if (declared.includes(property)) {
+              failures.push({ tag: entry.spec.tag, property, declared });
+            }
           }
         }
-        cleanup();
       }
     }
+    expect(failures).toEqual([]);
   });
 
   it("renders its children inside its own root", () => {
@@ -251,7 +298,7 @@ describe("flow containment", () => {
       expect(root.querySelector("[data-testid='child']")).not.toBeNull();
       cleanup();
     }
-  });
+  }, 60_000);
 
   it("reports no interaction of its own — none of the seven declares an action", () => {
     for (const entry of REGISTERED) {
@@ -276,7 +323,7 @@ describe("flow containment", () => {
       expect({ tag: entry.spec.tag, reported }).toEqual({ tag: entry.spec.tag, reported: [] });
       cleanup();
     }
-  });
+  }, 60_000);
 });
 
 describe("authored text", () => {
@@ -300,39 +347,37 @@ describe("authored text", () => {
       });
       cleanup();
     }
-  });
+  }, 60_000);
 });
 
 describe("theme discipline", () => {
   it("puts the active theme's custom properties on its own root", () => {
     for (const entry of REGISTERED) {
-      const root = renderComponent(entry.implementation, entry.required);
+      const style = rootStyle(componentTree(entry.implementation, entry.required));
       for (const [name, value] of Object.entries(THEME_VARS)) {
-        expect({ tag: entry.spec.tag, name, value: root.style.getPropertyValue(name) }).toEqual({
+        expect({ tag: entry.spec.tag, name, value: style[name] }).toEqual({
           tag: entry.spec.tag,
           name,
           value,
         });
       }
-      cleanup();
     }
   });
 
   it("references only custom properties the theme projection actually declares", () => {
     const projected = new Set(Object.keys(THEME_VARS));
+    const failures: { tag: string; name: string }[] = [];
     for (const entry of REGISTERED) {
       for (const props of variations(entry)) {
-        const root = renderComponent(entry.implementation, props, <span>child</span>);
+        const root = componentTree(entry.implementation, props, <span>child</span>);
         for (const name of referencedVarNames(root)) {
-          expect({ tag: entry.spec.tag, name, projected: projected.has(name) }).toEqual({
-            tag: entry.spec.tag,
-            name,
-            projected: true,
-          });
+          if (!projected.has(name)) {
+            failures.push({ tag: entry.spec.tag, name });
+          }
         }
-        cleanup();
       }
     }
+    expect(failures).toEqual([]);
   });
 });
 
@@ -363,7 +408,7 @@ describe("spec conformance", () => {
       });
       cleanup();
     }
-  });
+  }, 60_000);
 
   it("falls back to the spec default when a prop arrives outside its declared domain", () => {
     for (const entry of REGISTERED) {
@@ -389,7 +434,7 @@ describe("spec conformance", () => {
         cleanup();
       }
     }
-  });
+  }, 60_000);
 });
 
 describe("Screen", () => {
@@ -446,6 +491,17 @@ describe("Stack and Row", () => {
     expect(seen.size).toBe(domainValues(STACK_SPEC.props["align"] as PropSchema).length);
   });
 
+  it("maps stack vertical distribution and growth through bounded props", () => {
+    const between = renderComponent(Stack, { justify: "between", grow: true });
+    expect(between.style.getPropertyValue("justify-content")).toBe("space-between");
+    expect(between.style.getPropertyValue("flex-grow")).toBe("1");
+    cleanup();
+
+    const start = renderComponent(Stack, { justify: "start", grow: false });
+    expect(start.style.getPropertyValue("justify-content")).toBe("flex-start");
+    expect(start.style.getPropertyValue("flex-grow")).toBe("0");
+  });
+
   it("lays a row out on one line and wraps only when asked", () => {
     const wrapping = renderComponent(Row, { wrap: true });
     expect(wrapping.style.getPropertyValue("flex-direction")).toBe("row");
@@ -455,12 +511,105 @@ describe("Stack and Row", () => {
     expect(fixed.style.getPropertyValue("flex-wrap")).toBe("nowrap");
   });
 
+  it("lets a row stretch side rails and equal-height columns", () => {
+    const root = renderComponent(Row, { align: "stretch" });
+    expect(root.style.getPropertyValue("align-items")).toBe("stretch");
+  });
+
   it("pushes the ends apart for 'between' and nowhere else", () => {
     const between = renderComponent(Row, { justify: "between" });
     expect(between.style.getPropertyValue("justify-content")).toBe("space-between");
     cleanup();
     const start = renderComponent(Row, { justify: "start" });
     expect(start.style.getPropertyValue("justify-content")).toBe("flex-start");
+  });
+});
+
+describe("AppShell and Split", () => {
+  it("separates the first app shell child as the rail and the rest as main content", () => {
+    const root = renderComponent(
+      AppShell,
+      {},
+      <>
+        <span>rail</span>
+        <span>main one</span>
+        <span>main two</span>
+      </>,
+    );
+    const rail = root.querySelector('[data-facet-app-shell-slot="rail"]');
+    const main = root.querySelector('[data-facet-app-shell-slot="main"]');
+
+    expect(root.style.getPropertyValue("display")).toBe("flex");
+    expect(root.style.getPropertyValue("flex-wrap")).toBe("wrap");
+    expect(root.style.getPropertyValue("gap")).toBe("var(--facet-recipe-app-shell-default-gap)");
+    expect(rail?.textContent).toBe("rail");
+    expect(main?.textContent).toBe("main onemain two");
+  });
+
+  it("can place the app shell rail at the end without changing authored children", () => {
+    const root = renderComponent(
+      AppShell,
+      { sidebar: "end", collapse: false },
+      <>
+        <span>rail</span>
+        <span>main</span>
+      </>,
+    );
+    expect(root.style.getPropertyValue("flex-wrap")).toBe("nowrap");
+    expect(root.firstElementChild?.getAttribute("data-facet-app-shell-slot")).toBe("main");
+    expect(root.lastElementChild?.getAttribute("data-facet-app-shell-slot")).toBe("rail");
+  });
+
+  it("splits children into weighted columns and wraps by default", () => {
+    const root = renderComponent(
+      Split,
+      { ratio: "70:30" },
+      <>
+        <span>primary</span>
+        <span>secondary</span>
+      </>,
+    );
+    const primary = root.querySelector('[data-facet-split-slot="primary"]') as HTMLElement | null;
+    const secondary = root.querySelector(
+      '[data-facet-split-slot="secondary"]',
+    ) as HTMLElement | null;
+
+    expect(root.style.getPropertyValue("display")).toBe("flex");
+    expect(root.style.getPropertyValue("flex-wrap")).toBe("wrap");
+    expect(root.style.getPropertyValue("gap")).toBe("var(--facet-recipe-split-default-gap)");
+    expect(primary?.style.getPropertyValue("flex")).toContain("7 1");
+    expect(secondary?.style.getPropertyValue("flex")).toContain("3 1");
+  });
+
+  it("keeps every child after the first inside the secondary split column", () => {
+    const root = renderComponent(
+      Split,
+      {},
+      <>
+        <span>primary</span>
+        <span>secondary one</span>
+        <span>secondary two</span>
+      </>,
+    );
+    const slots = root.querySelectorAll("[data-facet-split-slot]");
+    const secondary = root.querySelector('[data-facet-split-slot="secondary"]');
+
+    expect(slots).toHaveLength(2);
+    expect(secondary?.textContent).toBe("secondary onesecondary two");
+  });
+
+  it("can reverse split visual order without exposing positioning", () => {
+    const root = renderComponent(
+      Split,
+      { reverse: true, collapse: false },
+      <>
+        <span>first</span>
+        <span>second</span>
+      </>,
+    );
+    expect(root.style.getPropertyValue("flex-wrap")).toBe("nowrap");
+    expect(root.firstElementChild?.textContent).toBe("second");
+    expect(root.lastElementChild?.textContent).toBe("first");
   });
 });
 

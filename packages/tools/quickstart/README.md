@@ -37,6 +37,9 @@ With no `facet.md`, Quickstart starts from a validated four-screen product tour:
 The seed is ordinary default-catalog component markup. The runtime validates it
 before the wrapper listens, inlines the derived first-paint document into the
 HTML shell, and passes the same author markup to the reference server bootstrap.
+The browser also includes an **Assets** view where the default service groups,
+component vocabulary, and validated screen examples can be inspected without
+mutating the live stage.
 
 ## Flags
 
@@ -106,6 +109,10 @@ wrapper because the reference brain runs in-process.
 
 The browser bundle uses `@facet/react`, `@facet/assets/react`, `@facet/client`,
 and the default catalog/theme to mount the live page and conversation surface.
+The same bundle exposes a local Assets view for the default catalog: service
+groups, component role groups, and full-screen examples rendered through the
+default catalog, registry, and theme. Selecting an Assets example is local UI
+state and does not call the live transport.
 Custom components, credentials, tenant routing, and domain data fetches belong
 to a host integration outside Quickstart.
 

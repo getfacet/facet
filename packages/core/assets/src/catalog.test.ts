@@ -11,24 +11,49 @@ import * as barrel from "./index.js";
  * The default catalog, written out once.
  *
  * This roster is the pin, not a restatement: DC-016 says the default catalog is
- * exactly these thirteen, so the list lives here in full rather than being
- * derived from the four group modules the implementation composes. A group that
+ * exactly this roster, so the list lives here in full rather than being
+ * derived from the five group modules the implementation composes. A group that
  * grows, shrinks or renames a member fails against this literal instead of
- * quietly redefining what "exactly 13" means.
+ * quietly redefining the default asset catalog.
  */
 const DEFAULT_TAGS: readonly string[] = [
   "Screen",
+  "AppShell",
   "Stack",
   "Row",
+  "Split",
   "Grid",
   "Modal",
-  "Text",
   "Card",
-  "Metric",
-  "Button",
-  "Badge",
   "Empty",
+  "LogoMark",
+  "Nav",
+  "SideNav",
+  "SideNavItem",
+  "Section",
+  "Divider",
+  "Hero",
+  "Avatar",
+  "ProfileHeader",
+  "ProductShowcase",
+  "VisualPanel",
+  "MediaCard",
+  "LinkList",
+  "SocialLinks",
+  "FeatureList",
+  "StatStrip",
+  "Gallery",
+  "Testimonial",
+  "Timeline",
+  "CTA",
+  "Alert",
+  "Progress",
+  "Footer",
+  "Text",
+  "Metric",
+  "Badge",
   "Table",
+  "Button",
   "Field",
 ];
 
@@ -72,20 +97,20 @@ function readCode(file: string): string {
     .replaceAll(/\/\/[^\n]*/gu, "");
 }
 
-describe("DEFAULT_CATALOG — exactly thirteen components (DC-016)", () => {
-  it("registers exactly the thirteen default tags, no more and no fewer", () => {
+describe("DEFAULT_CATALOG — exact default service-surface roster (DC-016)", () => {
+  it("registers exactly the default tags, no more and no fewer", () => {
     expect(sortedTags(DEFAULT_COMPONENT_SPECS)).toEqual([...DEFAULT_TAGS].sort());
-    expect(DEFAULT_COMPONENT_SPECS).toHaveLength(13);
+    expect(DEFAULT_COMPONENT_SPECS).toHaveLength(38);
   });
 
-  it("carries those same thirteen into the catalog it publishes", () => {
+  it("carries those same specs into the catalog it publishes", () => {
     expect(DEFAULT_CATALOG.components).toEqual(DEFAULT_COMPONENT_SPECS);
   });
 
-  it("passes validateCatalog, and the accepted catalog has exactly 13 components", () => {
+  it("passes validateCatalog, and the accepted catalog has the exact default roster", () => {
     const result = validateCatalog(DEFAULT_CATALOG);
     expect(result.ok ? "accepted" : `${result.code} at ${result.at}`).toBe("accepted");
-    expect(result.ok ? result.catalog.components.length : -1).toBe(13);
+    expect(result.ok ? result.catalog.components.length : -1).toBe(38);
     expect(result.ok ? sortedTags(result.catalog.components) : []).toEqual(
       [...DEFAULT_TAGS].sort(),
     );
@@ -104,8 +129,8 @@ describe("DEFAULT_CATALOG — exactly thirteen components (DC-016)", () => {
     expect(DEFAULT_COMPONENT_SPECS.some((spec) => spec.tag === "Facet")).toBe(false);
   });
 
-  it("resolves one tag to one spec: thirteen members, thirteen distinct tags", () => {
-    expect(new Set(DEFAULT_COMPONENT_SPECS.map((spec) => spec.tag)).size).toBe(13);
+  it("resolves one tag to one spec: every default member has a distinct tag", () => {
+    expect(new Set(DEFAULT_COMPONENT_SPECS.map((spec) => spec.tag)).size).toBe(38);
   });
 
   it("registers a Modal the framework frame can project", () => {
@@ -118,14 +143,14 @@ describe("DEFAULT_CATALOG — exactly thirteen components (DC-016)", () => {
 describe("DEFAULT_CATALOG — the Screen requirement is what makes it complete", () => {
   it("rejects the same catalog with Screen removed", () => {
     const without = DEFAULT_COMPONENT_SPECS.filter((spec) => spec.tag !== "Screen");
-    expect(without).toHaveLength(12);
+    expect(without).toHaveLength(37);
     expect(rejection(catalogRecord(without))).toEqual(["missing_screen_spec", "components"]);
   });
 
   it("rejects a second Screen at the second member's position", () => {
     const screen = DEFAULT_COMPONENT_SPECS.find((spec) => spec.tag === "Screen") as ComponentSpec;
     const twice = [...DEFAULT_COMPONENT_SPECS, screen];
-    expect(rejection(catalogRecord(twice))).toEqual(["duplicate_tag", "components[13].tag"]);
+    expect(rejection(catalogRecord(twice))).toEqual(["duplicate_tag", "components[38].tag"]);
   });
 });
 
@@ -211,6 +236,7 @@ describe("catalog.ts — source hygiene", () => {
     );
     expect([...new Set(specifiers)].sort()).toEqual([
       "./specs-content.js",
+      "./specs-expression.js",
       "./specs-interactive.js",
       "./specs-layout.js",
       "./specs-surface.js",

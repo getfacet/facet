@@ -47,7 +47,12 @@ describe("quickstart guide brief", () => {
 
     expect(QUICKSTART_PAGE_BRIEF).not.toMatch(retiredContainerTerms);
     expect(QUICKSTART_PAGE_BRIEF).toMatch(/safe declarative\s+component markup/);
-    expect(QUICKSTART_PAGE_BRIEF).toContain("Screen, Stack, Row, Grid, Card");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Screen, Stack, Row, Grid, Modal");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("ProfileHeader");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("ProductShowcase");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("StatStrip, Gallery");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Testimonial, Timeline");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Table, Button, and Field");
   });
 });
 
@@ -236,9 +241,9 @@ describe("runCli — quickstart brick default", () => {
 
       expect(globals.__FACET_INITIAL_STAGE__).toEqual(QUICKSTART_INITIAL_STAGE);
       expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(84);
-      expect(seedText).toHaveLength(12_483);
+      expect(seedText).toHaveLength(12_495);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "3990dcdd1b25f6d8e7e149060409e523d37bde2b2faaab9a530c969a2a57504d",
+        "fb8786b4bc321b6c0e40b5e0e9493913cd9c890134a96860a64e70672c5f9bd2",
       );
     } finally {
       await running.close();

@@ -25,8 +25,12 @@ component markup:
   validate, and authorize patches
 - data providers and agent tools fetch domain data; Facet renders only bounded
   data bindings and explicit visitor events
-- layout stays flow-contained through Screen, Stack, Row, Grid, Card, Modal,
-  Text, Metric, Badge, Field, Button, Table, and Empty components
+- layout stays flow-contained through registered default-catalog components:
+  Screen, Stack, Row, Grid, Modal, Card, Empty, LogoMark, Nav, SideNav, Section,
+  Divider, Hero, Avatar, ProfileHeader, ProductShowcase, VisualPanel,
+  MediaCard, LinkList, SocialLinks, FeatureList, StatStrip, Gallery,
+  Testimonial, Timeline, CTA, Alert, Progress, Footer, Text, Metric, Badge,
+  Table, Button, and Field
 
 On the first visit, keep or refine the seeded four-screen tour:
 
@@ -46,9 +50,13 @@ changes a hidden screen, navigate to that screen in the same turn so the result
 is immediately visible.
 
 When the visitor asks what Facet can do, update the page with a concrete
-component-markup example instead of only answering in chat. Good examples include
-a pricing comparison, an onboarding flow, a dashboard, an input-driven workflow,
-a replay/evaluation view, or a multi-step assistant surface.
+component-markup example instead of only answering in chat. Choose the service group before choosing components:
+Personal Presence, Marketing / Landing, Commerce / Booking, SaaS / Workspace,
+Content / Editorial, Data / Report, or Support / Form Flow. A dashboard/workspace is only one group;
+do not make every request into metrics and tables. Good examples include a
+personal bio, launch page, booking inquiry, article, report, support intake,
+dashboard, input-driven workflow, replay/evaluation view, or multi-step
+assistant surface.
 
 When changing the page:
 
@@ -109,7 +117,7 @@ export const QUICKSTART_INITIAL_MARKUP = `<Facet entry="what">
       ${quickstartNavigationMarkup()}
       <Card title="Default catalog">
         <Stack gap="sm">
-          <Text value="The default catalog includes layout, surface, content, interactive, and data-display components." />
+          <Text value="The default catalog includes layout, surface, expression, content, interactive, and data-display components." />
           <Row gap="sm">
             <Badge label="Screen" />
             <Badge label="Stack" />

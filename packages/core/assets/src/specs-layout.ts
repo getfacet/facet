@@ -1,12 +1,13 @@
 /**
- * The default layout component specs: `Screen`, `Stack`, `Row` and `Grid`.
+ * The default layout component specs: `Screen`, `AppShell`, `Stack`, `Row`,
+ * `Split` and `Grid`.
  *
- * These four are the whole of Facet's default layout vocabulary. Everything an
- * agent can say about arrangement it says here, through a handful of named
- * scalar props over the theme's space tokens — a gap, an alignment, a column
- * count. There is no coordinate, no stacking control and no escape hatch,
- * because layout stays **flow-contained**: children occupy the space their
- * parent gives them, in the order they were authored. Overlap exists only
+ * These six are the whole of Facet's default layout vocabulary. Everything an
+ * agent can say about arrangement it says here, through named scalar props over
+ * the theme's space tokens — a gap, an alignment, a column count, or a closed
+ * layout ratio. There is no coordinate, no stacking control and no escape
+ * hatch, because layout stays **flow-contained**: children occupy the space
+ * their parent gives them, in the order they were authored. Overlap exists only
  * through the framework's dedicated Modal frame, which is not authored geometry
  * at all.
  *
@@ -116,6 +117,19 @@ export const STACK_SPEC: ComponentSpec = {
       enum: ["start", "center", "end", "stretch"],
       default: "stretch",
     },
+    justify: {
+      type: "string",
+      guidance:
+        "How leftover vertical space is distributed when the stack grows. Use 'between' to pin the first and last child apart inside an equal-height card.",
+      enum: ["start", "center", "end", "between"],
+      default: "start",
+    },
+    grow: {
+      type: "boolean",
+      guidance:
+        "Whether this stack expands to fill available vertical space from its parent. Use it sparingly inside equal-height cards.",
+      default: false,
+    },
     padding: {
       type: "string",
       guidance:
@@ -129,6 +143,42 @@ export const STACK_SPEC: ComponentSpec = {
     tokens: {
       defaultGap: "length",
       padding: "length",
+    },
+  },
+};
+
+/** A stable app frame: one rail child and the remaining children as main content. */
+export const APP_SHELL_SPEC: ComponentSpec = {
+  tag: "AppShell",
+  whenToUse:
+    "Frame an app-like screen with a side rail and main content, without hand-building the stretch and responsive behavior.",
+  props: {
+    gap: {
+      type: "string",
+      guidance: "Space between the rail and main content, named in theme space tokens.",
+      enum: ["none", "xs", "sm", "md", "lg", "xl"],
+      default: "lg",
+    },
+    sidebar: {
+      type: "string",
+      guidance:
+        "Which side the first child appears on as the rail. Remaining children become the main content region.",
+      enum: ["start", "end"],
+      default: "start",
+    },
+    collapse: {
+      type: "boolean",
+      guidance:
+        "Whether the main content can wrap under the rail when the frame runs out of width.",
+      default: true,
+    },
+  },
+  acceptsChildren: true,
+  themeRecipe: {
+    tokens: {
+      defaultGap: "length",
+      mainMinWidth: "length",
+      minHeight: "length",
     },
   },
 };
@@ -148,8 +198,8 @@ export const ROW_SPEC: ComponentSpec = {
     align: {
       type: "string",
       guidance:
-        "How children line up vertically within the row. 'baseline' aligns their text rather than their boxes.",
-      enum: ["start", "center", "end", "baseline"],
+        "How children line up vertically within the row. Use 'stretch' for side rails and equal-height columns; 'baseline' aligns text rather than boxes.",
+      enum: ["start", "center", "end", "stretch", "baseline"],
       default: "center",
     },
     justify: {
@@ -171,6 +221,53 @@ export const ROW_SPEC: ComponentSpec = {
     tokens: {
       defaultGap: "length",
       padding: "length",
+    },
+  },
+};
+
+/** A two-column split for asymmetric pages, hero/form pairs and editorial layouts. */
+export const SPLIT_SPEC: ComponentSpec = {
+  tag: "Split",
+  whenToUse:
+    "Divide content into two asymmetric columns, such as hero plus form, product story plus proof, or profile plus links.",
+  props: {
+    ratio: {
+      type: "string",
+      guidance:
+        "How the first and second columns share space on wide containers. Use 60:40 or 40:60 for most service pages.",
+      enum: ["50:50", "60:40", "40:60", "70:30", "30:70"],
+      default: "60:40",
+    },
+    gap: {
+      type: "string",
+      guidance: "Space between split columns, named in theme space tokens.",
+      enum: ["none", "xs", "sm", "md", "lg", "xl"],
+      default: "lg",
+    },
+    align: {
+      type: "string",
+      guidance:
+        "How columns line up vertically. Use 'stretch' for paired panels and 'center' for hero/media compositions.",
+      enum: ["start", "center", "end", "stretch"],
+      default: "stretch",
+    },
+    reverse: {
+      type: "boolean",
+      guidance: "Whether the visual order is reversed while preserving the authored children.",
+      default: false,
+    },
+    collapse: {
+      type: "boolean",
+      guidance:
+        "Whether columns wrap when there is not enough width. Leave it on for most screens.",
+      default: true,
+    },
+  },
+  acceptsChildren: true,
+  themeRecipe: {
+    tokens: {
+      defaultGap: "length",
+      minColumnWidth: "length",
     },
   },
 };
@@ -214,7 +311,9 @@ export const GRID_SPEC: ComponentSpec = {
 /** The layout group, in the order the default catalog lists it. */
 export const LAYOUT_SPECS: readonly ComponentSpec[] = [
   SCREEN_SPEC,
+  APP_SHELL_SPEC,
   STACK_SPEC,
   ROW_SPEC,
+  SPLIT_SPEC,
   GRID_SPEC,
 ];

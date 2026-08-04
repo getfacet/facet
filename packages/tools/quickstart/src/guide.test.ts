@@ -56,8 +56,8 @@ describe("quickstart guide", () => {
   it("pins the regenerated seed size and sha256 golden", () => {
     const json = JSON.stringify(QUICKSTART_INITIAL_STAGE);
 
-    expect(json).toHaveLength(12483);
-    expect(sha256(json)).toBe("3990dcdd1b25f6d8e7e149060409e523d37bde2b2faaab9a530c969a2a57504d");
+    expect(json).toHaveLength(12495);
+    expect(sha256(json)).toBe("fb8786b4bc321b6c0e40b5e0e9493913cd9c890134a96860a64e70672c5f9bd2");
   });
 
   it("keeps the seed within the quickstart prompt budget", () => {
@@ -89,5 +89,13 @@ describe("quickstart guide", () => {
     expect(QUICKSTART_PAGE_BRIEF).not.toContain("Pattern"); // component-hard-cut: allowed-negative
     expect(QUICKSTART_PAGE_BRIEF).not.toContain("Preset"); // component-hard-cut: allowed-negative
     expect(QUICKSTART_PAGE_BRIEF).not.toContain("Brick"); // component-hard-cut: allowed-negative
+  });
+
+  it("brief tells the agent to choose a service group before components", () => {
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Choose the service group before choosing components");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Personal Presence");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Marketing / Landing");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Data / Report");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("dashboard/workspace is only one group");
   });
 });

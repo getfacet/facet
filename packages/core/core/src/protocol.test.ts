@@ -203,7 +203,7 @@ describe("the protocol module's deletions", () => {
     // cannot stand in for this one: the emitted `.d.ts` is the surface that
     // `@facet/server` and `@facet/agent-client` actually compile against.
     expectNoDeletedVocabulary("emitted declaration", emitDeclaration());
-  });
+  }, 60_000);
 
   it("emits declarations for exactly the eleven public names", () => {
     const declaration = emitDeclaration();

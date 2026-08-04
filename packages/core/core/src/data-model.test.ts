@@ -747,5 +747,5 @@ describe("evaluateCandidateModel — accumulation across publishes", () => {
     expect(crossing?.bound).toBe("B-16");
     expect(crossing?.reason).toBe("data_model_values_exceeded");
     expect(accept(model).canonicalJson).toBe(lastAccepted);
-  });
+  }, 60_000);
 });

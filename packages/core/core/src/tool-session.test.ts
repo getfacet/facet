@@ -130,7 +130,12 @@ function importSpecifiers(source: string): readonly string[] {
  * along, which is the point: the emitted `.d.ts` is where a leaked dependency
  * would show up.
  */
+let emittedDeclaration: string | undefined;
+
 function emitDeclaration(): string {
+  if (emittedDeclaration !== undefined) {
+    return emittedDeclaration;
+  }
   const outDir = mkdtempSync(join(tmpdir(), "facet-tool-session-"));
   try {
     execFileSync(
@@ -154,7 +159,8 @@ function emitDeclaration(): string {
       ],
       { cwd: REPO_ROOT, encoding: "utf8", stdio: "pipe" },
     );
-    return readFileSync(join(outDir, "tool-session.d.ts"), "utf8");
+    emittedDeclaration = readFileSync(join(outDir, "tool-session.d.ts"), "utf8");
+    return emittedDeclaration;
   } finally {
     rmSync(outDir, { recursive: true, force: true });
   }
@@ -339,7 +345,7 @@ describe("the port is a types-only module", () => {
     // this module's prose necessarily explains which two packages meet at the
     // port. What must not appear is a reference in the declarations themselves.
     expect(stripComments(declaration)).not.toMatch(/@facet\/(?:runtime|agent-tools)/);
-  });
+  }, 60_000);
 
   it("emits exactly the public tool-session names", () => {
     const declaration = emitDeclaration();

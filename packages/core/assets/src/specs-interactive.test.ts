@@ -11,18 +11,10 @@ import {
 } from "@facet/core";
 import type { ComponentSpec, DataModel, FacetCatalog, PropSchema } from "@facet/core";
 
-import { BUTTON_SPEC, FIELD_SPEC, INTERACTIVE_SPECS, TABLE_SPEC } from "./specs-interactive.js";
+import { BUTTON_SPEC, FIELD_SPEC, INTERACTIVE_SPECS } from "./specs-interactive.js";
 
-/** The three interactive tags this module owns, in declaration order. */
-const INTERACTIVE_TAGS: readonly string[] = ["Button", "Field", "Table"];
-
-/**
- * The exact `Table.rows` declaration the structured branch admits: the type, the
- * guidance, `required`, and a literal `bindable: true`. Nothing else — no
- * `items`, no domain, no default — because the value never comes from the
- * markup.
- */
-const TABLE_ROWS_KEYS: readonly string[] = ["type", "guidance", "required", "bindable"];
+/** The two interactive tags this module owns, in declaration order. */
+const INTERACTIVE_TAGS: readonly string[] = ["Button", "Field"];
 
 /**
  * The framework collection address, stated here as a literal rather than read
@@ -130,7 +122,7 @@ const EVENT_ARG_FORBIDDEN_KEYS: readonly string[] = ["default", "bindable"];
  * stored screen root like any other node — so a catalog assembled from
  * interactive specs alone is incomplete by construction. This stub supplies
  * that one member and nothing else, which keeps the assertions below about
- * Button, Field and Table instead of about whatever the real `Screen` happens
+ * Button and Field instead of about whatever the real `Screen` happens
  * to declare.
  */
 const SCREEN_STUB: Record<string, unknown> = {
@@ -142,7 +134,7 @@ const SCREEN_STUB: Record<string, unknown> = {
   acceptsChildren: true,
 };
 
-/** The registered set an authored document actually reaches: the stub plus the three. */
+/** The registered set an authored document actually reaches: the stub plus the two. */
 const REGISTERED_SPECS: readonly unknown[] = [SCREEN_STUB, ...INTERACTIVE_SPECS];
 
 const SOURCE = readFileSync(new URL("./specs-interactive.ts", import.meta.url), "utf8");
@@ -405,15 +397,13 @@ function authorOutcome(body: string, model: DataModel = {}): string {
   return result.ok ? "accepted" : result.error.code;
 }
 
-const ROWS_MODEL: DataModel = { sales: { rows: [{ month: "2026-07", revenue: 23 }] } };
-
-describe("interactive specs — the three tags register", () => {
-  it("declares exactly Button, Field and Table", () => {
+describe("interactive specs — the two tags register", () => {
+  it("declares exactly Button and Field", () => {
     expect(INTERACTIVE_SPECS.map((spec) => spec.tag)).toEqual(INTERACTIVE_TAGS);
   });
 
-  it("groups the three named specs in registration order", () => {
-    expect(INTERACTIVE_SPECS).toEqual([BUTTON_SPEC, FIELD_SPEC, TABLE_SPEC]);
+  it("groups the two named specs in registration order", () => {
+    expect(INTERACTIVE_SPECS).toEqual([BUTTON_SPEC, FIELD_SPEC]);
   });
 
   it("accepts every spec on its own", () => {
@@ -422,7 +412,7 @@ describe("interactive specs — the three tags register", () => {
     }
   });
 
-  it("registers all three as ordinary members alongside the required Screen", () => {
+  it("registers both as ordinary members alongside the required Screen", () => {
     expect(acceptCatalog(REGISTERED_SPECS).components.map((spec) => spec.tag)).toEqual([
       "Screen",
       ...INTERACTIVE_TAGS,
@@ -579,7 +569,7 @@ describe("interactive specs — Field declares the framework collection address 
 
   it("relays a nonconforming address from the catalog with the member index prefixed", () => {
     const broken = withoutProp(specFor("Field"), ADDRESS);
-    const result = validateCatalog({ components: [SCREEN_STUB, BUTTON_SPEC, broken, TABLE_SPEC] });
+    const result = validateCatalog({ components: [SCREEN_STUB, BUTTON_SPEC, broken] });
     expect(result.ok ? ["accepted", ""] : [result.code, result.at]).toEqual([
       "nonconforming_collect_name",
       "components[2].props.name",
@@ -736,7 +726,7 @@ describe("interactive specs — Button declares the framework collection request
       guidance,
       bindable: true,
     });
-    const result = validateCatalog({ components: [SCREEN_STUB, broken, FIELD_SPEC, TABLE_SPEC] });
+    const result = validateCatalog({ components: [SCREEN_STUB, broken, FIELD_SPEC] });
     expect(result.ok ? ["accepted", ""] : [result.code, result.at]).toEqual([
       "nonconforming_collect_request",
       "components[1].props.collect.bindable",
@@ -856,20 +846,13 @@ describe("interactive specs — Button declares the framework event argument (D-
   it("is never obligatory — an absent argument is no fault, so no bare props.arg location exists", () => {
     // Unlike the collection address, whose absence on a collectable *is* the
     // fault, the reservation only says what `arg` means once declared. Both
-    // directions: `Button` with it removed, and the two specs that never declare
-    // it, are all accepted.
+    // directions: `Button` with it removed, and the spec that never declares it,
+    // are both accepted.
     const stripped = withoutProp(specFor("Button"), EVENT_ARG);
     expect([rejection(stripped), rejectionAt(stripped)]).toEqual(["accepted", "accepted"]);
     expect(
-      ["Field", "Table"].map((tag) => [
-        tag,
-        EVENT_ARG in specFor(tag).props,
-        rejection(specFor(tag)),
-      ]),
-    ).toEqual([
-      ["Field", false, "accepted"],
-      ["Table", false, "accepted"],
-    ]);
+      ["Field"].map((tag) => [tag, EVENT_ARG in specFor(tag).props, rejection(specFor(tag))]),
+    ).toEqual([["Field", false, "accepted"]]);
   });
 
   it("is rejected under one pinned code whose location names the fault", () => {
@@ -922,7 +905,7 @@ describe("interactive specs — Button declares the framework event argument (D-
       { type: "string", guidance, bindable: true },
     ].map((schema) => {
       const broken = withProp(specFor("Button"), EVENT_ARG, schema);
-      const result = validateCatalog({ components: [SCREEN_STUB, broken, FIELD_SPEC, TABLE_SPEC] });
+      const result = validateCatalog({ components: [SCREEN_STUB, broken, FIELD_SPEC] });
       return result.ok ? ["accepted", ""] : [result.code, result.at];
     });
     expect(relayed).toEqual([
@@ -971,39 +954,6 @@ describe("interactive specs — Button declares the framework event argument (D-
   });
 });
 
-describe("interactive specs — Table.rows is a required bindable array", () => {
-  it("declares exactly the four keys the structured branch admits", () => {
-    const rows = propOf("Table", "rows");
-    expect(Object.keys(rows).sort()).toEqual([...TABLE_ROWS_KEYS].sort());
-    expect({ type: rows.type, required: rows.required, bindable: rows.bindable }).toEqual({
-      type: "array",
-      required: true,
-      bindable: true,
-    });
-  });
-
-  it("round-trips through validateCatalog unchanged", () => {
-    expect(catalogPropOf("Table", "rows")).toEqual(propOf("Table", "rows"));
-  });
-
-  it("is rejected the moment bindable is dropped, naming the flag", () => {
-    const spec = specFor("Table");
-    const rows = propOf("Table", "rows");
-    const unbindable = { type: rows.type, guidance: rows.guidance, required: true };
-    expect(rejection(withProp(spec, "rows", unbindable))).toBe("structured_prop_not_bindable");
-    expect(rejectionAt(withProp(spec, "rows", unbindable))).toBe("props.rows.bindable");
-  });
-
-  it("is filled by a data: reference and refuses an inline scalar", () => {
-    expect(authorOutcome(`<Table rows="data:sales.rows" />`, ROWS_MODEL)).toBe("accepted");
-    expect(authorOutcome(`<Table rows="none" />`, ROWS_MODEL)).toBe("invalid-value");
-  });
-
-  it("refuses a binding whose published value is not an array", () => {
-    expect(authorOutcome(`<Table rows="data:sales" />`, ROWS_MODEL)).toBe("unresolved-binding");
-  });
-});
-
 describe("interactive specs — bounded metadata", () => {
   it("keeps every when-to-use line inside B-12 and every guidance line inside B-13", () => {
     for (const spec of INTERACTIVE_SPECS) {
@@ -1042,7 +992,7 @@ describe("interactive specs — bounded metadata", () => {
   });
 
   it("accepts exactly B-10 declared props and rejects one more", () => {
-    const spec = specFor("Table");
+    const spec = specFor("Button");
     expect(rejection(withProps(spec, padded(BOUNDS.propsPerComponentSpec)))).toBe("accepted");
     expect(rejection(withProps(spec, padded(BOUNDS.propsPerComponentSpec + 1)))).toBe(
       "too_many_props",

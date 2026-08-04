@@ -1,6 +1,6 @@
 /**
- * The trusted React implementations of the three content components: `Text`,
- * `Metric` and `Badge`.
+ * The trusted React implementations of the content components: `Text`,
+ * `Metric`, `Badge` and `Table`.
  *
  * These are the other half of the trust boundary. The catalog says a tag exists
  * and what its props mean; this module says what that tag *is* in the browser,
@@ -32,6 +32,9 @@
  * **Presentation decisions live here, not in the catalog.** `Metric.value` is
  * declared a number precisely so the host publishes `42000000` and this file
  * decides how it reads. That keeps formatting out of every host's publish path.
+ * `Table.rows` is likewise already resolved from the bounded data model before
+ * it arrives here; the implementation only derives display columns from the
+ * published records and never fetches or accepts inline row literals.
  *
  * The module is **private**: it is not barrel-exported and is not a package
  * entry point. `react.tsx` composes these into the one default registry.
@@ -233,4 +236,127 @@ export const Badge: MountedComponent<ReactNode, ReactNode> = (mount) => {
   };
 
   return <span style={mountStyle(mount.themeVars, style)}>{label}</span>;
+};
+
+/**
+ * Reads one own property of a candidate row without trusting it.
+ *
+ * Inherited keys do not stand in for declared ones, and a throwing accessor
+ * reads as absent rather than propagating: published data is the host's, and a
+ * single hostile getter must not be able to unwind the table it appears in.
+ */
+function safeOwnValue(row: unknown, key: string): unknown {
+  try {
+    if (typeof row !== "object" || row === null || Array.isArray(row)) return undefined;
+    if (!Object.hasOwn(row, key)) return undefined;
+    return (row as Record<string, unknown>)[key];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The columns a bound collection shows: the own keys of the first row that is a
+ * record.
+ *
+ * The catalog declares no `columns` prop, so the shape of the published records
+ * is the only statement of what a table's columns are. Taking the *first*
+ * record — rather than the union of every row's keys — keeps the header stable
+ * and ordered as the host published it; a later row carrying an extra key
+ * contributes nothing rather than widening the table halfway down.
+ */
+function deriveColumns(rows: readonly unknown[]): readonly string[] {
+  for (const row of rows) {
+    if (typeof row !== "object" || row === null || Array.isArray(row)) continue;
+    try {
+      return Object.keys(row);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/** What one cell shows. Only scalars render; a structure degrades to a blank. */
+function cellText(row: unknown, column: string): string {
+  const value = safeOwnValue(row, column);
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
+  if (typeof value === "boolean") return String(value);
+  return "";
+}
+
+/** A published collection of records, as rows and columns. */
+export const Table: MountedComponent<ReactNode, ReactNode> = (mount) => {
+  const raw = mount.props["rows"];
+  const rows: readonly unknown[] = Array.isArray(raw) ? raw : [];
+  const caption = readString(mount, "caption", "");
+  const columns = deriveColumns(rows);
+
+  const rootStyle: FlowStyle = {
+    minWidth: 0,
+    overflowX: "auto",
+    borderRadius: recipe("table", "radius"),
+    border: `${foundation("borderWidth", "thin")} solid ${recipe("table", "border")}`,
+    background: recipe("table", "background"),
+  };
+  const tableStyle: FlowStyle = {
+    width: "100%",
+    borderCollapse: "collapse",
+    fontFamily: foundation("typography", "fontFamilySans"),
+    fontSize: foundation("typography", "fontSizeSm"),
+    color: recipe("table", "text"),
+  };
+  const captionStyle: FlowStyle = {
+    textAlign: "left",
+    padding: `${foundation("space", "sm")} ${foundation("space", "sm")} ${foundation("space", "xs")}`,
+    color: recipe("table", "captionText"),
+    fontSize: foundation("typography", "fontSizeXs"),
+    fontWeight: foundation("typography", "fontWeightMedium"),
+  };
+  const cellStyle: FlowStyle = {
+    textAlign: "left",
+    padding: recipe("table", "cellPadding"),
+    borderBottom: `${foundation("borderWidth", "thin")} solid ${recipe("table", "rowBorder")}`,
+  };
+  const headerStyle: FlowStyle = {
+    ...cellStyle,
+    fontWeight: foundation("typography", "fontWeightMedium"),
+    color: recipe("table", "headerText"),
+    background: recipe("table", "headerBg"),
+  };
+
+  return (
+    <div data-facet-component="Table" style={mountStyle(mount.themeVars, rootStyle)}>
+      <table style={flowStyle(tableStyle)}>
+        {caption === "" ? null : <caption style={flowStyle(captionStyle)}>{caption}</caption>}
+        {columns.length === 0 ? null : (
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th key={column} scope="col" style={flowStyle(headerStyle)}>
+                  {column}
+                </th>
+              ))}
+            </tr>
+          </thead>
+        )}
+        <tbody>
+          {columns.length === 0
+            ? null
+            : rows.map((row, index) => (
+                // Published rows carry no identity of their own, so position in the
+                // bound collection is the only honest key.
+                <tr key={index}>
+                  {columns.map((column) => (
+                    <td key={column} style={flowStyle(cellStyle)}>
+                      {cellText(row, column)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+        </tbody>
+      </table>
+    </div>
+  );
 };

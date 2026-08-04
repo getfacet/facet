@@ -1,10 +1,10 @@
 /**
- * `@facet/assets/react` — the trusted React implementations of the thirteen
- * default components, as one registry.
+ * `@facet/assets/react` — the trusted React implementations of the default
+ * service-surface components, as one registry.
  *
- * One symbol, and it is the whole surface. The five modules behind it are
+ * One symbol, and it is the whole surface. The six modules behind it are
  * private: `react/style.ts` holds the shared token and prop readers, and the
- * four `react/*.tsx` groups hold the implementations themselves. None of them
+ * five `react/*.tsx` groups hold the implementations themselves. None of them
  * is a package entry point, and this barrel names every symbol it publishes
  * explicitly rather than re-exporting a module wholesale, so what this subpath
  * ships is decided here and cannot widen by accident (D-12: no `export *`,
@@ -12,7 +12,7 @@
  *
  * This is the **browser half** of the package, and the split from the root
  * entry is deliberate. `@facet/assets` itself is plain Node-safe data — a theme
- * and thirteen specs — so a server that only needs the catalog never pulls a
+ * and component specs — so a server that only needs the catalog never pulls a
  * renderer in behind it; React appears in this file's graph and nowhere else,
  * which is why `react` is an *optional* peer dependency. The edge also runs one
  * way: these implementations are written against `ComponentMountProps` and
@@ -34,9 +34,34 @@
 import type { MountedComponent } from "@facet/core";
 import type { ReactNode } from "react";
 
-import { Badge, Metric, Text } from "./react/content.js";
-import { Button, Field, Table } from "./react/interactive.js";
-import { Grid, Row, Screen, Stack } from "./react/layout.js";
+import { Badge, Metric, Table, Text } from "./react/content.js";
+import {
+  Alert,
+  Avatar,
+  CTA,
+  Divider,
+  FeatureList,
+  Footer,
+  Gallery,
+  Hero,
+  LinkList,
+  LogoMark,
+  MediaCard,
+  Nav,
+  ProductShowcase,
+  ProfileHeader,
+  Progress,
+  Section,
+  SideNav,
+  SideNavItem,
+  SocialLinks,
+  StatStrip,
+  Testimonial,
+  Timeline,
+  VisualPanel,
+} from "./react/expression.js";
+import { Button, Field } from "./react/interactive.js";
+import { AppShell, Grid, Row, Screen, Split, Stack } from "./react/layout.js";
 import { Card, Empty, Modal } from "./react/surface.js";
 
 /**
@@ -45,8 +70,9 @@ import { Card, Empty, Modal } from "./react/surface.js";
  *
  * Grouped in the order the catalog registers them — layout first (`Screen`,
  * `Stack`, `Row`, `Grid`), then the surfaces that frame content (`Modal`,
- * `Card`, `Empty`), then what a page says (`Text`, `Metric`, `Badge`), then what
- * a visitor touches (`Button`, `Field`, `Table`).
+ * `Card`, `Empty`), then expressive service-surface primitives, then what a
+ * page says (`Text`, `Metric`, `Badge`, `Table`), then what a visitor touches
+ * (`Button`, `Field`).
  *
  * Each value is an ordinary React component that already satisfies
  * `MountedComponent<ReactNode, ReactNode>` as written, so nothing is wrapped or
@@ -61,16 +87,41 @@ import { Card, Empty, Modal } from "./react/surface.js";
 export const DEFAULT_REGISTRY: Readonly<Record<string, MountedComponent<ReactNode, ReactNode>>> =
   Object.freeze({
     Screen,
+    AppShell,
     Stack,
     Row,
+    Split,
     Grid,
     Modal,
     Card,
     Empty,
+    LogoMark,
+    Nav,
+    SideNav,
+    SideNavItem,
+    Section,
+    Divider,
+    Hero,
+    Avatar,
+    ProfileHeader,
+    ProductShowcase,
+    VisualPanel,
+    MediaCard,
+    LinkList,
+    SocialLinks,
+    FeatureList,
+    StatStrip,
+    Gallery,
+    Testimonial,
+    Timeline,
+    CTA,
+    Alert,
+    Progress,
+    Footer,
     Text,
     Metric,
     Badge,
+    Table,
     Button,
     Field,
-    Table,
   });

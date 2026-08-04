@@ -4,10 +4,10 @@
  * boundary that keeps it out of the root.
  *
  * `@facet/assets` publishes two entries and they are deliberately unlike each
- * other. The root is plain, Node-safe data — a theme and thirteen component
+ * other. The root is plain, Node-safe data — a theme and component
  * specs — and a server that only needs the catalog must be able to import it
  * without pulling React in behind it. `./react` is the browser half: the
- * thirteen trusted implementations of those same specs. That split is a
+ * trusted implementations of those same specs. That split is a
  * package-shape decision (RISK-PKG-1, RISK-SHAPE-5) which nothing else in the
  * repository enforces, so the assertions below are its enforcement.
  *
@@ -15,10 +15,10 @@
  * than by reading prose:
  *
  * 1. **The barrel is exactly one key** (D-12, Barrel Export Contract list 3).
- *    `DEFAULT_REGISTRY` and nothing else; the five modules under `react/` stay
+ *    `DEFAULT_REGISTRY` and nothing else; the six modules under `react/` stay
  *    private, and there is no `export *` to widen the surface by accident.
  * 2. **The registry and the catalog carry the same tag set** (DC-016, DC-002).
- *    Exactly thirteen on both sides — the two halves of the trust boundary that
+ *    Exactly the same tags on both sides — the two halves of the trust boundary that
  *    bootstrap demands be equal. Catalog *order* is not part of the contract, so
  *    these are set comparisons, never sequence comparisons.
  * 3. **The entry boundary holds** (D-09, DC-029). Nothing reachable from the
@@ -50,13 +50,38 @@ import { themeToCssVars } from "@facet/core";
 import { cleanup, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import ts from "typescript";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { DEFAULT_CATALOG } from "./catalog.js";
 import * as rootBarrel from "./index.js";
-import { Badge, Metric, Text } from "./react/content.js";
-import { Button, Field, Table } from "./react/interactive.js";
-import { Grid, Row, Screen, Stack } from "./react/layout.js";
+import { Badge, Metric, Table, Text } from "./react/content.js";
+import {
+  Alert,
+  Avatar,
+  CTA,
+  Divider,
+  FeatureList,
+  Footer,
+  Gallery,
+  Hero,
+  LinkList,
+  LogoMark,
+  MediaCard,
+  Nav,
+  ProductShowcase,
+  ProfileHeader,
+  Progress,
+  Section,
+  SideNav,
+  SideNavItem,
+  SocialLinks,
+  StatStrip,
+  Testimonial,
+  Timeline,
+  VisualPanel,
+} from "./react/expression.js";
+import { Button, Field } from "./react/interactive.js";
+import { AppShell, Grid, Row, Screen, Split, Stack } from "./react/layout.js";
 import { Card, Empty, Modal } from "./react/surface.js";
 import * as barrel from "./react.js";
 import { DEFAULT_REGISTRY } from "./react.js";
@@ -68,7 +93,7 @@ const BARREL_KEYS: readonly string[] = ["DEFAULT_REGISTRY"];
 /**
  * Which trusted implementation each tag must resolve to, written out once.
  *
- * This is the pin for the wiring itself. A tag-set comparison proves thirteen
+ * This is the pin for the wiring itself. A tag-set comparison proves every
  * names are present; it cannot notice `Card` and `Empty` swapped, or `Badge`
  * pointing at `Text`. Naming the expected implementation per tag is what makes
  * a mis-wired registry a failure rather than a coincidence, and the values come
@@ -77,18 +102,43 @@ const BARREL_KEYS: readonly string[] = ["DEFAULT_REGISTRY"];
  */
 const EXPECTED: readonly (readonly [string, MountedComponent<ReactNode, ReactNode>])[] = [
   ["Screen", Screen],
+  ["AppShell", AppShell],
   ["Stack", Stack],
   ["Row", Row],
+  ["Split", Split],
   ["Grid", Grid],
   ["Modal", Modal],
   ["Card", Card],
   ["Empty", Empty],
+  ["LogoMark", LogoMark],
+  ["Nav", Nav],
+  ["SideNav", SideNav],
+  ["SideNavItem", SideNavItem],
+  ["Section", Section],
+  ["Divider", Divider],
+  ["Hero", Hero],
+  ["Avatar", Avatar],
+  ["ProfileHeader", ProfileHeader],
+  ["ProductShowcase", ProductShowcase],
+  ["VisualPanel", VisualPanel],
+  ["MediaCard", MediaCard],
+  ["LinkList", LinkList],
+  ["SocialLinks", SocialLinks],
+  ["FeatureList", FeatureList],
+  ["StatStrip", StatStrip],
+  ["Gallery", Gallery],
+  ["Testimonial", Testimonial],
+  ["Timeline", Timeline],
+  ["CTA", CTA],
+  ["Alert", Alert],
+  ["Progress", Progress],
+  ["Footer", Footer],
   ["Text", Text],
   ["Metric", Metric],
   ["Badge", Badge],
+  ["Table", Table],
   ["Button", Button],
   ["Field", Field],
-  ["Table", Table],
 ];
 
 /** The custom properties a real bootstrap hands every mount. */
@@ -124,6 +174,18 @@ const ALT_THEME_VARS: Readonly<Record<string, string>> = (() => {
 
 /** Matches one `var()` reference inside a declaration value. */
 const VAR_REFERENCE = /var\([^)]*\)/gu;
+
+interface ThemeSnapshot {
+  readonly tag: string;
+  readonly isConnected: boolean;
+  readonly customProperties: readonly string[];
+  readonly themedDeclarations: readonly string[];
+  readonly varReferences: readonly string[];
+  readonly referencedTokens: readonly string[];
+}
+
+let defaultThemeSnapshots: readonly ThemeSnapshot[] = [];
+let alternateThemeSnapshots: readonly ThemeSnapshot[] = [];
 
 afterEach(cleanup);
 
@@ -281,6 +343,34 @@ function referencedTokens(root: HTMLElement): readonly string[] {
   );
 }
 
+function registrySnapshots(themeVars: Readonly<Record<string, string>>): readonly ThemeSnapshot[] {
+  const snapshots: ThemeSnapshot[] = [];
+  for (const tag of Object.keys(DEFAULT_REGISTRY)) {
+    const root = mountRoot(tag, themeVars);
+    snapshots.push({
+      tag,
+      isConnected: root.isConnected,
+      customProperties: customProperties(root),
+      themedDeclarations: themedDeclarations(root),
+      varReferences: varReferences(root),
+      referencedTokens: referencedTokens(root),
+    });
+    cleanup();
+  }
+  return snapshots;
+}
+
+function snapshotByTag(snapshots: readonly ThemeSnapshot[], tag: string): ThemeSnapshot {
+  const snapshot = snapshots.find((candidate) => candidate.tag === tag);
+  if (snapshot === undefined) throw new Error(`No theme snapshot for ${tag}.`);
+  return snapshot;
+}
+
+beforeAll(() => {
+  defaultThemeSnapshots = registrySnapshots(THEME_VARS);
+  alternateThemeSnapshots = registrySnapshots(ALT_THEME_VARS);
+}, 60_000);
+
 // --- The module graph, parsed ------------------------------------------------
 
 /** A module path relative to `src/`, e.g. `react/layout.tsx`. */
@@ -420,9 +510,9 @@ function reachableFrom(entry: ModulePath): Reachable {
   return { modules: [...modules].sort(), external: [...external].sort() };
 }
 
-describe("DEFAULT_REGISTRY — thirteen trusted implementations (DC-016, DC-002)", () => {
-  it("holds exactly thirteen entries", () => {
-    expect(sortedKeys(DEFAULT_REGISTRY)).toHaveLength(13);
+describe("DEFAULT_REGISTRY — trusted default implementations (DC-016, DC-002)", () => {
+  it("holds exactly thirty-eight entries", () => {
+    expect(sortedKeys(DEFAULT_REGISTRY)).toHaveLength(38);
   });
 
   it("carries exactly the catalog's tag set — the two halves of the trust boundary", () => {
@@ -443,7 +533,7 @@ describe("DEFAULT_REGISTRY — thirteen trusted implementations (DC-016, DC-002)
     }
   });
 
-  it("pins the thirteen expected tags, so a renamed component cannot pass silently", () => {
+  it("pins the thirty-eight expected tags, so a renamed component cannot pass silently", () => {
     expect(EXPECTED.map(([tag]) => tag).sort()).toEqual(sortedKeys(DEFAULT_REGISTRY));
   });
 
@@ -468,10 +558,9 @@ describe("DEFAULT_REGISTRY — thirteen trusted implementations (DC-016, DC-002)
 
 describe("DEFAULT_REGISTRY — every entry mounts (DC-002)", () => {
   it("renders one root element per tag, given the props its own spec requires", () => {
-    for (const tag of Object.keys(DEFAULT_REGISTRY)) {
-      expect([tag, mountRoot(tag, THEME_VARS).isConnected]).toEqual([tag, true]);
-      cleanup();
-    }
+    expect(defaultThemeSnapshots.map(({ tag, isConnected }) => [tag, isConnected])).toEqual(
+      Object.keys(DEFAULT_REGISTRY).map((tag) => [tag, true]),
+    );
   });
 });
 
@@ -480,7 +569,7 @@ describe("DEFAULT_REGISTRY — every entry mounts (DC-002)", () => {
  *
  * `react/layout.test.tsx` and `react/interactive.test.tsx` already prove their
  * own components style themselves through the theme's custom properties. This
- * suite is **not** those assertions repeated thirteen times, and the difference
+ * suite is **not** those assertions repeated across every component, and the difference
  * is what makes it worth running:
  *
  * - **The registry is the iteration source.** Each module suite sweeps a
@@ -500,12 +589,12 @@ describe("DEFAULT_REGISTRY — every entry mounts (DC-002)", () => {
  *
  * The fallback ban is asserted only here.
  */
-describe("DEFAULT_REGISTRY — one theme mechanism, across all thirteen", () => {
-  it("sweeps all thirteen registered tags, so no component escapes the mechanism", () => {
+describe("DEFAULT_REGISTRY — one theme mechanism, across every default tag", () => {
+  it("sweeps all thirty-eight registered tags, so no component escapes the mechanism", () => {
     // The guard on every sweep below: they iterate the registry, so a tag added
     // without a trusted implementation of the mechanism is swept by definition
     // rather than by someone remembering to extend a list.
-    expect(Object.keys(DEFAULT_REGISTRY)).toHaveLength(13);
+    expect(Object.keys(DEFAULT_REGISTRY)).toHaveLength(38);
   });
 
   it("builds an alternate theme in which every single token's value differs", () => {
@@ -519,25 +608,22 @@ describe("DEFAULT_REGISTRY — one theme mechanism, across all thirteen", () => 
     expect(Object.keys(ALT_THEME_VARS).sort()).toEqual(Object.keys(THEME_VARS).sort());
   });
 
-  it("puts the complete projected token set on every one of the thirteen roots", () => {
+  it("puts the complete projected token set on every root", () => {
     // `mountStyle(themeVars, …)` is the mechanism: every root re-declares the
     // active theme, so a component renders correctly wherever it is mounted —
     // including the Modal frame's portal, which sits outside the screen subtree.
     const projected = Object.keys(THEME_VARS).sort();
-    for (const tag of Object.keys(DEFAULT_REGISTRY)) {
-      expect([tag, customProperties(mountRoot(tag, THEME_VARS))]).toEqual([tag, projected]);
-      cleanup();
-    }
+    expect(
+      defaultThemeSnapshots.map(({ tag, customProperties }) => [tag, customProperties]),
+    ).toEqual(Object.keys(DEFAULT_REGISTRY).map((tag) => [tag, projected]));
   });
 
   it("styles every tag from the theme: none is merely unstyled and so vacuously clean", () => {
     // Without this, a component that inlined nothing and referenced nothing
     // would satisfy every check above by doing no theming at all.
-    for (const tag of Object.keys(DEFAULT_REGISTRY)) {
-      const referenced = referencedTokens(mountRoot(tag, THEME_VARS));
-      cleanup();
-      expect([tag, referenced.length > 0]).toEqual([tag, true]);
-    }
+    expect(
+      defaultThemeSnapshots.map(({ tag, referencedTokens }) => [tag, referencedTokens.length > 0]),
+    ).toEqual(Object.keys(DEFAULT_REGISTRY).map((tag) => [tag, true]));
   });
 
   it("styles by reference, not by value: a different theme changes no declaration", () => {
@@ -546,38 +632,39 @@ describe("DEFAULT_REGISTRY — one theme mechanism, across all thirteen", () => 
     // the token holds; a component that reads the value out of `themeVars` and
     // inlines it emits a different one. Nothing else about a rendered subtree
     // separates the mechanisms this cleanly.
-    for (const tag of Object.keys(DEFAULT_REGISTRY)) {
-      const real = themedDeclarations(mountRoot(tag, THEME_VARS));
-      cleanup();
-      const alternate = themedDeclarations(mountRoot(tag, ALT_THEME_VARS));
-      cleanup();
-      expect([tag, alternate]).toEqual([tag, real]);
-    }
+    expect(
+      alternateThemeSnapshots.map(({ tag, themedDeclarations }) => [
+        tag,
+        themedDeclarations,
+        snapshotByTag(defaultThemeSnapshots, tag).themedDeclarations,
+      ]),
+    ).toEqual(
+      Object.keys(DEFAULT_REGISTRY).map((tag) => {
+        const real = snapshotByTag(defaultThemeSnapshots, tag).themedDeclarations;
+        return [tag, real, real];
+      }),
+    );
   });
 
   it("references only tokens the projection actually declares", () => {
-    for (const tag of Object.keys(DEFAULT_REGISTRY)) {
-      const referenced = referencedTokens(mountRoot(tag, THEME_VARS));
-      cleanup();
-      expect([tag, referenced.filter((name) => !Object.hasOwn(THEME_VARS, name))]).toEqual([
+    expect(
+      defaultThemeSnapshots.map(({ tag, referencedTokens }) => [
         tag,
-        [],
-      ]);
-    }
+        referencedTokens.filter((name) => !Object.hasOwn(THEME_VARS, name)),
+      ]),
+    ).toEqual(Object.keys(DEFAULT_REGISTRY).map((tag) => [tag, []]));
   });
 
   it("carries no var() fallback: a missing token is a host failure, not a component's to paper over", () => {
     // Bootstrap validates the complete theme before anything mounts, so
     // `var(--facet-semantic-text-default, inherit)` would be a component absorbing a
     // configuration error the trust boundary already refuses to let through.
-    for (const tag of Object.keys(DEFAULT_REGISTRY)) {
-      const references = varReferences(mountRoot(tag, THEME_VARS));
-      cleanup();
-      expect([tag, references.filter((one) => !/^var\(--facet-[a-z0-9-]+\)$/u.test(one))]).toEqual([
+    expect(
+      defaultThemeSnapshots.map(({ tag, varReferences }) => [
         tag,
-        [],
-      ]);
-    }
+        varReferences.filter((one) => !/^var\(--facet-[a-z0-9-]+\)$/u.test(one)),
+      ]),
+    ).toEqual(Object.keys(DEFAULT_REGISTRY).map((tag) => [tag, []]));
   });
 });
 
@@ -590,7 +677,7 @@ describe("@facet/assets/react barrel — the exact key set (D-12)", () => {
     expect(barrel.DEFAULT_REGISTRY).toBe(DEFAULT_REGISTRY);
   });
 
-  it("leaks no private component: the five modules under react/ stay unreachable by name", () => {
+  it("leaks no private component: the six modules under react/ stay unreachable by name", () => {
     for (const name of [...EXPECTED.map(([tag]) => tag), "token", "space", "mountStyle"]) {
       expect([name, Object.keys(barrel).includes(name)]).toEqual([name, false]);
     }
@@ -606,11 +693,12 @@ describe("@facet/assets/react barrel — the exact key set (D-12)", () => {
 });
 
 describe("@facet/assets entry boundary — the root is React-free (RISK-PKG-1, D-09)", () => {
-  it("reaches only the six Node-safe data modules from the root entry", () => {
+  it("reaches only the seven Node-safe data modules from the root entry", () => {
     expect(reachableFrom("index.ts").modules).toEqual([
       "catalog.ts",
       "index.ts",
       "specs-content.ts",
+      "specs-expression.ts",
       "specs-interactive.ts",
       "specs-layout.ts",
       "specs-surface.ts",
@@ -628,10 +716,11 @@ describe("@facet/assets entry boundary — the root is React-free (RISK-PKG-1, D
 });
 
 describe("@facet/assets/react entry boundary — @facet/core and react only (D-09, DC-029)", () => {
-  it("reaches the barrel plus its five private modules, and no test fixture", () => {
+  it("reaches the barrel plus its six private modules, and no test fixture", () => {
     expect(reachableFrom("react.tsx").modules).toEqual([
       "react.tsx",
       "react/content.tsx",
+      "react/expression.tsx",
       "react/interactive.tsx",
       "react/layout.tsx",
       "react/style.ts",
@@ -659,6 +748,7 @@ describe("@facet/assets/react entry boundary — @facet/core and react only (D-0
     const specifiers = moduleSpecifiers("react.tsx").filter((one) => one.startsWith("."));
     expect([...new Set(specifiers)].sort()).toEqual([
       "./react/content.js",
+      "./react/expression.js",
       "./react/interactive.js",
       "./react/layout.js",
       "./react/surface.js",

@@ -7,10 +7,15 @@ them.
 
 ## Default component set
 
-The default assets package registers thirteen components:
+The default assets package registers 38 components:
 
-`Screen`, `Stack`, `Row`, `Grid`, `Modal`, `Card`, `Empty`, `Text`, `Metric`,
-`Badge`, `Button`, `Field`, and `Table`.
+`Screen`, `AppShell`, `Stack`, `Row`, `Split`, `Grid`, `Modal`, `Card`, `Empty`,
+`LogoMark`, `Nav`, `SideNav`, `SideNavItem`, `Section`, `Divider`, `Hero`,
+`Avatar`, `ProfileHeader`,
+`ProductShowcase`, `VisualPanel`, `MediaCard`, `LinkList`, `SocialLinks`,
+`FeatureList`, `StatStrip`, `Gallery`, `Testimonial`, `Timeline`, `CTA`,
+`Alert`, `Progress`, `Footer`, `Text`, `Metric`, `Badge`, `Table`, `Button`,
+and `Field`.
 
 ```ts check-docs
 import { DEFAULT_CATALOG } from "@facet/assets";
@@ -20,10 +25,23 @@ const tags = DEFAULT_CATALOG.components.map((component) => component.tag);
 console.log(tags.includes("Text"), tags.includes("Modal"));
 ```
 
-`Screen` is the root for a named screen. Layout components keep authored layout
-flow-contained. `Modal` is the dedicated overlap contract. Content and
-interactive components expose only their declared scalar, action, collection,
-and binding props.
+The default set is meant to cover service surfaces, not only dashboards:
+personal/bio, marketing/landing, commerce/booking, SaaS/workspace,
+content/editorial, data/report, and support/form-flow screens. `Metric` remains
+available for workspace/report surfaces, but it is not the center of every
+default example. `Table` is a content/data-display component: it can support a
+report, a resume, a booking list, or an order queue without turning the whole
+screen into a dashboard.
+
+`Screen` is the root for a named screen. `AppShell`, `Stack`, `Row`, `Split`,
+and `Grid` keep authored layout flow-contained. `Modal` is the dedicated overlap contract. Expression
+components such as `LogoMark`, `Nav`, `SideNav`, `SideNavItem`, `Hero`, `ProfileHeader`,
+`ProductShowcase`, `VisualPanel`, `MediaCard`, `SocialLinks`, `StatStrip`,
+`Gallery`, `Timeline`, `Footer`, `Section`, `CTA`, `Testimonial`, `Avatar`,
+`LinkList`, and `Progress` provide first-impression, editorial, profile,
+commerce, workspace, and service-page structure. Content and interactive
+components expose only their declared scalar, action, collection, and binding
+props.
 
 ## Use the default assets
 
@@ -75,6 +93,16 @@ foundation/semantic layers and the default catalog's component recipes.
 Component specs decide which prop values an author may write; theme data decides
 how trusted components turn those values into visual output.
 
+Recipes style a component's own surface, typography, spacing, borders, and
+states. They do not decide where a button goes in a screen. Placement is
+authored composition through `Screen`, `AppShell`, `Stack`, `Row`, `Split`,
+`Grid`, `Section`, `Card`, and sibling order. For example, a button's recipe
+controls its fill, border, radius, padding, and focus ring; the surrounding
+`Row`, `Stack`, `Hero` or `CTA` decides whether that button appears under a
+headline, beside another button, or inside a form section. `Stack` also has
+bounded `justify` and `grow` props so equal-height cards can distribute vertical
+space without exposing CSS.
+
 ```ts check-docs
 import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
 import { themeToCssVars } from "@facet/core";
@@ -111,6 +139,14 @@ fields named by the component contract.
 
 Facet components do not perform product-domain fetches. The host or agent tools
 fetch data, authorize it, and publish a bounded projection into Facet.
+
+The default assets still defer URL-bearing media, raw external links, pricing
+blocks, and open form composition. `LogoMark` and `Avatar` render trusted marks
+or initials, not image URLs; `MediaCard` provides image-like rhythm without an
+external media prop; and `LinkList`/`SocialLinks` group trusted `Button` actions
+rather than raw anchors. Components such as `Image`, `Logo`, `Pricing`, and
+`Form` need separate safe policy or repeated-use evidence before they become
+default catalog members.
 
 ## Failure policy
 

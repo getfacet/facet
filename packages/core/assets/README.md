@@ -1,8 +1,8 @@
 # @facet/assets
 
-Default Facet component catalog, layered theme data, and trusted default
-React implementations. The package keeps plain data at the root entrypoint and
-React code behind the explicit browser-safe subpath.
+Default Facet component catalog, layered theme data, and trusted default React
+implementations. The package keeps plain data at the root entrypoint and React
+code behind the explicit browser-safe subpath.
 
 Role: **Core**.
 
@@ -50,11 +50,39 @@ console.log(boot.catalog.components.length);
 
 ## Default design system
 
-The default theme is a neutral baseline for demos, examples, and hosts that do
+The default assets cover service surfaces rather than only dashboards:
+personal/bio, marketing/landing, commerce/booking, SaaS/workspace,
+content/editorial, data/report, and support/form-flow screens. Dashboard UI is
+one supported group, not the identity of the whole catalog.
+
+The default catalog has 38 registered tags:
+
+`Screen`, `AppShell`, `Stack`, `Row`, `Split`, `Grid`, `Modal`, `Card`, `Empty`,
+`LogoMark`, `Nav`, `SideNav`, `SideNavItem`, `Section`, `Divider`, `Hero`,
+`Avatar`, `ProfileHeader`,
+`ProductShowcase`, `VisualPanel`, `MediaCard`, `LinkList`, `SocialLinks`,
+`FeatureList`, `StatStrip`, `Gallery`, `Testimonial`, `Timeline`, `CTA`,
+`Alert`, `Progress`, `Footer`, `Text`, `Metric`, `Badge`, `Table`, `Button`,
+and `Field`.
+
+The default theme is a coherent baseline for demos, examples, and hosts that do
 not need a custom visual system yet. Foundation and semantic token names remain
 closed by Core, component recipes are declared by the active catalog, extension
 namespaces are declared by the host, and registered React components decide how
 those values render.
+
+Component props still own composition. For example, `AppShell` separates a rail
+from main content, `Split` creates an asymmetric two-column rhythm, and
+`Stack justify="between"` plus `grow="true"` can distribute content inside an
+equal-height card, while the card, button, text, and badge recipes decide how
+those elements look.
+
+URL-bearing media and raw external-link components are not half-opened in the
+default set. `LogoMark` and `Avatar` are mark/initials-only, `MediaCard`
+provides image-like rhythm without arbitrary media URLs, and `LinkList` plus
+`SocialLinks` compose trusted `Button` actions. Image, logo, pricing, and form
+components need separate safe asset-reference or repeated-use policy before
+becoming default components.
 
 Use this package unchanged for the built-in component set, or provide your own
 catalog/registry/theme trio when the host has a different trusted component

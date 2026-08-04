@@ -1,7 +1,7 @@
 /**
- * The default interactive components: `Button`, `Field` and `Table`.
+ * The default interactive components: `Button` and `Field`.
  *
- * Three declarations here carry weight beyond their own tags.
+ * Two declarations here carry weight beyond their own tags.
  *
  * **`Button.action` is a string.** An authored `nav:` or `agent:` reference may
  * only sit on a prop declared `string`, so a narrower type would make the one
@@ -20,14 +20,6 @@
  * exactly what a collectable node that never registered yields, so the fallback
  * is a stated value rather than an inferred blank. `secret` is a boolean because
  * the collect contract requires the sensitive prop to be one.
- *
- * **`Table.rows` is a required bindable array.** The structured branch of a prop
- * schema is shallow, closed and binding-only: the type, the guidance, `required`
- * and a literal `bindable: true`, and nothing else. There is no `items` contract
- * because the rows never come from the markup — they arrive from the bounded
- * data model, where their size and shape are already governed. Inline structured
- * JSON stays forbidden by the grammar, so `rows="…"` written as a literal is an
- * author error, not a second way in.
  *
  * The module is **private**: it is not barrel-exported and is not a package
  * entry point. `catalog.ts` composes it into the one public default catalog.
@@ -138,42 +130,9 @@ export const FIELD_SPEC: ComponentSpec = {
   },
 };
 
-export const TABLE_SPEC: ComponentSpec = {
-  tag: "Table",
-  whenToUse: "Show a published collection of records as rows and columns.",
-  props: {
-    rows: {
-      type: "array",
-      required: true,
-      bindable: true,
-      guidance:
-        "The rows to render, bound from the data model with `data:<path>`. Rows are never written inline; publish them first, then bind the path.",
-    },
-    caption: {
-      type: "string",
-      guidance: "One line saying what the rows are, shown with the table.",
-    },
-  },
-  acceptsChildren: false,
-  themeRecipe: {
-    tokens: {
-      captionText: "color",
-      text: "color",
-      headerText: "color",
-      headerBg: "color",
-      rowBorder: "color",
-      cellPadding: "length",
-    },
-  },
-};
-
 /**
  * The interactive group, in the order the default catalog registers it. Frozen
  * so a host reading the assembled catalog cannot lengthen the group; the specs
  * themselves are frozen by `validateCatalog` at the trust boundary.
  */
-export const INTERACTIVE_SPECS: readonly ComponentSpec[] = Object.freeze([
-  BUTTON_SPEC,
-  FIELD_SPEC,
-  TABLE_SPEC,
-]);
+export const INTERACTIVE_SPECS: readonly ComponentSpec[] = Object.freeze([BUTTON_SPEC, FIELD_SPEC]);

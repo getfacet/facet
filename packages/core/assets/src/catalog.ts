@@ -1,18 +1,18 @@
 /**
- * The default component catalog: the thirteen components an agent may author
+ * The default component catalog: the components an agent may author
  * when the host registers nothing of its own.
  *
  * The catalog is one half of Facet's trust boundary — the React registry is the
  * other — and the two must carry the **same tag set exactly**, so this module
- * is the single place the default set is counted. It composes the four private
+ * is the single place the default set is counted. It composes the five private
  * spec groups and adds nothing: every prop, domain and default already lives in
  * the group that owns its components, and duplicating one here would give the
  * same tag two descriptions.
  *
- * Thirteen is a **product decision**, not a bound. `validateCatalog` stays
+ * The default count is a **product decision**, not a bound. `validateCatalog` stays
  * generic — it accepts any catalog inside `B-09`, because a host that registers
  * five trusted components of its own has a perfectly valid catalog — so
- * "exactly 13" is an obligation of this module and is pinned by
+ * the exact default roster is an obligation of this module and is pinned by
  * `catalog.test.ts`, never by core.
  *
  * `Screen` is a member here like any other. It is simultaneously a structural
@@ -40,15 +40,17 @@
 import type { ComponentSpec, FacetCatalog } from "@facet/core";
 
 import { CONTENT_SPECS } from "./specs-content.js";
+import { EXPRESSION_SPECS } from "./specs-expression.js";
 import { INTERACTIVE_SPECS } from "./specs-interactive.js";
 import { LAYOUT_SPECS } from "./specs-layout.js";
 import { SURFACE_SPECS } from "./specs-surface.js";
 
 /**
- * The thirteen default specs, grouped in registration order: layout first
- * (`Screen`, `Stack`, `Row`, `Grid`), then the surfaces that frame content
- * (`Modal`, `Card`, `Empty`), then what a page says (`Text`, `Metric`, `Badge`),
- * then what a visitor touches (`Button`, `Field`, `Table`).
+ * The default specs, grouped in registration order: layout first
+ * (`Screen`, `AppShell`, `Stack`, `Row`, `Split`, `Grid`), then the surfaces that frame content
+ * (`Modal`, `Card`, `Empty`), then service-surface expression components,
+ * then what a page says (`Text`, `Metric`, `Badge`, `Table`), then what a
+ * visitor touches (`Button`, `Field`).
  *
  * Frozen, because a host reads this array to build its registry: an array a
  * consumer could push onto would let the two halves of the trust boundary drift
@@ -57,6 +59,7 @@ import { SURFACE_SPECS } from "./specs-surface.js";
 export const DEFAULT_COMPONENT_SPECS: readonly ComponentSpec[] = Object.freeze([
   ...LAYOUT_SPECS,
   ...SURFACE_SPECS,
+  ...EXPRESSION_SPECS,
   ...CONTENT_SPECS,
   ...INTERACTIVE_SPECS,
 ]);
@@ -64,7 +67,7 @@ export const DEFAULT_COMPONENT_SPECS: readonly ComponentSpec[] = Object.freeze([
 /**
  * The default catalog, ready to hand to bootstrap.
  *
- * It is the same thirteen specs in a `FacetCatalog` envelope — the shape
+ * It is the same specs in a `FacetCatalog` envelope — the shape
  * `validateCatalog` accepts and `bootstrapSession` freezes for the session's
  * lifetime.
  */

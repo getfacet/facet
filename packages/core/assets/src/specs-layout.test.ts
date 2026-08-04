@@ -10,7 +10,15 @@ import {
 import type { ComponentSpec } from "@facet/core";
 import { describe, expect, it } from "vitest";
 
-import { GRID_SPEC, LAYOUT_SPECS, ROW_SPEC, SCREEN_SPEC, STACK_SPEC } from "./specs-layout.js";
+import {
+  APP_SHELL_SPEC,
+  GRID_SPEC,
+  LAYOUT_SPECS,
+  ROW_SPEC,
+  SCREEN_SPEC,
+  SPLIT_SPEC,
+  STACK_SPEC,
+} from "./specs-layout.js";
 
 /** The three scalar types an authored prop value may take. */
 const SCALAR_TYPES: readonly string[] = ["string", "number", "boolean"];
@@ -106,12 +114,26 @@ function authorOutcome(body: string): string {
 }
 
 describe("layout specs — every spec is a valid component spec", () => {
-  it("declares exactly Screen, Stack, Row and Grid, in that order", () => {
-    expect(LAYOUT_SPECS.map((spec) => spec.tag)).toEqual(["Screen", "Stack", "Row", "Grid"]);
-    expect(LAYOUT_SPECS).toEqual([SCREEN_SPEC, STACK_SPEC, ROW_SPEC, GRID_SPEC]);
+  it("declares exactly Screen, AppShell, Stack, Row, Split and Grid, in that order", () => {
+    expect(LAYOUT_SPECS.map((spec) => spec.tag)).toEqual([
+      "Screen",
+      "AppShell",
+      "Stack",
+      "Row",
+      "Split",
+      "Grid",
+    ]);
+    expect(LAYOUT_SPECS).toEqual([
+      SCREEN_SPEC,
+      APP_SHELL_SPEC,
+      STACK_SPEC,
+      ROW_SPEC,
+      SPLIT_SPEC,
+      GRID_SPEC,
+    ]);
   });
 
-  it.each(["Screen", "Stack", "Row", "Grid"])("accepts the %s spec", (tag) => {
+  it.each(["Screen", "AppShell", "Stack", "Row", "Split", "Grid"])("accepts the %s spec", (tag) => {
     const spec = LAYOUT_SPECS.find((candidate) => candidate.tag === tag);
     expect(spec).toBeDefined();
     expect(accept(specRecord(spec as ComponentSpec)).tag).toBe(tag);
@@ -159,7 +181,9 @@ describe("Screen — a registered member whose placement stays grammar-owned", (
   });
 
   it("is what a catalog is missing without it: Stack, Row and Grid alone are refused", () => {
-    const screenless = [STACK_SPEC, ROW_SPEC, GRID_SPEC].map(specRecord);
+    const screenless = [APP_SHELL_SPEC, STACK_SPEC, ROW_SPEC, SPLIT_SPEC, GRID_SPEC].map(
+      specRecord,
+    );
     expect([catalogCode(screenless), catalogAt(screenless)]).toEqual([
       "missing_screen_spec",
       "components",
@@ -169,7 +193,10 @@ describe("Screen — a registered member whose placement stays grammar-owned", (
   it("is refused on its own fault when nonconforming, rather than counted as the required one", () => {
     const nonconforming = specRecord(SCREEN_SPEC);
     nonconforming["whenToUse"] = "w".repeat(BOUNDS.componentWhenToUseChars + 1);
-    const components = [nonconforming, ...[STACK_SPEC, ROW_SPEC, GRID_SPEC].map(specRecord)];
+    const components = [
+      nonconforming,
+      ...[APP_SHELL_SPEC, STACK_SPEC, ROW_SPEC, SPLIT_SPEC, GRID_SPEC].map(specRecord),
+    ];
     expect([catalogCode(components), catalogAt(components)]).toEqual([
       "when_to_use_too_long",
       "components[0].whenToUse",
@@ -212,6 +239,14 @@ describe("Screen — the authored screen root, checked against its registration"
     expect(authorOutcome('<Screen name="home" maxWidth="wide"><Stack gap="md" /></Screen>')).toBe(
       "accepted",
     );
+  });
+
+  it("accepts stack distribution props for equal-height card composition", () => {
+    expect(
+      authorOutcome(
+        '<Screen name="home"><Stack gap="sm" align="stretch" justify="between" grow="true" /></Screen>',
+      ),
+    ).toBe("accepted");
   });
 
   it("refuses a prop the Screen spec never declares — registration is not a bypass", () => {

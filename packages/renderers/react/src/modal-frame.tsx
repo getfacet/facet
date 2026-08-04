@@ -234,6 +234,29 @@ const TITLE_STYLE: Readonly<CSSProperties> = Object.freeze({
   lineHeight: theme({ layer: "foundation", group: "typography", token: "lineHeightTight" }),
 });
 
+/** The in-flow control that opens the dialog. */
+const TRIGGER_STYLE: Readonly<CSSProperties> = Object.freeze({
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  boxSizing: "border-box",
+  minHeight: theme({ layer: "foundation", group: "size", token: "controlHeightMd" }),
+  gap: theme({ layer: "foundation", group: "space", token: "xs" }),
+  paddingBlock: theme({ layer: "foundation", group: "space", token: "sm" }),
+  paddingInline: theme({ layer: "foundation", group: "space", token: "lg" }),
+  borderStyle: "solid",
+  borderWidth: theme({ layer: "foundation", group: "borderWidth", token: "medium" }),
+  borderColor: theme({ layer: "semantic", group: "action", token: "secondaryBorder" }),
+  borderRadius: theme({ layer: "foundation", group: "radius", token: "full" }),
+  background: theme({ layer: "semantic", group: "action", token: "secondaryBg" }),
+  color: theme({ layer: "semantic", group: "action", token: "secondaryText" }),
+  fontFamily: theme({ layer: "foundation", group: "typography", token: "fontFamilySans" }),
+  fontSize: theme({ layer: "foundation", group: "typography", token: "fontSizeSm" }),
+  fontWeight: theme({ layer: "foundation", group: "typography", token: "fontWeightSemibold" }),
+  lineHeight: theme({ layer: "foundation", group: "typography", token: "lineHeightTight" }),
+  cursor: "pointer",
+});
+
 /**
  * The dismiss control.
  *
@@ -284,6 +307,7 @@ interface OpenModal {
  */
 interface ModalHostValue {
   readonly openNodeIds: readonly string[];
+  readonly suppressModals: boolean;
   readonly open: (nodeId: string, close: () => void) => () => void;
 }
 
@@ -366,8 +390,16 @@ function closeSafely(modal: OpenModal): void {
  *
  * @internal Not barrel-exported; the renderer composes one per session.
  */
-export function ModalHost({ children }: { readonly children?: ReactNode }): ReactNode {
+export function ModalHost({
+  children,
+  suppressModals = false,
+}: {
+  readonly children?: ReactNode;
+  readonly suppressModals?: boolean;
+}): ReactNode {
   const [openModals, setOpenModals] = useState<readonly OpenModal[]>([]);
+  const suppressModalsRef = useRef(suppressModals);
+  suppressModalsRef.current = suppressModals;
 
   const open = useCallback((nodeId: string, close: () => void): (() => void) => {
     const entry: OpenModal = { nodeId, close };
@@ -381,12 +413,12 @@ export function ModalHost({ children }: { readonly children?: ReactNode }): Reac
   // close, so a single keypress can never collapse a stack — and re-bound only
   // when the topmost itself changes.
   const topmost = openModals[openModals.length - 1];
-  useEffect(() => {
-    if (topmost === undefined) {
+  useLayoutEffect(() => {
+    if (topmost === undefined || suppressModals) {
       return;
     }
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === ESCAPE_KEY) {
+      if (event.key === ESCAPE_KEY && !suppressModalsRef.current) {
         closeSafely(topmost);
       }
     };
@@ -394,12 +426,12 @@ export function ModalHost({ children }: { readonly children?: ReactNode }): Reac
     return (): void => {
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [topmost]);
+  }, [suppressModals, topmost]);
 
   // The session asks for a page lock based on its own list's emptiness. The page
   // side effect itself is reference-counted per body so independent renderer
   // sessions cannot restore overflow while another session still has a modal open.
-  const locked = openModals.length > 0;
+  const locked = openModals.length > 0 && !suppressModals;
   useEffect(() => {
     if (!locked) {
       return;
@@ -408,7 +440,10 @@ export function ModalHost({ children }: { readonly children?: ReactNode }): Reac
   }, [locked]);
 
   const openNodeIds = useMemo(() => openModals.map((modal) => modal.nodeId), [openModals]);
-  const value = useMemo<ModalHostValue>(() => ({ openNodeIds, open }), [openNodeIds, open]);
+  const value = useMemo<ModalHostValue>(
+    () => ({ openNodeIds, suppressModals, open }),
+    [openNodeIds, open, suppressModals],
+  );
 
   return <ModalHostContext.Provider value={value}>{children}</ModalHostContext.Provider>;
 }
@@ -452,6 +487,25 @@ function focusElement(element: HTMLElement | null): void {
   }
 }
 
+function focusVisibleElement(element: HTMLElement | null): boolean {
+  if (element === null || element.closest("[hidden]") !== null) {
+    return false;
+  }
+  focusElement(element);
+  return document.activeElement === element;
+}
+
+function blurActiveElement(): void {
+  const active = document.activeElement;
+  try {
+    if (active instanceof HTMLElement) {
+      active.blur();
+    }
+  } catch {
+    // Fail-safe.
+  }
+}
+
 /** The dialog's own focusable stops, in document order. Total over any DOM. */
 function focusableWithin(frame: HTMLElement): readonly HTMLElement[] {
   try {
@@ -459,6 +513,12 @@ function focusableWithin(frame: HTMLElement): readonly HTMLElement[] {
   } catch {
     return [];
   }
+}
+
+/** Whether browser focus is currently inside an element that is about to hide. */
+function containsActiveElement(element: HTMLElement | null): boolean {
+  const active = document.activeElement;
+  return element !== null && active instanceof HTMLElement && element.contains(active);
 }
 
 /**
@@ -496,16 +556,20 @@ export function ModalFrame({
   readonly themeVars: Readonly<Record<string, string>>;
   readonly children?: ReactNode;
 }): ReactNode {
-  const { openNodeIds, open: enterSession } = useModalHost();
+  const { openNodeIds, suppressModals, open: enterSession } = useModalHost();
   const overlayRoot = useOverlayRoot();
   const [opened, setOpened] = useState(false);
   const headingId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
+  const suppressModalsRef = useRef(suppressModals);
+  const shownRef = useRef(false);
+  suppressModalsRef.current = suppressModals;
 
   const triggerLabel = readProjected(props, TRIGGER_LABEL_PROP);
   const title = readProjected(props, TITLE_PROP);
   const shown = opened && overlayRoot !== null;
+  shownRef.current = shown;
 
   // Idempotent by construction: setting the flag to the value it already holds
   // is a no-op, so Escape, a scrim click, the dismiss control, and any two of
@@ -525,18 +589,43 @@ export function ModalFrame({
     return enterSession(nodeId, close);
   }, [shown, enterSession, nodeId, close]);
 
+  // This dialog's place in the session's stack. The one commit before
+  // registration lands reads as the base level, which is where a lone modal
+  // sits anyway.
+  const order = openNodeIds.indexOf(nodeId);
+  const level = order === -1 ? 0 : order;
+  const isTopmost = order !== -1 && order === openNodeIds.length - 1;
+
   useEffect(() => {
     if (!shown) {
       return;
     }
-    focusElement(frameRef.current);
+    if (suppressModals) {
+      if (containsActiveElement(frameRef.current)) {
+        if (!focusVisibleElement(triggerRef.current)) {
+          blurActiveElement();
+        }
+      }
+      return;
+    }
+    if (isTopmost) {
+      focusElement(frameRef.current);
+    }
     return (): void => {
       // Back to the control that opened it, rather than to whatever happened to
       // hold focus at open time: the trigger is the frame's own, it is still
       // mounted, and it is where a visitor expects to land.
-      focusElement(triggerRef.current);
+      if (!suppressModalsRef.current) {
+        if (!shownRef.current) {
+          focusElement(triggerRef.current);
+        }
+        return;
+      }
+      if (containsActiveElement(frameRef.current) && !focusVisibleElement(triggerRef.current)) {
+        blurActiveElement();
+      }
     };
-  }, [shown]);
+  }, [shown, suppressModals, isTopmost]);
 
   /**
    * The trap. Every Tab is answered here rather than deferred to the browser,
@@ -570,13 +659,6 @@ export function ModalFrame({
     focusElement(stops[next] ?? null);
   }, []);
 
-  // This dialog's place in the session's stack. The one commit before
-  // registration lands reads as the base level, which is where a lone modal
-  // sits anyway.
-  const order = openNodeIds.indexOf(nodeId);
-  const level = order === -1 ? 0 : order;
-  const isTopmost = order !== -1 && order === openNodeIds.length - 1;
-
   const onScrimClick = useCallback((): void => {
     // Topmost-only, for the same reason Escape is: a lower scrim is covered by
     // the dialog above it in any real browser, so a click that reached it would
@@ -596,7 +678,8 @@ export function ModalFrame({
       type="button"
       {...{ [MODAL_PART_ATTRIBUTE]: "trigger" }}
       aria-haspopup="dialog"
-      aria-expanded={opened}
+      aria-expanded={opened && !suppressModals}
+      style={TRIGGER_STYLE}
       onClick={(): void => {
         setOpened(true);
       }}
@@ -617,6 +700,7 @@ export function ModalFrame({
           <div
             {...{ [MODAL_PART_ATTRIBUTE]: "scrim" }}
             aria-hidden={true}
+            hidden={suppressModals}
             style={{ ...SCRIM_STYLE, zIndex: OVERLAY_Z_BAND.scrim + level * OVERLAY_STACK_STRIDE }}
             onClick={onScrimClick}
           />
@@ -624,8 +708,9 @@ export function ModalFrame({
             ref={frameRef}
             {...{ [MODAL_PART_ATTRIBUTE]: "frame" }}
             role="dialog"
-            aria-modal={true}
+            aria-modal={!suppressModals}
             aria-labelledby={title === undefined ? undefined : headingId}
+            hidden={suppressModals}
             tabIndex={-1}
             style={dialogStyle(themeVars, OVERLAY_Z_BAND.frame + level * OVERLAY_STACK_STRIDE)}
             onKeyDown={onFrameKeyDown}

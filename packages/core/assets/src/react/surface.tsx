@@ -99,6 +99,7 @@ export const Card: MountedComponent<ReactNode, ReactNode> = function Card({
         flexDirection: "column",
         boxSizing: "border-box",
         minWidth: 0,
+        height: "100%",
         gap: foundation("space", "sm"),
         padding: padding === "md" ? recipe("card", "padding") : space(padding),
         background: recipe("card", "background"),

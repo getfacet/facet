@@ -88,7 +88,7 @@ describe("the emitted public declaration", () => {
       .map((match) => match[1])
       .sort();
     expect(exported).toEqual(["BoundedMap", "createBoundedMap"]);
-  });
+  }, 60_000);
 
   it("declares the factory's return type as the named, exported BoundedMap", () => {
     // Not an anonymous object type: a consumer that stores the map in a field

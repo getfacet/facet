@@ -78,6 +78,10 @@ if (!bootstrap.ok) throw new Error(bootstrap.detail);
 <StageRenderer bootstrap={bootstrap} document={stage.document} data={stage.data} />;
 ```
 
+When a mounted renderer is backgrounded but must keep local UI state, pass
+`suppressModals={true}` to hide open framework modals and suspend their scroll
+lock/focus side effects without unmounting the stage.
+
 Use the browser transport package or a custom `FacetTransport` with `useFacet`
 when the page is live. The hook folds server frames into local state and stamps
 visitor events with the latest known revision.

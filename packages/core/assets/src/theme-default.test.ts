@@ -74,15 +74,40 @@ describe("DEFAULT_THEME fills the core token contract exactly", () => {
     );
   });
 
-  it("fills the Default Recipe Contract v1 for all thirteen components", () => {
+  it("fills the Default Recipe Contract v1 for the default service-surface catalog", () => {
     expect(Object.keys(DEFAULT_THEME.recipes ?? {})).toEqual([
       "screen",
+      "app-shell",
       "stack",
       "row",
+      "split",
       "grid",
       "modal",
       "card",
       "empty",
+      "logo-mark",
+      "nav",
+      "side-nav",
+      "side-nav-item",
+      "section",
+      "divider",
+      "hero",
+      "avatar",
+      "profile-header",
+      "product-showcase",
+      "visual-panel",
+      "media-card",
+      "link-list",
+      "social-links",
+      "feature-list",
+      "stat-strip",
+      "gallery",
+      "testimonial",
+      "timeline",
+      "cta",
+      "alert",
+      "progress",
+      "footer",
       "text",
       "metric",
       "badge",
@@ -98,10 +123,51 @@ describe("DEFAULT_THEME fills the core token contract exactly", () => {
     }
   });
 
+  it("fills expressive service-surface recipe tokens", () => {
+    expect(DEFAULT_THEME.recipes?.hero).toEqual(
+      expect.objectContaining({
+        background: "var(--facet-semantic-surface-muted)",
+        text: "var(--facet-semantic-text-default)",
+        radius: "var(--facet-foundation-radius-xxl)",
+      }),
+    );
+    expect(DEFAULT_THEME.recipes?.cta).toEqual(
+      expect.objectContaining({
+        background: "var(--facet-foundation-palette-brand600)",
+        text: "var(--facet-semantic-text-inverse)",
+      }),
+    );
+    expect(DEFAULT_THEME.recipes?.progress).toEqual(
+      expect.objectContaining({
+        track: "var(--facet-semantic-loading-progress-track)",
+        fill: "var(--facet-semantic-loading-progress-fill)",
+      }),
+    );
+    expect(DEFAULT_THEME.recipes?.gallery).toEqual(
+      expect.objectContaining({
+        padding: "var(--facet-foundation-space-xl)",
+        gap: "var(--facet-foundation-space-lg)",
+      }),
+    );
+    expect(DEFAULT_THEME.recipes?.nav).toEqual(
+      expect.objectContaining({
+        paddingBlock: "var(--facet-foundation-space-md)",
+        paddingInline: "var(--facet-foundation-space-xl)",
+        radius: "var(--facet-foundation-radius-full)",
+      }),
+    );
+    expect(DEFAULT_THEME.recipes?.["media-card"]).toEqual(
+      expect.objectContaining({
+        visualBg: "var(--facet-foundation-palette-brand100)",
+        titleFontSize: "var(--facet-foundation-typography-font-size-lg)",
+      }),
+    );
+  });
+
   it("projects prefixed custom properties for core and default recipe tokens", () => {
     const vars = themeToCssVars(DEFAULT_THEME, { catalog: DEFAULT_CATALOG });
-    expect(vars["--facet-foundation-palette-brand500"]).toBe("#6366f1");
-    expect(vars["--facet-semantic-text-muted"]).toBe("#475569");
+    expect(vars["--facet-foundation-palette-brand500"]).toBe("#2f6fc8");
+    expect(vars["--facet-semantic-text-muted"]).toBe("#6f6654");
     expect(vars["--facet-recipe-button-primary-bg"]).toBe(
       "var(--facet-semantic-action-primary-bg)",
     );

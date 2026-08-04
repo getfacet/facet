@@ -250,7 +250,7 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
 
     const textarea = root.querySelector("textarea");
     const form = root.querySelector("form");
-    const button = root.querySelector("button");
+    const button = form?.querySelector("button[type='submit']");
     expect(textarea).not.toBeNull();
     expect(form).not.toBeNull();
     expect(button).not.toBeNull();
