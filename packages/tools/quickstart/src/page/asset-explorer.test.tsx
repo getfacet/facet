@@ -4,9 +4,10 @@ import { readFileSync } from "node:fs";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ComponentDocument } from "@facet/core";
+import type { ComponentDocument, ComponentSpec } from "@facet/core";
 
 import { AssetExplorer } from "./asset-explorer.js";
+import { resolveQuickstartPageActiveDesign } from "./active-design.js";
 import { Page } from "./main.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -121,6 +122,62 @@ function modalDocument(): ComponentDocument {
       }),
     }),
   });
+}
+
+const PROMO_BANNER_SPEC: ComponentSpec = Object.freeze({
+  tag: "PromoBanner",
+  whenToUse: "Use for a branded promotional banner.",
+  props: Object.freeze({}),
+  acceptsChildren: false,
+});
+
+function PromoBanner(): ReactNode {
+  return <div data-promo-banner />;
+}
+
+function activeOverlayDesign() {
+  const result = resolveQuickstartPageActiveDesign({
+    overlay: {
+      theme: {
+        foundation: {
+          palette: {
+            brand500: "#6741d9",
+          },
+        },
+      },
+      components: [PROMO_BANNER_SPEC],
+      registry: { PromoBanner },
+      examples: [
+        {
+          id: "promo-banner",
+          kind: "component",
+          label: "Promo banner",
+          markup: `<Facet entry="preview">
+  <Screen name="preview">
+    <PromoBanner />
+  </Screen>
+</Facet>`,
+          tags: ["PromoBanner"],
+        },
+        {
+          id: "promo-screen",
+          kind: "screen",
+          label: "Promo screen",
+          description: "Active screen example.",
+          markup: `<Facet entry="preview">
+  <Screen name="preview">
+    <PromoBanner />
+  </Screen>
+</Facet>`,
+          tags: ["Screen", "PromoBanner"],
+        },
+      ],
+    },
+  });
+  if (!result.ok) {
+    throw new Error(`${result.error.code}: ${result.error.detail}`);
+  }
+  return result.design;
 }
 
 function render(ui: ReactNode): HTMLElement {
@@ -353,6 +410,84 @@ describe("AssetExplorer", () => {
     expect(container.querySelector("[data-facet-chat-drawer]")).toBeInstanceOf(HTMLElement);
     expect(container.querySelector("[data-facet-message-form]")).toBeInstanceOf(HTMLFormElement);
   });
+
+  it("renders the active design inspector without starting transport", () => {
+    const container = render(
+      <AssetExplorer
+        activeDesign={{
+          mode: "overlay",
+          registryTags: Object.freeze(["Screen", "Text", "PromoBanner"]),
+          defaultRegistryTags: Object.freeze(["Screen", "Text"]),
+          customRegistryTags: Object.freeze(["PromoBanner"]),
+          notes: Object.freeze([
+            Object.freeze({
+              id: "brand-voice",
+              title: "Brand voice",
+              body: "Use concise product copy.",
+            }),
+          ]),
+        }}
+      />,
+    );
+
+    expect(container.querySelector("[data-facet-active-design]")).toBeInstanceOf(HTMLElement);
+    expect(container.querySelector("[data-facet-active-design-mode]")?.textContent).toBe(
+      "Custom design",
+    );
+    expect(container.querySelector("[data-facet-active-design-tag-count]")?.textContent).toBe(
+      "3 tags",
+    );
+    expect(container.querySelector("[data-facet-active-design-custom-tags]")?.textContent).toBe(
+      "PromoBanner",
+    );
+    expect(container.querySelector("[data-facet-active-design-note='brand-voice']")).toBeInstanceOf(
+      HTMLElement,
+    );
+    expect(container.textContent).toContain("Use concise product copy.");
+    expect(StubEventSource.instances).toHaveLength(0);
+    expect(fetchCalls).toEqual([]);
+  }, 30_000);
+
+  it("uses the active design in the default asset inspectors", () => {
+    const container = render(<AssetExplorer activeDesign={activeOverlayDesign()} />);
+    const themeInspector = container.querySelector("[data-facet-theme-inspector]");
+
+    expect(themeInspector).toBeInstanceOf(HTMLElement);
+    expect(container.querySelector("[data-theme-overview]")?.textContent).toContain(
+      "Active design system",
+    );
+    expect(
+      (themeInspector as HTMLElement).style.getPropertyValue("--facet-foundation-palette-brand500"),
+    ).toBe("#6741d9");
+    expect(container.querySelector("[data-facet-asset-source-filter]")).toBeInstanceOf(HTMLElement);
+    expect(
+      container
+        .querySelector('[data-facet-asset-source-option="all"]')
+        ?.getAttribute("aria-checked"),
+    ).toBe("true");
+
+    click(container.querySelector('[data-facet-asset-source-option="imported"]') as HTMLElement);
+    click(buttonNamed(container, "Components"));
+    expect(container.querySelector('[data-component-option="PromoBanner"]')).toBeInstanceOf(
+      HTMLElement,
+    );
+    expect(container.querySelector('[data-component-option="Screen"]')).toBeNull();
+
+    click(buttonNamed(container, "Screens"));
+    expect(container.querySelector('[data-screen-pattern-option="promo-screen"]')).toBeInstanceOf(
+      HTMLElement,
+    );
+    expect(
+      container.querySelector('[data-screen-pattern-option="revenue-command-center"]'),
+    ).toBeNull();
+
+    click(container.querySelector('[data-facet-asset-source-option="default"]') as HTMLElement);
+    click(buttonNamed(container, "Components"));
+    expect(container.querySelector('[data-component-option="Screen"]')).toBeInstanceOf(HTMLElement);
+    expect(container.querySelector('[data-component-option="PromoBanner"]')).toBeNull();
+    expect(StubEventSource.instances).toHaveLength(0);
+    expect(fetchCalls).toEqual([]);
+  }, 30_000);
 
   it("preserves asset explorer state after returning from Live", async () => {
     const container = render(

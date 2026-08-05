@@ -8,13 +8,20 @@ import type {
   ComponentPreviewFixtureErrorPhase,
   ComponentPreviewFixtureResult,
 } from "./component-preview-fixtures.js";
+import type { QuickstartResolvedDesignExample } from "../design-overlay.js";
 
 export interface ScreenPattern {
   readonly id: string;
+  readonly source: "default" | "imported";
   readonly label: string;
   readonly description: string;
   readonly roles: readonly string[];
   readonly result: ComponentPreviewFixtureResult;
+}
+
+export interface ScreenPatternOptions {
+  readonly catalog?: FacetCatalog;
+  readonly examples?: readonly QuickstartResolvedDesignExample[];
 }
 
 interface ScreenPatternSource {
@@ -187,47 +194,27 @@ const SCREEN_PATTERN_SOURCES: readonly ScreenPatternSource[] = Object.freeze([
         </Grid>
         <Grid columns="2" gap="md" collapse="true">
           <Card title="Forecast plan" tone="neutral" padding="lg">
-            <Stack gap="lg" align="stretch" justify="between" grow="true" padding="none">
-              <Stack gap="md" align="stretch" padding="none">
-                <Badge label="On track" tone="positive" />
-                <Text value="Protect the commit, assign owner reviews, and keep legal-stage deals moving before Friday." />
-              </Stack>
-              <Row gap="sm" align="center" justify="start" wrap="true">
-                <Button label="Open forecast" action="agent:openForecast" tone="secondary" />
-              </Row>
+            <Stack gap="md" align="stretch" padding="none">
+              <Badge label="On track" tone="positive" />
+              <Text value="Protect the commit, assign owner reviews, and keep legal-stage deals moving before Friday." />
             </Stack>
           </Card>
           <Card title="Risk review" tone="warning" padding="lg">
-            <Stack gap="lg" align="stretch" justify="between" grow="true" padding="none">
-              <Stack gap="md" align="stretch" padding="none">
-                <Badge label="Needs attention" tone="warning" />
-                <Text value="Four deals need owner action, decision notes, and approval context before Friday." />
-              </Stack>
-              <Row gap="sm" align="center" justify="start" wrap="true">
-                <Button label="Review risks" action="agent:reviewRisks" tone="secondary" />
-              </Row>
+            <Stack gap="md" align="stretch" padding="none">
+              <Badge label="Needs attention" tone="warning" />
+              <Text value="Four deals need owner action, decision notes, and approval context before Friday." />
             </Stack>
           </Card>
           <Card title="Expansion motion" tone="neutral" padding="lg">
-            <Stack gap="lg" align="stretch" justify="between" grow="true" padding="none">
-              <Stack gap="md" align="stretch" padding="none">
-                <Badge label="Strong signal" tone="positive" />
-                <Text value="Expansion accounts need outreach, enablement notes, and procurement timing before Friday." />
-              </Stack>
-              <Row gap="sm" align="center" justify="start" wrap="true">
-                <Button label="Plan outreach" action="agent:planOutreach" tone="secondary" />
-              </Row>
+            <Stack gap="md" align="stretch" padding="none">
+              <Badge label="Strong signal" tone="positive" />
+              <Text value="Expansion accounts need outreach, enablement notes, and procurement timing before Friday." />
             </Stack>
           </Card>
           <Card title="Owner notes" tone="neutral" padding="lg">
-            <Stack gap="lg" align="stretch" justify="between" grow="true" padding="none">
-              <Stack gap="md" align="stretch" padding="none">
-                <Badge label="Ready" tone="neutral" />
-                <Text value="Keep legal context, procurement blockers and sponsor notes attached to each account." />
-              </Stack>
-              <Row gap="sm" align="center" justify="start" wrap="true">
-                <Button label="Update notes" action="agent:updateOwnerNotes" tone="secondary" />
-              </Row>
+            <Stack gap="md" align="stretch" padding="none">
+              <Badge label="Ready" tone="neutral" />
+              <Text value="Keep legal context, procurement blockers and sponsor notes attached to each account." />
             </Stack>
           </Card>
         </Grid>
@@ -920,6 +907,36 @@ function fixtureFor(
   return Object.freeze({ ok: true, tag: "Screen", fixture });
 }
 
+function fixtureForExample(
+  example: QuickstartResolvedDesignExample,
+): ComponentPreviewFixtureResult {
+  const targetNodeId = screenNodeId(example.document);
+  if (targetNodeId === null) {
+    const error: ComponentPreviewFixtureError = Object.freeze({
+      phase: "target",
+      code: "target-screen-missing",
+      detail: "No entry screen exists.",
+    });
+    return Object.freeze({
+      ok: false,
+      tag: "Screen",
+      source: example.markup,
+      data: example.data,
+      error,
+    });
+  }
+
+  const fixture: ComponentPreviewFixture = Object.freeze({
+    tag: "Screen",
+    source: example.markup,
+    data: example.data,
+    document: example.document,
+    targetNodeId,
+  });
+
+  return Object.freeze({ ok: true, tag: "Screen", fixture });
+}
+
 function screenNodeId(document: ComponentDocument): string | null {
   for (const [nodeId, node] of Object.entries(document.nodes)) {
     if (node.tag === "Screen") return nodeId;
@@ -927,16 +944,105 @@ function screenNodeId(document: ComponentDocument): string | null {
   return null;
 }
 
-export function screenPatterns(catalog: FacetCatalog = DEFAULT_CATALOG): readonly ScreenPattern[] {
+function rolesForExample(example: QuickstartResolvedDesignExample): readonly string[] {
+  const roles = new Set(example.tags);
+  for (const node of Object.values(example.document.nodes)) {
+    roles.add(node.tag);
+  }
+  return Object.freeze([...roles]);
+}
+
+function screenPatternFromExample(example: QuickstartResolvedDesignExample): ScreenPattern | null {
+  if (example.kind !== "screen") return null;
+  return Object.freeze({
+    id: example.id,
+    source: "imported",
+    label: example.label,
+    description: example.description ?? "Active design screen example.",
+    roles: rolesForExample(example),
+    result: fixtureForExample(example),
+  });
+}
+
+function uniquifyActiveScreenPatternIds(
+  defaultPatterns: readonly ScreenPattern[],
+  activePatterns: readonly ScreenPattern[],
+): readonly ScreenPattern[] {
+  const occupied = new Set(defaultPatterns.map((pattern) => pattern.id));
+  return Object.freeze(
+    activePatterns.map((pattern) => {
+      if (!occupied.has(pattern.id)) {
+        occupied.add(pattern.id);
+        return pattern;
+      }
+      let suffix = 1;
+      let id = `active:${pattern.id}`;
+      while (occupied.has(id)) {
+        suffix += 1;
+        id = `active:${pattern.id}:${String(suffix)}`;
+      }
+      occupied.add(id);
+      return Object.freeze({ ...pattern, id });
+    }),
+  );
+}
+
+function isFacetCatalogInput(input: FacetCatalog | ScreenPatternOptions): input is FacetCatalog {
+  return Array.isArray((input as { readonly components?: unknown }).components);
+}
+
+function screenPatternOptions(input: FacetCatalog | ScreenPatternOptions): {
+  readonly catalog: FacetCatalog;
+  readonly examples: readonly QuickstartResolvedDesignExample[];
+} {
+  if (isFacetCatalogInput(input)) {
+    return { catalog: input, examples: Object.freeze([]) };
+  }
+  return {
+    catalog: input.catalog ?? DEFAULT_CATALOG,
+    examples: input.examples ?? Object.freeze([]),
+  };
+}
+
+function defaultScreenPatterns(catalog: FacetCatalog): readonly ScreenPattern[] {
   return Object.freeze(
     SCREEN_PATTERN_SOURCES.map((source) =>
       Object.freeze({
         id: source.id,
+        source: "default",
         label: source.label,
         description: source.description,
         roles: source.roles,
         result: fixtureFor(source, catalog),
       }),
     ),
+  );
+}
+
+const DEFAULT_SCREEN_PATTERNS = defaultScreenPatterns(DEFAULT_CATALOG);
+
+export function screenPatterns(catalog?: FacetCatalog): readonly ScreenPattern[];
+export function screenPatterns(options: ScreenPatternOptions): readonly ScreenPattern[];
+export function screenPatterns(
+  input: FacetCatalog | ScreenPatternOptions = DEFAULT_CATALOG,
+): readonly ScreenPattern[] {
+  const options = screenPatternOptions(input);
+  const defaultPatterns =
+    options.catalog === DEFAULT_CATALOG
+      ? DEFAULT_SCREEN_PATTERNS
+      : defaultScreenPatterns(options.catalog);
+  const activeScreenPatterns = options.examples.flatMap((example) => {
+    const pattern = screenPatternFromExample(example);
+    return pattern === null ? [] : [pattern];
+  });
+  const visibleActivePatterns = uniquifyActiveScreenPatternIds(
+    defaultPatterns,
+    activeScreenPatterns,
+  );
+
+  return Object.freeze(
+    visibleActivePatterns.length === 0
+      ? defaultPatterns
+      : [...defaultPatterns, ...visibleActivePatterns],
   );
 }

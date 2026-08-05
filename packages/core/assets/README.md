@@ -76,6 +76,10 @@ from main content, `Split` creates an asymmetric two-column rhythm, and
 `Stack justify="between"` plus `grow="true"` can distribute content inside an
 equal-height card, while the card, button, text, and badge recipes decide how
 those elements look.
+`Badge` is deliberately status-shaped rather than button-shaped: non-neutral
+tones use semantic status background, border, and text tokens, and the default
+React implementation keeps badges to their content width inside stretched
+layouts.
 
 URL-bearing media and raw external-link components are not half-opened in the
 default set. `LogoMark` and `Avatar` are mark/initials-only, `MediaCard`

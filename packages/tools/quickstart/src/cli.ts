@@ -16,6 +16,8 @@ import { DEFAULT_THEME } from "@facet/assets";
 import { resolveProvider } from "@facet/reference-agent";
 import { MemorySink } from "@facet/runtime";
 import { createQuickstartAgent } from "./agent.js";
+import { loadQuickstartDesignOverlay } from "./design-overlay-node.js";
+import type { LoadedQuickstartDesignOverlay } from "./design-overlay-node.js";
 import { QUICKSTART_INITIAL_MARKUP, QUICKSTART_PAGE_BRIEF } from "./guide.js";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
 
@@ -37,10 +39,11 @@ const DEFAULT_GUIDE_PATH = "./facet.md";
 const NO_KEY_MESSAGE = "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.";
 
 const USAGE =
-  "Usage: facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--agent-id <id>]";
+  "Usage: facet-quickstart [--guide <path>] [--design <path>] [--port <n>] [--provider openai|anthropic] [--agent-id <id>]";
 
 interface CliFlags {
   readonly guide?: string;
+  readonly design?: string;
   readonly port: number;
   readonly provider?: string;
   readonly agentId: string;
@@ -49,6 +52,7 @@ interface CliFlags {
 /** Parse argv into flags; throws with a user-facing message on bad input. */
 function parseFlags(argv: readonly string[]): CliFlags {
   let guide: string | undefined;
+  let design: string | undefined;
   let port = DEFAULT_PORT;
   let provider: string | undefined;
   let agentId = DEFAULT_AGENT_ID;
@@ -63,6 +67,9 @@ function parseFlags(argv: readonly string[]): CliFlags {
     switch (arg) {
       case "--guide":
         guide = takeValue("--guide", argv[++i]);
+        break;
+      case "--design":
+        design = takeValue("--design", argv[++i]);
         break;
       case "--port": {
         const raw = takeValue("--port", argv[++i]);
@@ -88,10 +95,60 @@ function parseFlags(argv: readonly string[]): CliFlags {
 
   return {
     ...(guide !== undefined ? { guide } : {}),
+    ...(design !== undefined ? { design } : {}),
     port,
     ...(provider !== undefined ? { provider } : {}),
     agentId,
   };
+}
+
+async function cleanupLoadedDesign(
+  activeDesign: LoadedQuickstartDesignOverlay | undefined,
+): Promise<void> {
+  try {
+    await activeDesign?.cleanup();
+  } catch {
+    // Temporary bundle cleanup is best-effort; keep reporting the primary
+    // startup or shutdown result.
+  }
+}
+
+function withDesignCleanup(
+  running: RunningQuickstart,
+  activeDesign: LoadedQuickstartDesignOverlay | undefined,
+): RunningQuickstart {
+  if (activeDesign === undefined) return running;
+  return {
+    url: running.url,
+    close: async () => {
+      try {
+        await running.close();
+      } finally {
+        await cleanupLoadedDesign(activeDesign);
+      }
+    },
+  };
+}
+
+const SIGNAL_EXIT_CODES = Object.freeze({
+  SIGINT: 130,
+  SIGTERM: 143,
+});
+
+function installShutdownHandlers(getRunning: () => RunningQuickstart | undefined): void {
+  let shuttingDown = false;
+  for (const signal of Object.keys(SIGNAL_EXIT_CODES) as (keyof typeof SIGNAL_EXIT_CODES)[]) {
+    process.once(signal, () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      process.exitCode = SIGNAL_EXIT_CODES[signal];
+      const running = getRunning();
+      const close = running === undefined ? Promise.resolve() : running.close().catch(() => {});
+      void close.finally(() => {
+        process.exit();
+      });
+    });
+  }
 }
 
 export async function runCli(
@@ -135,6 +192,15 @@ export async function runCli(
   // are a host integration concern, not a quickstart CLI branch.
   const theme = DEFAULT_THEME;
   const initialMarkup = usingQuickstartPageBrief ? QUICKSTART_INITIAL_MARKUP : undefined;
+  let activeDesign: LoadedQuickstartDesignOverlay | undefined;
+  if (flags.design !== undefined) {
+    try {
+      activeDesign = await loadQuickstartDesignOverlay({ designPath: flags.design });
+    } catch (cause) {
+      error(cause instanceof Error ? cause.message : String(cause));
+      return 1;
+    }
+  }
 
   // One MemorySink shared by the agent (prompt layer ③ reads history) and the
   // facet server (which records into it) — the same conversation, both sides.
@@ -147,10 +213,12 @@ export async function runCli(
       env,
     );
   } catch (cause) {
+    await cleanupLoadedDesign(activeDesign);
     error(cause instanceof Error ? cause.message : String(cause));
     return 1;
   }
   if (provider === null) {
+    await cleanupLoadedDesign(activeDesign);
     error(NO_KEY_MESSAGE);
     return 1;
   }
@@ -174,17 +242,28 @@ export async function runCli(
       agentId: flags.agentId,
       agent,
       sink,
-      theme,
+      ...(activeDesign === undefined
+        ? { theme }
+        : {
+            catalog: activeDesign.design.catalog,
+            theme: activeDesign.design.theme,
+            themeExtensions: activeDesign.design.themeExtensions,
+            pageBundlePath: activeDesign.pageBundlePath,
+          }),
       ...(initialMarkup !== undefined ? { initialMarkup } : {}),
     });
   } catch (cause) {
+    await cleanupLoadedDesign(activeDesign);
     error(cause instanceof Error ? cause.message : String(cause));
     return 1;
   }
 
   log(`Facet quickstart running at ${running.url}`);
   log(`Brain: ${brain}`);
-  hooks.onStarted?.(running);
+  if (activeDesign !== undefined) {
+    log(`Design module: ${activeDesign.overlayPath} (trusted local code)`);
+  }
+  hooks.onStarted?.(withDesignCleanup(running, activeDesign));
   return 0;
 }
 
@@ -201,7 +280,13 @@ function isDirectRun(): boolean {
 }
 
 async function main(): Promise<void> {
-  const code = await runCli(process.argv.slice(2), process.env);
+  let running: RunningQuickstart | undefined;
+  installShutdownHandlers(() => running);
+  const code = await runCli(process.argv.slice(2), process.env, {
+    onStarted: (handle) => {
+      running = handle;
+    },
+  });
   // Success keeps the process alive on the listening server; only failure exits.
   if (code !== 0) process.exitCode = code;
 }

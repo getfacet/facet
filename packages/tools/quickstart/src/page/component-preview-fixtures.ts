@@ -2,6 +2,8 @@ import { DEFAULT_CATALOG } from "@facet/assets";
 import { parseMarkup, validateAuthorMarkup } from "@facet/core";
 import type { ComponentDocument, ComponentSpec, DataModel, FacetCatalog } from "@facet/core";
 
+import type { QuickstartResolvedDesignExample } from "../design-overlay.js";
+
 export interface ComponentPreviewFixture {
   readonly tag: string;
   readonly source: string;
@@ -1202,12 +1204,13 @@ function reject(
   phase: ComponentPreviewFixtureErrorPhase,
   code: string,
   detail: string,
+  data: DataModel = PREVIEW_DATA,
 ): ComponentPreviewFixtureResult {
   return Object.freeze({
     ok: false,
     tag,
     source,
-    data: PREVIEW_DATA,
+    data,
     error: Object.freeze({ phase, code, detail }),
   });
 }
@@ -1282,6 +1285,47 @@ function targetNodeId(document: ComponentDocument, tag: string): string | null {
   return null;
 }
 
+function componentExamplesForTag(
+  tag: string,
+  examples: readonly QuickstartResolvedDesignExample[] | undefined,
+): readonly QuickstartResolvedDesignExample[] {
+  if (examples === undefined) {
+    return Object.freeze([]);
+  }
+  return Object.freeze(
+    examples.filter((example) => example.kind === "component" && example.tags.includes(tag)),
+  );
+}
+
+function buildFixtureFromExample(
+  tag: string,
+  example: QuickstartResolvedDesignExample,
+): ComponentPreviewFixtureResult {
+  const nodeId = targetNodeId(example.document, tag);
+  if (nodeId === null) {
+    return reject(
+      tag,
+      example.markup,
+      "target",
+      "target-node-missing",
+      `Example ${example.id} does not include the target component.`,
+      example.data,
+    );
+  }
+
+  return Object.freeze({
+    ok: true,
+    tag,
+    fixture: Object.freeze({
+      tag,
+      source: example.markup,
+      data: example.data,
+      document: example.document,
+      targetNodeId: nodeId,
+    }),
+  });
+}
+
 function buildFixtureFromSource(
   spec: ComponentSpec,
   catalog: FacetCatalog,
@@ -1315,7 +1359,16 @@ function buildFixtureFromSource(
   });
 }
 
-function buildFixture(spec: ComponentSpec, catalog: FacetCatalog): ComponentPreviewFixtureResult {
+function buildFixture(
+  spec: ComponentSpec,
+  catalog: FacetCatalog,
+  examples?: readonly QuickstartResolvedDesignExample[],
+): ComponentPreviewFixtureResult {
+  const example = componentExamplesForTag(spec.tag, examples)[0];
+  if (example !== undefined) {
+    return buildFixtureFromExample(spec.tag, example);
+  }
+
   const source = PREVIEW_SOURCE_BY_TAG[spec.tag];
   if (source === undefined) {
     return reject(spec.tag, null, "missing", "missing-preview-source", "No preview source exists.");
@@ -1325,26 +1378,31 @@ function buildFixture(spec: ComponentSpec, catalog: FacetCatalog): ComponentPrev
 
 export function deriveComponentPreviewFixtures(
   catalog: FacetCatalog = DEFAULT_CATALOG,
+  examples?: readonly QuickstartResolvedDesignExample[],
 ): readonly ComponentPreviewFixtureResult[] {
-  return Object.freeze(catalog.components.map((spec) => buildFixture(spec, catalog)));
+  return Object.freeze(catalog.components.map((spec) => buildFixture(spec, catalog, examples)));
 }
 
 export function previewFixtureForTag(
   tag: string,
-  catalog: FacetCatalog = DEFAULT_CATALOG,
+  catalog: FacetCatalog | undefined = DEFAULT_CATALOG,
+  examples?: readonly QuickstartResolvedDesignExample[],
 ): ComponentPreviewFixtureResult {
-  const spec = catalog.components.find((candidate) => candidate.tag === tag);
+  const resolvedCatalog = catalog ?? DEFAULT_CATALOG;
+  const spec = resolvedCatalog.components.find((candidate) => candidate.tag === tag);
   if (spec === undefined) {
     return reject(tag, null, "missing", "missing-catalog-tag", "No catalog spec exists.");
   }
-  return buildFixture(spec, catalog);
+  return buildFixture(spec, resolvedCatalog, examples);
 }
 
 export function previewSpecimensForTag(
   tag: string,
-  catalog: FacetCatalog = DEFAULT_CATALOG,
+  catalog: FacetCatalog | undefined = DEFAULT_CATALOG,
+  examples?: readonly QuickstartResolvedDesignExample[],
 ): readonly ComponentPreviewSpecimen[] {
-  const spec = catalog.components.find((candidate) => candidate.tag === tag);
+  const resolvedCatalog = catalog ?? DEFAULT_CATALOG;
+  const spec = resolvedCatalog.components.find((candidate) => candidate.tag === tag);
   if (spec === undefined) {
     return Object.freeze([
       Object.freeze({
@@ -1358,6 +1416,20 @@ export function previewSpecimensForTag(
     ]);
   }
 
+  const exampleSpecimens = componentExamplesForTag(tag, examples).map((example) =>
+    Object.freeze({
+      id: example.id,
+      label: example.label,
+      description: example.description ?? "Active declarative component example.",
+      display: "standard" as const,
+      recipeTokens: Object.freeze(Object.keys(spec.themeRecipe?.tokens ?? {})),
+      result: buildFixtureFromExample(tag, example),
+    }),
+  );
+  if (exampleSpecimens.length > 0) {
+    return Object.freeze(exampleSpecimens);
+  }
+
   const sources = PREVIEW_SPECIMENS_BY_TAG[tag];
   if (sources === undefined || sources.length === 0) {
     return Object.freeze([
@@ -1367,7 +1439,7 @@ export function previewSpecimensForTag(
         description: "Default component fixture.",
         display: "standard",
         recipeTokens: Object.freeze(Object.keys(spec.themeRecipe?.tokens ?? {})),
-        result: buildFixture(spec, catalog),
+        result: buildFixture(spec, resolvedCatalog),
       }),
     ]);
   }
@@ -1380,7 +1452,7 @@ export function previewSpecimensForTag(
         description: source.description,
         display: source.display,
         recipeTokens: source.recipeTokens,
-        result: buildFixtureFromSource(spec, catalog, source.source),
+        result: buildFixtureFromSource(spec, resolvedCatalog, source.source),
       }),
     ),
   );

@@ -17,3 +17,7 @@ generated/
 
 # live-journey tier screenshots + GIF (not committed)
 packages/tools/quickstart/e2e/journey/artifacts/
+
+# Local Playwright/manual visual inspection artifacts.
+.playwright-cli/
+output/playwright/

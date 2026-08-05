@@ -33,13 +33,15 @@ import {
   parseMarkup,
   validateAuthorMarkup,
   type ComponentDocument,
+  type FacetCatalog,
   type FacetTheme,
+  type FacetThemeExtensionDeclaration,
 } from "@facet/core";
 import type { Sink, StageStore } from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "@facet/server";
 import { REFERENCE_AGENT_BUDGET_PRESETS, TURN_TIMEOUT_MS } from "@facet/reference-agent";
 
-export interface QuickstartServerOptions {
+interface QuickstartServerBaseOptions {
   /** Public port the wrapper listens on (the one printed to the deployer). */
   readonly port: number;
   /**
@@ -58,20 +60,38 @@ export interface QuickstartServerOptions {
   readonly sink?: Sink;
   readonly stageStore?: StageStore;
   /**
-   * One effective Theme (validated by the caller) inlined into the shell as
-   * `window.__FACET_THEME__` for the page to hand `StageRenderer`. Component
-   * catalog guidance stays provider-side and has no shell value or browser route.
-   */
-  readonly theme?: FacetTheme;
-  /**
    * Optional author markup for the first document. It is validated before the
    * wrapper listens, inlined as the derived ComponentDocument for first paint,
    * and passed unchanged to the runtime bootstrap. Absent ⇒ model-first paint.
    */
   readonly initialMarkup?: string;
+}
+
+interface QuickstartDefaultDesignOptions {
+  readonly catalog?: undefined;
+  readonly theme?: FacetTheme;
+  readonly themeExtensions?: undefined;
   /** Override where `/app.js` streams from (tests inject a fixture bundle). */
   readonly pageBundlePath?: string;
 }
+
+interface QuickstartCustomDesignOptions {
+  /** Effective catalog for this quickstart session. */
+  readonly catalog?: FacetCatalog;
+  /**
+   * One effective Theme (validated by the caller) inlined into the shell as
+   * `window.__FACET_THEME__` for the page to hand `StageRenderer`. Component
+   * catalog guidance stays provider-side and has no shell value or browser route.
+   */
+  readonly theme?: FacetTheme;
+  /** Effective theme extension declarations for this quickstart session. */
+  readonly themeExtensions?: readonly FacetThemeExtensionDeclaration[];
+  /** Matching browser bundle that registers the same active catalog. */
+  readonly pageBundlePath: string;
+}
+
+export type QuickstartServerOptions = QuickstartServerBaseOptions &
+  (QuickstartDefaultDesignOptions | QuickstartCustomDesignOptions);
 
 /** Loopback default for the public wrapper (see `QuickstartServerOptions.host`). */
 const DEFAULT_PUBLIC_HOST = "127.0.0.1";
@@ -93,25 +113,42 @@ export interface RunningQuickstart {
 }
 
 interface QuickstartBoot {
+  readonly catalog: FacetCatalog;
   readonly theme: FacetTheme;
+  readonly themeExtensions: readonly FacetThemeExtensionDeclaration[];
   readonly initialStage?: ComponentDocument;
   readonly initialMarkup?: string;
 }
 
-function validateInitialMarkup(initialMarkup: string): ComponentDocument {
+function validateInitialMarkup(initialMarkup: string, catalog: FacetCatalog): ComponentDocument {
   const parsed = parseMarkup(initialMarkup);
   if (!parsed.ok) throw new Error(`${parsed.error.code}: ${parsed.error.cause}`);
-  const validated = validateAuthorMarkup(parsed.ast, DEFAULT_CATALOG, {});
+  const validated = validateAuthorMarkup(parsed.ast, catalog, {});
   if (!validated.ok) throw new Error(`${validated.error.code}: ${validated.error.cause}`);
   return validated.document;
 }
 
+function assertQuickstartDesignBundleCoherence(options: QuickstartServerOptions): void {
+  if (options.pageBundlePath !== undefined) return;
+  if (options.catalog !== undefined && options.catalog !== DEFAULT_CATALOG) {
+    throw new Error("A custom quickstart catalog requires a matching page bundle path.");
+  }
+  if ((options.themeExtensions?.length ?? 0) > 0) {
+    throw new Error("Quickstart theme extensions require a matching page bundle path.");
+  }
+}
+
 function resolveQuickstartBoot(options: QuickstartServerOptions): QuickstartBoot {
+  assertQuickstartDesignBundleCoherence(options);
+  const catalog = options.catalog ?? DEFAULT_CATALOG;
   const theme = options.theme ?? DEFAULT_THEME;
-  if (options.initialMarkup === undefined) return { theme };
+  const themeExtensions = options.themeExtensions ?? [];
+  if (options.initialMarkup === undefined) return { catalog, theme, themeExtensions };
   return {
+    catalog,
     theme,
-    initialStage: validateInitialMarkup(options.initialMarkup),
+    themeExtensions,
+    initialStage: validateInitialMarkup(options.initialMarkup, catalog),
     initialMarkup: options.initialMarkup,
   };
 }
@@ -405,8 +442,9 @@ async function bootInternalServer(
     const server = createFacetServer({
       port,
       host: "127.0.0.1",
-      catalog: DEFAULT_CATALOG,
+      catalog: boot.catalog,
       theme: boot.theme,
+      themeExtensions: boot.themeExtensions,
       ...(boot.initialMarkup === undefined ? {} : { initialMarkup: boot.initialMarkup }),
       agentToken: randomUUID(),
       agent: options.agent,

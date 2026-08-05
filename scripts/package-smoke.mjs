@@ -160,18 +160,43 @@ export const expectedRuntimeExports = {
 };
 const expectedDefaultCatalogTags = [
   "Screen",
+  "AppShell",
   "Stack",
   "Row",
+  "Split",
   "Grid",
   "Modal",
   "Card",
   "Empty",
+  "LogoMark",
+  "Nav",
+  "SideNav",
+  "SideNavItem",
+  "Section",
+  "Divider",
+  "Hero",
+  "Avatar",
+  "ProfileHeader",
+  "ProductShowcase",
+  "VisualPanel",
+  "MediaCard",
+  "LinkList",
+  "SocialLinks",
+  "FeatureList",
+  "StatStrip",
+  "Gallery",
+  "Testimonial",
+  "Timeline",
+  "CTA",
+  "Alert",
+  "Progress",
+  "Footer",
   "Text",
   "Metric",
   "Badge",
+  "Table",
   "Button",
   "Field",
-  "Table",
 ];
 const expectedFacetToolNames = [
   "render_page",
@@ -423,13 +448,13 @@ assert.deepEqual(
   assets.DEFAULT_CATALOG.components.map((component) => component.tag),
   expectedDefaultCatalogTags,
 );
-assert.equal(assets.DEFAULT_CATALOG.components.length, 13);
+assert.equal(assets.DEFAULT_CATALOG.components.length, expectedDefaultCatalogTags.length);
 assert.equal(core.validateCatalog(assets.DEFAULT_CATALOG).ok, true);
-assert.equal(core.validateTheme(assets.DEFAULT_THEME).ok, true);
+assert.equal(core.validateTheme(assets.DEFAULT_THEME, { catalog: assets.DEFAULT_CATALOG }).ok, true);
 assert.deepEqual(Object.keys(assetsReact.DEFAULT_REGISTRY).sort(), [
   ...expectedDefaultCatalogTags,
 ].sort());
-assert.equal(Object.keys(assetsReact.DEFAULT_REGISTRY).length, 13);
+assert.equal(Object.keys(assetsReact.DEFAULT_REGISTRY).length, expectedDefaultCatalogTags.length);
 assert.equal("DEFAULT_REGISTRY" in assets, false);
 
 assert.deepEqual([...tools.FACET_TOOL_NAMES], expectedFacetToolNames);
@@ -506,7 +531,18 @@ import type {
 import type { AgentConnection, ConnectOptions } from "@facet/agent-client";
 import type { SseVisitorMessageInput } from "@facet/client";
 import type { ReferenceAgentOptions } from "@facet/reference-agent";
-import type { QuickstartServerOptions, RunningQuickstart } from "@facet/quickstart";
+import type {
+  QuickstartDesignExample,
+  QuickstartDesignNote,
+  QuickstartDesignOverlay,
+  QuickstartDesignRegistry,
+  QuickstartDesignRegistryEntry,
+  QuickstartResolvedDesign,
+  QuickstartResolvedDesignExample,
+  QuickstartServerOptions,
+  QuickstartThemeOverlay,
+  RunningQuickstart,
+} from "@facet/quickstart";
 // @ts-expect-error retired hard-cut type
 import type { FacetTree } from "@facet/core"; // component-hard-cut: allowed-negative
 // @ts-expect-error retired hard-cut type
@@ -539,7 +575,15 @@ export type ComponentMarkupContract = [
   ConnectOptions,
   SseVisitorMessageInput,
   ReferenceAgentOptions,
+  QuickstartDesignExample,
+  QuickstartDesignNote,
+  QuickstartDesignOverlay,
+  QuickstartDesignRegistry,
+  QuickstartDesignRegistryEntry,
+  QuickstartResolvedDesign,
+  QuickstartResolvedDesignExample,
   QuickstartServerOptions,
+  QuickstartThemeOverlay,
   RunningQuickstart,
 ];
 export type ToolInputContract = [
@@ -556,12 +600,55 @@ export type ToolInputContract = [
 export const renderPageInput = { markup: "<Facet><Screen name=\\"home\\" /></Facet>" } satisfies RenderPageInput;
 export const insertInput = { targetId: "n1", markup: "<Text value=\\"Hello\\" />" } satisfies InsertSubtreeInput;
 export const publishInput = { path: "metrics", value: { ok: true } } satisfies PublishDataInput;
+export const overlayComponent = (() => null) satisfies QuickstartDesignRegistryEntry;
+export const overlayRegistry = { PromoBanner: overlayComponent } satisfies QuickstartDesignRegistry;
+export const overlayExample = {
+  id: "promo-banner",
+  kind: "component",
+  label: "Promo banner",
+  tags: ["PromoBanner"],
+  markup: "<Facet><Screen name=\\"home\\"><PromoBanner title=\\"Launch\\" /></Screen></Facet>",
+} satisfies QuickstartDesignExample;
+export const overlayTheme = {
+  semantic: {
+    action: {
+      primaryBg: "#123456",
+    },
+  },
+} satisfies QuickstartThemeOverlay;
+export const designOverlay = {
+  theme: overlayTheme,
+  components: [
+    {
+      tag: "PromoBanner",
+      whenToUse: "Use for a compact promotional callout.",
+      props: {
+        title: {
+          type: "string",
+          guidance: "Concise callout title.",
+          required: true,
+        },
+      },
+      acceptsChildren: false,
+    },
+  ],
+  registry: overlayRegistry,
+  examples: [overlayExample],
+  notes: [{ id: "brand", title: "Brand", body: "Use the primary launch color." }],
+} satisfies QuickstartDesignOverlay;
+declare const resolvedDesign: QuickstartResolvedDesign;
+declare const resolvedExample: QuickstartResolvedDesignExample;
+declare const designNote: QuickstartDesignNote;
 declare const externalAgent: FacetAgent;
 export const agentClientOptions = { serverUrl: "http://localhost:5291", agentId: "external-agent", agent: externalAgent } satisfies ConnectOptions;
 declare const contract: ComponentMarkupContract;
 declare const toolInputs: ToolInputContract;
 void contract;
 void toolInputs;
+void designOverlay;
+void resolvedDesign;
+void resolvedExample;
+void designNote;
 `,
     );
     writeFileSync(

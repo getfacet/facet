@@ -1,7 +1,9 @@
+import type { FacetCatalog } from "@facet/core";
 import type { CSSProperties, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { ComponentPreview } from "./component-preview.js";
+import type { ComponentPreviewProps } from "./component-preview.js";
 import { previewSpecimensForTag } from "./component-preview-fixtures.js";
 import type {
   ComponentPreviewFixtureResult,
@@ -12,10 +14,17 @@ import {
   type ComponentInspectorRow,
   type ComponentPropMetadata,
 } from "./component-inspector-model.js";
+import type { AssetSourceFilter } from "./asset-source-filter.js";
+import type { QuickstartResolvedDesignExample } from "../design-overlay.js";
 
 const DEFAULT_COMPONENT_ROWS = deriveComponentInspectorRows();
 
 type PreviewResult = ComponentPreviewFixtureResult;
+type AcceptedPreviewBootstrap = NonNullable<ComponentPreviewProps["rendererBootstrap"]>;
+
+export interface ComponentInspectorActiveDesign {
+  readonly bootstrap: AcceptedPreviewBootstrap;
+}
 
 interface ComponentGroup {
   readonly key: string;
@@ -25,28 +34,68 @@ interface ComponentGroup {
 }
 
 export interface ComponentInspectorProps {
+  readonly activeDesign?: ComponentInspectorActiveDesign;
+  readonly examples?: readonly QuickstartResolvedDesignExample[];
+  readonly sourceFilter?: AssetSourceFilter;
   readonly renderPreview?: (preview: PreviewResult) => ReactNode;
   readonly suppressPreviewModals?: boolean;
 }
 
 export function ComponentInspector({
+  activeDesign,
+  examples,
+  sourceFilter = "all",
   renderPreview,
   suppressPreviewModals,
 }: ComponentInspectorProps = {}): ReactNode {
-  const rows = useMemo(() => DEFAULT_COMPONENT_ROWS, []);
-  const [query, setQuery] = useState("");
-  const [selectedTag, setSelectedTag] = useState(rows[0]?.tag ?? "");
-  const [openGroupKeys, setOpenGroupKeys] = useState<ReadonlySet<string>>(
-    () => new Set(groupRows(rows).map((group) => group.key)),
+  const activeCatalog: FacetCatalog | undefined = activeDesign?.bootstrap.catalog;
+  const hasRenderedTrustedPreview = useRef(false);
+  const shouldResolveTrustedPreviews =
+    renderPreview !== undefined ||
+    suppressPreviewModals !== true ||
+    hasRenderedTrustedPreview.current;
+  if (suppressPreviewModals !== true) {
+    hasRenderedTrustedPreview.current = true;
+  }
+  const rows = useMemo(
+    () =>
+      activeCatalog === undefined
+        ? DEFAULT_COMPONENT_ROWS
+        : deriveComponentInspectorRows(activeCatalog),
+    [activeCatalog],
   );
-  const filteredRows = useMemo(() => filterRows(rows, query), [query, rows]);
+  const sourceRows = useMemo(() => filterRowsBySource(rows, sourceFilter), [rows, sourceFilter]);
+  const [query, setQuery] = useState("");
+  const [selectedTag, setSelectedTag] = useState(sourceRows[0]?.tag ?? "");
+  const [openGroupKeys, setOpenGroupKeys] = useState<ReadonlySet<string> | null>(() =>
+    shouldResolveTrustedPreviews ? openGroupKeySet(sourceRows) : null,
+  );
+  const filteredRows = useMemo(
+    () => (shouldResolveTrustedPreviews ? filterRows(sourceRows, query) : []),
+    [query, sourceRows, shouldResolveTrustedPreviews],
+  );
   const groupedRows = useMemo(() => groupRows(filteredRows), [filteredRows]);
+  const resolvedOpenGroupKeys = useMemo(
+    () =>
+      shouldResolveTrustedPreviews
+        ? (openGroupKeys ?? openGroupKeySet(sourceRows))
+        : new Set<string>(),
+    [openGroupKeys, sourceRows, shouldResolveTrustedPreviews],
+  );
   const selectedRow =
     filteredRows.find((row) => row.tag === selectedTag) ?? filteredRows[0] ?? null;
-  const previewTag = selectedRow?.tag ?? null;
   const specimens = useMemo(() => {
-    return previewTag === null ? [] : previewSpecimensForTag(previewTag);
-  }, [previewTag]);
+    if (selectedRow === null) {
+      return [];
+    }
+    return shouldResolveTrustedPreviews
+      ? previewSpecimensForTag(selectedRow.tag, activeCatalog, examples)
+      : [];
+  }, [activeCatalog, examples, selectedRow, shouldResolveTrustedPreviews]);
+
+  if (!shouldResolveTrustedPreviews) {
+    return <SuppressedComponentInspector componentCount={sourceRows.length} />;
+  }
 
   return (
     <section
@@ -57,7 +106,7 @@ export function ComponentInspector({
       <div data-component-list-panel style={styles.listPanel}>
         <header style={styles.panelHeader}>
           <h2 style={styles.panelTitle}>Components</h2>
-          <span style={styles.componentCount}>{rows.length} components</span>
+          <span style={styles.componentCount}>{sourceRows.length} components</span>
         </header>
         <input
           aria-label="Search components"
@@ -74,7 +123,7 @@ export function ComponentInspector({
             </p>
           ) : (
             groupedRows.map((group) => {
-              const isOpen = openGroupKeys.has(group.key);
+              const isOpen = resolvedOpenGroupKeys.has(group.key);
               return (
                 <section
                   aria-label={`${group.label} components`}
@@ -85,7 +134,9 @@ export function ComponentInspector({
                   <button
                     aria-expanded={isOpen}
                     data-component-group-toggle={group.key}
-                    onClick={() => setOpenGroupKeys(toggleGroupKey(openGroupKeys, group.key))}
+                    onClick={() =>
+                      setOpenGroupKeys(toggleGroupKey(resolvedOpenGroupKeys, group.key))
+                    }
                     style={styles.groupSummary}
                     type="button"
                   >
@@ -139,6 +190,8 @@ export function ComponentInspector({
           <ComponentDetail
             row={selectedRow}
             specimens={specimens}
+            {...(activeDesign === undefined ? {} : { rendererBootstrap: activeDesign.bootstrap })}
+            renderTrustedPreview={shouldResolveTrustedPreviews}
             {...(renderPreview === undefined ? {} : { renderPreview })}
             {...(suppressPreviewModals === undefined ? {} : { suppressPreviewModals })}
           />
@@ -148,17 +201,56 @@ export function ComponentInspector({
   );
 }
 
+function SuppressedComponentInspector({
+  componentCount,
+}: {
+  readonly componentCount: number;
+}): ReactNode {
+  return (
+    <section
+      aria-label="Components section"
+      data-facet-component-inspector
+      style={styles.inspector}
+    >
+      <div data-component-list-panel style={styles.listPanel}>
+        <header style={styles.panelHeader}>
+          <h2 style={styles.panelTitle}>Components</h2>
+          <span style={styles.componentCount}>{componentCount} components</span>
+        </header>
+      </div>
+      <section
+        aria-label="Component details"
+        data-component-detail-panel
+        style={styles.detailPanel}
+      >
+        <p data-component-detail-empty style={styles.emptyState}>
+          Preview deferred
+        </p>
+      </section>
+    </section>
+  );
+}
+
 function ComponentDetail({
   row,
   specimens,
+  rendererBootstrap,
+  renderTrustedPreview,
   renderPreview,
   suppressPreviewModals,
 }: {
   readonly row: ComponentInspectorRow;
   readonly specimens: readonly ComponentPreviewSpecimen[];
+  readonly rendererBootstrap?: AcceptedPreviewBootstrap;
+  readonly renderTrustedPreview: boolean;
   readonly renderPreview?: (preview: PreviewResult) => ReactNode;
   readonly suppressPreviewModals?: boolean;
 }): ReactNode {
+  const themeBadge = rendererBootstrap === undefined ? "Default theme" : "Active theme";
+  const themeHint =
+    rendererBootstrap === undefined
+      ? "Rendered with the default theme recipe"
+      : "Rendered with the active theme recipe";
   return (
     <article data-component-detail={row.tag} style={styles.detailContent}>
       <header style={styles.detailHeader}>
@@ -188,15 +280,17 @@ function ComponentDetail({
         <header style={styles.previewHeader}>
           <div style={styles.sectionTitleBlock}>
             <h4 style={styles.sectionTitle}>Variants</h4>
-            <span style={styles.sectionHint}>Rendered with the default theme recipe</span>
+            <span style={styles.sectionHint}>{themeHint}</span>
           </div>
-          <span style={styles.previewThemeBadge}>Default theme</span>
+          <span style={styles.previewThemeBadge}>{themeBadge}</span>
         </header>
         <div style={styles.specimenGrid}>
           {specimens.map((specimen) => (
             <SpecimenCard
               key={specimen.id}
               specimen={specimen}
+              {...(rendererBootstrap === undefined ? {} : { rendererBootstrap })}
+              renderTrustedPreview={renderTrustedPreview}
               {...(renderPreview === undefined ? {} : { renderPreview })}
               {...(suppressPreviewModals === undefined ? {} : { suppressPreviewModals })}
             />
@@ -264,11 +358,15 @@ function ComponentDetail({
 }
 
 function SpecimenCard({
+  rendererBootstrap,
   renderPreview,
+  renderTrustedPreview,
   specimen,
   suppressPreviewModals,
 }: {
+  readonly rendererBootstrap?: AcceptedPreviewBootstrap;
   readonly renderPreview?: (preview: PreviewResult) => ReactNode;
+  readonly renderTrustedPreview: boolean;
   readonly specimen: ComponentPreviewSpecimen;
   readonly suppressPreviewModals?: boolean;
 }): ReactNode {
@@ -292,12 +390,17 @@ function SpecimenCard({
       </header>
       <div style={styles.previewFrame}>
         {renderPreview === undefined ? (
-          <ComponentPreview
-            result={specimen.result}
-            {...(suppressPreviewModals === undefined
-              ? {}
-              : { suppressModals: suppressPreviewModals })}
-          />
+          renderTrustedPreview ? (
+            <ComponentPreview
+              result={specimen.result}
+              {...(rendererBootstrap === undefined ? {} : { rendererBootstrap })}
+              {...(suppressPreviewModals === undefined
+                ? {}
+                : { suppressModals: suppressPreviewModals })}
+            />
+          ) : (
+            <SuppressedPreviewPlaceholder tag={specimen.result.tag} />
+          )
         ) : (
           renderPreview(specimen.result)
         )}
@@ -313,6 +416,16 @@ function SpecimenCard({
         </div>
       </div>
     </article>
+  );
+}
+
+function SuppressedPreviewPlaceholder({ tag }: { readonly tag: string }): ReactNode {
+  return (
+    <div
+      aria-hidden="true"
+      data-facet-component-preview={tag}
+      data-facet-component-preview-state="suppressed"
+    />
   );
 }
 
@@ -373,6 +486,14 @@ function filterRows(
   return rows.filter((row) => searchableText(row).includes(normalizedQuery));
 }
 
+function filterRowsBySource(
+  rows: readonly ComponentInspectorRow[],
+  sourceFilter: AssetSourceFilter,
+): readonly ComponentInspectorRow[] {
+  if (sourceFilter === "all") return rows;
+  return rows.filter((row) => row.source === sourceFilter);
+}
+
 function searchableText(row: ComponentInspectorRow): string {
   const collectParts =
     row.collect === null ? [] : [row.collect.valueProp, row.collect.sensitiveProp ?? ""];
@@ -422,6 +543,10 @@ function groupRows(rows: readonly ComponentInspectorRow[]): readonly ComponentGr
     }
   }
   return [...groups.values()].sort((left, right) => left.order - right.order);
+}
+
+function openGroupKeySet(rows: readonly ComponentInspectorRow[]): ReadonlySet<string> {
+  return new Set(groupRows(rows).map((group) => group.key));
 }
 
 function toggleGroupKey(keys: ReadonlySet<string>, key: string): ReadonlySet<string> {
@@ -540,7 +665,7 @@ const styles = {
     textTransform: "uppercase",
   },
   groupCount: {
-    color: "#827763",
+    color: "#6f6048",
     fontSize: "0.6875rem",
     fontWeight: 650,
   },
@@ -685,7 +810,7 @@ const styles = {
     gap: "0.1875rem",
   },
   sectionHint: {
-    color: "#827763",
+    color: "#6f6048",
     fontSize: "0.75rem",
     lineHeight: 1.35,
   },
@@ -740,7 +865,7 @@ const styles = {
     lineHeight: 1.2,
   },
   specimenKind: {
-    color: "#827763",
+    color: "#6f6048",
     fontSize: "0.6875rem",
     fontWeight: 650,
     lineHeight: 1,
@@ -773,7 +898,7 @@ const styles = {
     gap: "0.25rem",
   },
   specimenTokenLabel: {
-    color: "#827763",
+    color: "#6f6048",
     fontSize: "0.6875rem",
     fontWeight: 700,
     lineHeight: 1,
@@ -885,12 +1010,12 @@ const styles = {
   },
   mutedText: {
     margin: 0,
-    color: "#827763",
+    color: "#6f6048",
     fontSize: "0.8125rem",
   },
   emptyState: {
     margin: 0,
-    color: "#827763",
+    color: "#6f6048",
     fontSize: "0.8125rem",
   },
 } satisfies Record<string, CSSProperties>;

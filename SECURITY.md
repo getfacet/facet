@@ -56,10 +56,13 @@ above as required work, not optional — add authentication, per-tenant isolatio
 and rate limiting at your edge.
 
 `@facet/quickstart` is the reference local server: it composes `@facet/server`
-and `@facet/reference-agent` behind a zero-setup CLI, so the trust model above
-applies to it directly — set `agentToken` before exposing it beyond your own
-machine, and treat visitor sessions as anonymous-only unless you add your own
-authentication in front.
+and `@facet/reference-agent` behind a zero-setup CLI. It binds loopback by
+default, hides `/agent/*` on the public wrapper, and uses a random internal
+agent token for the loopback server. Its browser routes still remain
+unauthenticated and `/event`/`/message` can spend the operator's provider key,
+so expose Quickstart beyond your own machine only after adding authentication,
+rate limiting, and spend controls in front. Treat visitor sessions as
+anonymous-only unless that outer layer authenticates them.
 
 Two in-memory server structures are bounded, best-effort caches under that same
 trust model: the per-session frame log backing `Last-Event-ID` resume (session

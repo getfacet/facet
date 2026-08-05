@@ -49,7 +49,19 @@ const HOSTILE_SEED_MARKUP = `<Facet entry="home">
 const EXPECTED_QUICKSTART_BARREL_TYPE_EXPORTS = [
   "ConversationSummary",
   "QuickstartAgentOptions",
+  "QuickstartDesignExample",
+  "QuickstartDesignExampleKind",
+  "QuickstartDesignNote",
+  "QuickstartDesignOverlay",
+  "QuickstartDesignOverlayError",
+  "QuickstartDesignOverlayValidationResult",
+  "QuickstartDesignRegistry",
+  "QuickstartDesignRegistryEntry",
+  "QuickstartReadonlyDeepPartial",
+  "QuickstartResolvedDesign",
+  "QuickstartResolvedDesignExample",
   "QuickstartServerOptions",
+  "QuickstartThemeOverlay",
   "ReferenceAgentBudget",
   "ReferenceAgentBudgetOptions",
   "ReferenceAgentBudgetOverrides",
@@ -614,9 +626,9 @@ describe("quickstart E2E — CLI default seed and barrel surface", () => {
       expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(121);
 
       const seedText = JSON.stringify(inline);
-      expect(seedText).toHaveLength(24_685);
+      expect(seedText).toHaveLength(24_704);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "418a30dcbd952311f962ff717f64949bfea1ef5d01c261a1e6d11f4b789aa7de",
+        "372d977c4b6ab24814805ad416fef28e06a1e401c031c8180f409343c0f3b0a2",
       );
       for (const tag of [
         "Screen",
@@ -644,7 +656,7 @@ describe("quickstart E2E — CLI default seed and barrel surface", () => {
     }
   });
 
-  it("exposes only the explicit quickstart barrel contract", async () => {
+  it("public exports expose only the explicit quickstart barrel contract", async () => {
     const quickstart = await import("./index.js");
     expect(Object.keys(quickstart).sort()).toEqual([
       "QUICKSTART_INITIAL_STAGE",

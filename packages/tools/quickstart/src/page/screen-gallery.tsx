@@ -2,21 +2,32 @@ import type { CSSProperties, ReactNode } from "react";
 import { useMemo, useState } from "react";
 
 import { ComponentPreview } from "./component-preview.js";
+import type { ComponentPreviewProps } from "./component-preview.js";
 import type { ComponentPreviewFixtureResult } from "./component-preview-fixtures.js";
+import type { AssetSourceFilter } from "./asset-source-filter.js";
 import { screenPatterns, type ScreenPattern } from "./screen-gallery-fixtures.js";
+
+type AcceptedPreviewBootstrap = NonNullable<ComponentPreviewProps["rendererBootstrap"]>;
 
 export interface ScreenGalleryProps {
   readonly patterns?: readonly ScreenPattern[];
+  readonly rendererBootstrap?: AcceptedPreviewBootstrap;
+  readonly sourceFilter?: AssetSourceFilter;
   readonly renderPreview?: (preview: ComponentPreviewFixtureResult) => ReactNode;
   readonly suppressPreviewModals?: boolean;
 }
 
 export function ScreenGallery({
   patterns,
+  rendererBootstrap,
+  sourceFilter = "all",
   renderPreview,
   suppressPreviewModals,
 }: ScreenGalleryProps = {}): ReactNode {
-  const resolvedPatterns = useMemo(() => patterns ?? screenPatterns(), [patterns]);
+  const resolvedPatterns = useMemo(
+    () => filterPatternsBySource(patterns ?? screenPatterns(), sourceFilter),
+    [patterns, sourceFilter],
+  );
   const [selectedPatternId, setSelectedPatternId] = useState(resolvedPatterns[0]?.id ?? "");
   const selectedPattern =
     resolvedPatterns.find((pattern) => pattern.id === selectedPatternId) ??
@@ -30,7 +41,9 @@ export function ScreenGallery({
         <div style={styles.titleBlock}>
           <h2 style={styles.title}>Screens</h2>
           <p style={styles.summary}>
-            Larger default-asset screens rendered as complete product surfaces.
+            {sourceFilter === "imported"
+              ? "Imported design screens rendered through the active registry."
+              : "Larger default-asset screens rendered as complete product surfaces."}
           </p>
         </div>
         <span style={styles.count}>{resolvedPatterns.length} patterns</span>
@@ -64,6 +77,7 @@ export function ScreenGallery({
         ) : (
           <ScreenPatternDetail
             pattern={selectedPattern}
+            {...(rendererBootstrap === undefined ? {} : { rendererBootstrap })}
             {...(renderPreview === undefined ? {} : { renderPreview })}
             {...(suppressPreviewModals === undefined ? {} : { suppressPreviewModals })}
           />
@@ -73,12 +87,22 @@ export function ScreenGallery({
   );
 }
 
+function filterPatternsBySource(
+  patterns: readonly ScreenPattern[],
+  sourceFilter: AssetSourceFilter,
+): readonly ScreenPattern[] {
+  if (sourceFilter === "all") return patterns;
+  return patterns.filter((pattern) => pattern.source === sourceFilter);
+}
+
 function ScreenPatternDetail({
   pattern,
+  rendererBootstrap,
   renderPreview,
   suppressPreviewModals,
 }: {
   readonly pattern: ScreenPattern;
+  readonly rendererBootstrap?: AcceptedPreviewBootstrap;
   readonly renderPreview?: (preview: ComponentPreviewFixtureResult) => ReactNode;
   readonly suppressPreviewModals?: boolean;
 }): ReactNode {
@@ -102,6 +126,7 @@ function ScreenPatternDetail({
         {renderPreview === undefined ? (
           <ComponentPreview
             result={pattern.result}
+            {...(rendererBootstrap === undefined ? {} : { rendererBootstrap })}
             {...(suppressPreviewModals === undefined
               ? {}
               : { suppressModals: suppressPreviewModals })}
@@ -299,7 +324,7 @@ const styles = {
   },
   emptyState: {
     margin: 0,
-    color: "#827763",
+    color: "#6f6048",
     fontSize: "0.8125rem",
   },
 } satisfies Record<string, CSSProperties>;

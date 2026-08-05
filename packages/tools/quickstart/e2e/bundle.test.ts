@@ -7,10 +7,14 @@
  * survived the tsup define, (b) evaluation does not throw, and (c) React mounts
  * the default component renderer plus the floating chat shell.
  */
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, sep } from "node:path";
+import { promisify } from "node:util";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { DEFAULT_THEME } from "@facet/assets";
 import { BOUNDS, NEUTRAL_COPY_DEFAULTS, type ComponentDocument } from "@facet/core";
 
@@ -18,7 +22,19 @@ import { BOUNDS, NEUTRAL_COPY_DEFAULTS, type ComponentDocument } from "@facet/co
 // rewrites that exact pattern into a served-asset URL (http://localhost:3000/…
 // under the jsdom environment), which fileURLToPath then rejects. Deriving the
 // directory first sidesteps the transform.
-const BUNDLE_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "page", "app.js");
+const E2E_DIR = dirname(fileURLToPath(import.meta.url));
+const PACKAGE_ROOT = join(E2E_DIR, "..");
+const BUNDLE_PATH = join(PACKAGE_ROOT, "dist", "page", "app.js");
+const PAGE_MAIN_BUNDLE_PATH = join(PACKAGE_ROOT, "dist", "page", "main.js");
+const DESIGN_OVERLAY_TYPE_IMPORT = join(PACKAGE_ROOT, "src", "design-overlay.js").replaceAll(
+  sep,
+  "/",
+);
+const DESIGN_OVERLAY_NODE_MODULE_URL = pathToFileURL(
+  join(PACKAGE_ROOT, "src", "design-overlay-node.ts"),
+).href;
+const execFileAsync = promisify(execFile);
+const temporaryRoots: string[] = [];
 
 function readBundle(): string {
   try {
@@ -66,6 +82,130 @@ function completeTheme(background: string, success = "#0f7b4f") {
       status: { ...DEFAULT_THEME.semantic.status, successText: success },
     },
   };
+}
+
+async function makeOverlayBundle() {
+  const root = await mkdtemp(join(tmpdir(), "facet-quickstart-overlay-bundle-"));
+  temporaryRoots.push(root);
+  const overlayPath = join(root, "facet-design.tsx");
+  const resultPath = join(root, "bundle-result.json");
+  const buildScriptPath = join(root, "build-overlay.mjs");
+  await writeFile(
+    overlayPath,
+    [
+      `import type { QuickstartDesignOverlay } from "${DESIGN_OVERLAY_TYPE_IMPORT}";`,
+      "",
+      "function PromoBanner() {",
+      '  return <section data-facet-overlay-sentinel="PromoBanner">Bundle overlay promo</section>;',
+      "}",
+      "",
+      "export default {",
+      "  theme: {",
+      "    foundation: {",
+      "      palette: {",
+      '        brand500: "#6741d9",',
+      "      },",
+      "    },",
+      "  },",
+      "  components: [",
+      "    {",
+      '      tag: "PromoBanner",',
+      '      whenToUse: "Use for an overlay-generated bundle promo.",',
+      "      props: {},",
+      "      acceptsChildren: false,",
+      "    },",
+      "  ],",
+      "  registry: { PromoBanner },",
+      "  examples: [",
+      "    {",
+      '      id: "bundle-promo-screen",',
+      '      kind: "screen",',
+      '      label: "Bundle promo screen",',
+      '      description: "Active overlay screen rendered from the custom bundle.",',
+      '      tags: ["Screen", "PromoBanner"],',
+      '      markup: `<Facet entry="preview">',
+      '  <Screen name="preview">',
+      "    <PromoBanner />",
+      "  </Screen>",
+      "</Facet>`,",
+      "    },",
+      "  ],",
+      "  notes: [",
+      "    {",
+      '      id: "bundle-overlay",',
+      '      title: "Bundle overlay",',
+      '      body: "The active Assets tab is using the overlay bundle.",',
+      "    },",
+      "  ],",
+      "} satisfies QuickstartDesignOverlay;",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  await writeFile(
+    buildScriptPath,
+    [
+      `import { writeFile } from "node:fs/promises";`,
+      `import { dirname } from "node:path";`,
+      `import { loadQuickstartDesignOverlay } from ${JSON.stringify(DESIGN_OVERLAY_NODE_MODULE_URL)};`,
+      "",
+      "const design = await loadQuickstartDesignOverlay({",
+      `  designPath: ${JSON.stringify(overlayPath)},`,
+      `  pageMountModulePath: ${JSON.stringify(PAGE_MAIN_BUNDLE_PATH)},`,
+      `  temporaryParentDirectory: ${JSON.stringify(join(root, "bundles"))},`,
+      "  minify: false,",
+      "});",
+      "await writeFile(",
+      `  ${JSON.stringify(resultPath)},`,
+      "  JSON.stringify({",
+      "    bundlePath: design.pageBundlePath,",
+      "    temporaryDirectory: dirname(design.pageBundlePath),",
+      "  }),",
+      '  "utf8",',
+      ");",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await execFileAsync("pnpm", ["exec", "tsx", buildScriptPath], {
+    cwd: PACKAGE_ROOT,
+    timeout: 120_000,
+  });
+  const result = JSON.parse(readFileSync(resultPath, "utf8")) as {
+    readonly bundlePath: string;
+    readonly temporaryDirectory: string;
+  };
+
+  return Object.freeze({
+    bundlePath: result.bundlePath,
+    async cleanup(): Promise<void> {
+      await rm(result.temporaryDirectory, { force: true, recursive: true });
+    },
+  });
+}
+
+async function waitForSelector(root: ParentNode, selector: string): Promise<Element> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const element = root.querySelector(selector);
+    if (element !== null) return element;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  const element = root.querySelector(selector);
+  expect(element).not.toBeNull();
+  return element!;
+}
+
+async function clickButton(root: ParentNode, label: string): Promise<void> {
+  for (const candidate of root.querySelectorAll("button")) {
+    if (candidate instanceof HTMLButtonElement && candidate.textContent?.includes(label) === true) {
+      candidate.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return;
+    }
+  }
+  throw new Error(`Missing button: ${label}`);
 }
 
 /** No-op EventSource: enough surface for SseTransport to construct + close. */
@@ -133,11 +273,13 @@ function bootWindow(): {
   __FACET_INITIAL_STAGE__?: unknown;
   __FACET_THEME__?: unknown;
   __FACET_POST_TIMEOUT_MS__?: unknown;
+  __FACET_QUICKSTART_DISABLE_AUTOMOUNT__?: unknown;
 } {
   return window as unknown as {
     __FACET_INITIAL_STAGE__?: unknown;
     __FACET_THEME__?: unknown;
     __FACET_POST_TIMEOUT_MS__?: unknown;
+    __FACET_QUICKSTART_DISABLE_AUTOMOUNT__?: unknown;
   };
 }
 
@@ -152,7 +294,14 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
     delete bootWindow().__FACET_INITIAL_STAGE__;
     delete bootWindow().__FACET_THEME__;
     delete bootWindow().__FACET_POST_TIMEOUT_MS__;
+    delete bootWindow().__FACET_QUICKSTART_DISABLE_AUTOMOUNT__;
     installBrowserStubs();
+  });
+
+  afterEach(async () => {
+    await Promise.all(
+      temporaryRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })),
+    );
   });
 
   it("contains no bare process.env.NODE_ENV token (tsup define applied)", () => {
@@ -171,6 +320,33 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
     expect(bundleText).not.toMatch(
       /\bnode:(?:assert|buffer|child_process|crypto|events|fs|http|https|net|os|path|stream|url|util|worker_threads)\b/,
     );
+  });
+
+  it("boots an overlay-generated quickstart bundle", async () => {
+    const bundle = await makeOverlayBundle();
+
+    try {
+      const root = await evalBundle(readFileSync(bundle.bundlePath, "utf8"));
+
+      expect(root.querySelector("[data-facet-stage]")).not.toBeNull();
+      await clickButton(root, "Assets");
+      await waitForSelector(root, "[data-facet-asset-explorer]");
+      expect(root.querySelector("[data-facet-active-design-mode]")?.textContent).toBe(
+        "Custom design",
+      );
+      expect(root.querySelector("[data-facet-active-design-custom-tags]")?.textContent).toContain(
+        "PromoBanner",
+      );
+      expect(root.querySelector("[data-facet-active-design-note='bundle-overlay']")).not.toBeNull();
+
+      await clickButton(root, "Components");
+      await waitForSelector(root, '[data-component-option="PromoBanner"]');
+
+      await clickButton(root, "Screens");
+      await waitForSelector(root, '[data-screen-pattern-option="bundle-promo-screen"]');
+    } finally {
+      await bundle.cleanup();
+    }
   });
 
   it("paints the boot-shipped ComponentDocument immediately through StageRenderer", async () => {

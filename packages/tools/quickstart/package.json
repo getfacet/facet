@@ -33,15 +33,16 @@
     "@facet/core": "workspace:*",
     "@facet/reference-agent": "workspace:*",
     "@facet/runtime": "workspace:*",
-    "@facet/server": "workspace:*"
+    "@facet/server": "workspace:*",
+    "esbuild": "^0.28.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@facet/client": "workspace:*",
     "@facet/react": "workspace:*",
     "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "@types/react-dom": "^19.0.0"
   },
   "files": [
     "dist"

@@ -24,4 +24,24 @@ export default defineConfig([
     outExtension: () => ({ js: ".js" }),
     clean: false,
   },
+  // Browser page mount module: overlay-specific bundles import this from the
+  // published package so custom registries and the page renderer share React.
+  {
+    entry: { "page/main": "src/page/main.tsx" },
+    outDir: "dist",
+    format: ["esm"],
+    platform: "browser",
+    external: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"],
+    noExternal: [
+      "@facet/assets",
+      "@facet/assets/react",
+      "@facet/client",
+      "@facet/core",
+      "@facet/react",
+    ],
+    define: { "process.env.NODE_ENV": '"production"' },
+    minify: false,
+    splitting: false,
+    clean: false,
+  },
 ]);

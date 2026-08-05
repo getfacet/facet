@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { DEFAULT_CATALOG } from "@facet/assets";
+import type { ComponentSpec, MountedComponent } from "@facet/core";
 import { readFileSync } from "node:fs";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -9,6 +10,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ComponentInspector } from "./component-inspector.js";
 import { deriveComponentInspectorRows } from "./component-inspector-model.js";
 import type { ComponentPreviewFixtureResult } from "./component-preview-fixtures.js";
+import { resolveQuickstartPageActiveDesign } from "./active-design.js";
+import { resolveQuickstartDesignOverlay, type QuickstartDesignOverlay } from "../design-overlay.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -92,6 +95,67 @@ function presentedTags(): readonly string[] {
   return [...deriveComponentInspectorRows(DEFAULT_CATALOG)]
     .sort((left, right) => left.presentation.order - right.presentation.order)
     .map((row) => row.tag);
+}
+
+const PROMO_BANNER_SPEC = Object.freeze({
+  tag: "PromoBanner",
+  whenToUse: "Use for active design launch announcements.",
+  acceptsChildren: false,
+  props: Object.freeze({
+    eyebrow: Object.freeze({
+      type: "string",
+      guidance: "Short context label shown above the title.",
+    }),
+    title: Object.freeze({
+      type: "string",
+      required: true,
+      guidance: "Primary announcement copy.",
+    }),
+  }),
+}) satisfies ComponentSpec;
+
+const PromoBanner: MountedComponent<ReactNode, ReactNode> = ({ props }) => {
+  const eyebrow = typeof props["eyebrow"] === "string" ? props["eyebrow"] : "";
+  const title = typeof props["title"] === "string" ? props["title"] : "";
+  return (
+    <aside data-active-promo-banner>
+      {eyebrow} {title}
+    </aside>
+  );
+};
+
+function activeOverlay(): QuickstartDesignOverlay {
+  return {
+    components: [PROMO_BANNER_SPEC],
+    registry: { PromoBanner },
+    examples: [
+      {
+        id: "promo-banner",
+        kind: "component",
+        label: "Promo banner",
+        description: "A declarative example supplied by the active design module.",
+        tags: ["PromoBanner"],
+        markup: `<Facet entry="preview">
+  <Screen name="preview">
+    <PromoBanner eyebrow="Launch" title="Private beta is open" />
+  </Screen>
+</Facet>`,
+      },
+    ],
+  };
+}
+
+function activeDesignWithExamples() {
+  const overlay = activeOverlay();
+  const activeDesign = resolveQuickstartPageActiveDesign({ overlay });
+  if (!activeDesign.ok) {
+    throw new Error(`${activeDesign.error.code}: ${activeDesign.error.detail}`);
+  }
+  const resolved = resolveQuickstartDesignOverlay(overlay);
+  if (!resolved.ok) {
+    throw new Error(`${resolved.error.code}: ${resolved.error.detail}`);
+  }
+  return { activeDesign: activeDesign.design, examples: resolved.design.examples };
 }
 
 describe("ComponentInspector", () => {
@@ -285,6 +349,82 @@ describe("ComponentInspector", () => {
         return element.textContent === "Catalog";
       }),
     ).toBe(false);
+  });
+
+  it("renders an active custom component preview", () => {
+    const { activeDesign, examples } = activeDesignWithExamples();
+    const container = render(
+      <ComponentInspector activeDesign={activeDesign} examples={examples} />,
+    );
+    const components = section(container, "Components section");
+
+    expect(components.textContent).toContain(
+      `${activeDesign.bootstrap.catalog.components.length} components`,
+    );
+    expect(components.querySelector('[data-component-option="PromoBanner"]')).toBeInstanceOf(
+      HTMLButtonElement,
+    );
+
+    click(buttonNamed(components, "PromoBanner"));
+
+    expect(components.querySelector('[data-component-detail="PromoBanner"]')).toBeInstanceOf(
+      HTMLElement,
+    );
+    expect(
+      components.querySelector('[data-component-detail="PromoBanner"]')?.textContent,
+    ).toContain("Use for active design launch announcements.");
+    expect(components.querySelector('[data-component-prop="title"]')?.textContent).toContain(
+      "required",
+    );
+    expect(components.querySelector('[data-component-specimen="promo-banner"]')).toBeInstanceOf(
+      HTMLElement,
+    );
+    expect(
+      components.querySelector('[data-component-specimen="promo-banner"]')?.textContent,
+    ).toContain("A declarative example supplied by the active design module.");
+    expect(
+      components
+        .querySelector("[data-facet-component-preview]")
+        ?.getAttribute("data-facet-component-preview"),
+    ).toBe("PromoBanner");
+    expect(components.querySelector("[data-active-promo-banner]")?.textContent).toContain(
+      "Launch Private beta is open",
+    );
+  });
+
+  it("can isolate imported active design components from the default catalog", () => {
+    const { activeDesign, examples } = activeDesignWithExamples();
+    const container = render(
+      <ComponentInspector
+        activeDesign={activeDesign}
+        examples={examples}
+        sourceFilter="imported"
+      />,
+    );
+    const components = section(container, "Components section");
+
+    expect(components.textContent).toContain("1 components");
+    expect(components.querySelector('[data-component-option="PromoBanner"]')).toBeInstanceOf(
+      HTMLButtonElement,
+    );
+    expect(components.querySelector('[data-component-option="Screen"]')).toBeNull();
+    expect(components.querySelector('[data-component-detail="PromoBanner"]')).toBeInstanceOf(
+      HTMLElement,
+    );
+  });
+
+  it("can show only the default components while an active design is available", () => {
+    const { activeDesign, examples } = activeDesignWithExamples();
+    const container = render(
+      <ComponentInspector activeDesign={activeDesign} examples={examples} sourceFilter="default" />,
+    );
+    const components = section(container, "Components section");
+
+    expect(components.textContent).toContain(`${DEFAULT_CATALOG.components.length} components`);
+    expect(components.querySelector('[data-component-option="Screen"]')).toBeInstanceOf(
+      HTMLButtonElement,
+    );
+    expect(components.querySelector('[data-component-option="PromoBanner"]')).toBeNull();
   });
 
   it("uses responsive sizing that keeps text and controls inside their containers", () => {

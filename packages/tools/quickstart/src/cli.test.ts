@@ -6,7 +6,9 @@
  * and close it immediately.
  */
 import { createHash } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Spy on the compaction-enabled wiring so a regression back to the bare
 // createReferenceAgent (compaction OFF) fails a test instead of shipping.
@@ -29,6 +31,13 @@ import { createStubAgent } from "@facet/reference-agent";
 const NO_KEY_MESSAGE = "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.";
 
 const TEST_PROVIDER_ENV = { OPENAI_API_KEY: "sk-test" } as const;
+const temporaryRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+  );
+});
 
 describe("@facet/quickstart barrel", () => {
   it("owns its Quickstart factory without forwarding runtime reference exports", () => {
@@ -69,6 +78,30 @@ function capture(): Captured {
   return { out, err, log: (line) => out.push(line), error: (line) => err.push(line) };
 }
 
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  return await new Promise<number>((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const address = probe.address();
+      if (typeof address !== "object" || address === null) {
+        reject(new Error("missing probe address"));
+        return;
+      }
+      const port = address.port;
+      probe.close((error) => (error === undefined ? resolve(port) : reject(error)));
+    });
+  });
+}
+
+async function writeDesignOverlay(source: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "facet-quickstart-cli-design-"));
+  temporaryRoots.push(root);
+  const overlayPath = join(root, "design.ts");
+  await writeFile(overlayPath, source);
+  return overlayPath;
+}
+
 interface ShellGlobals {
   __FACET_THEME__?: unknown;
   __FACET_INITIAL_STAGE__?: unknown;
@@ -91,6 +124,7 @@ async function bootCli(
   extraArgs: readonly string[] = [],
   extraHooks: Partial<RunCliHooks> = {},
 ): Promise<{ captured: Captured; running: RunningQuickstart }> {
+  let lastError = "";
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
     const captured = capture();
@@ -104,8 +138,9 @@ async function bootCli(
       },
     });
     if (code === 0 && running !== undefined) return { captured, running };
+    lastError = [...captured.err, ...captured.out].join("\n");
   }
-  throw new Error("could not boot the quickstart CLI on a free port");
+  throw new Error(`could not boot the quickstart CLI on a free port: ${lastError}`);
 }
 
 /** Boot `startQuickstart` directly on a random free port. */
@@ -178,6 +213,13 @@ describe("runCli — flag parsing", () => {
     expect(text).not.toContain("--assets <dir>");
   });
 
+  it("exits 1 when --design has no value and documents the supported flag", async () => {
+    const text = await expectExit1(["--design"]);
+    expect(text).toContain("--design requires a value");
+    expect(text).toContain("--design <path>");
+    expect(text).not.toContain("--assets <dir>");
+  });
+
   it("exits 1 when a value-taking flag has no value", async () => {
     expect(await expectExit1(["--port"])).toContain("--port requires a value");
   });
@@ -186,6 +228,91 @@ describe("runCli — flag parsing", () => {
     for (const bad of ["70000", "8080abc", "0x10", "0", "080", "-1"]) {
       expect(await expectExit1(["--port", bad])).toMatch(/--port expects a port number/);
     }
+  });
+});
+
+describe("runCli — design overlay", () => {
+  it("accepts --design and rejects an invalid overlay before listening", async () => {
+    const validOverlayPath = await writeDesignOverlay(`
+const PromoBanner = () => {
+  console.log("CLI_DESIGN_REGISTRY_SENTINEL");
+  return null;
+};
+
+export default {
+  theme: {
+    semantic: {
+      action: {
+        primaryBg: "#123456",
+      },
+    },
+  },
+  components: [
+    {
+      tag: "PromoBanner",
+      whenToUse: "Use for a promotional banner fixture.",
+      props: {
+        title: {
+          type: "string",
+          guidance: "Concise promotional title.",
+          required: true,
+        },
+      },
+      acceptsChildren: false,
+    },
+  ],
+  registry: { PromoBanner },
+};
+`);
+    const valid = await bootCli(["--design", validOverlayPath]);
+    try {
+      expect(valid.captured.err).toEqual([]);
+      expect(valid.captured.out.join("\n")).toContain("trusted local code");
+      const shell = await (await fetch(`${valid.running.url}/`)).text();
+      const globals = readShellGlobals(shell);
+      expect(globals.__FACET_THEME__).toMatchObject({
+        semantic: { action: { primaryBg: "#123456" } },
+      });
+      expect(await (await fetch(`${valid.running.url}/app.js`)).text()).toContain(
+        "CLI_DESIGN_REGISTRY_SENTINEL",
+      );
+    } finally {
+      await valid.running.close();
+    }
+
+    const invalidOverlayPath = await writeDesignOverlay(`
+export default {
+  components: [
+    {
+      tag: "PromoBanner",
+      whenToUse: "Use for a promotional banner fixture.",
+      props: {},
+      acceptsChildren: false,
+    },
+  ],
+};
+`);
+    const invalidPort = await freePort();
+    const invalid = capture();
+    let started = false;
+    const code = await runCli(
+      ["--port", String(invalidPort), "--design", invalidOverlayPath],
+      TEST_PROVIDER_ENV,
+      {
+        log: invalid.log,
+        error: invalid.error,
+        onStarted: () => {
+          started = true;
+        },
+      },
+    );
+
+    expect(code).toBe(1);
+    expect(started).toBe(false);
+    expect([...invalid.err, ...invalid.out].join("\n")).toContain("missing_registry_entry");
+    await expect(
+      fetch(`http://localhost:${String(invalidPort)}/`, { signal: AbortSignal.timeout(200) }),
+    ).rejects.toThrow();
   });
 });
 
@@ -244,9 +371,9 @@ describe("runCli — quickstart built-in default", () => {
 
       expect(globals.__FACET_INITIAL_STAGE__).toEqual(QUICKSTART_INITIAL_STAGE);
       expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(121);
-      expect(seedText).toHaveLength(24_685);
+      expect(seedText).toHaveLength(24_704);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "418a30dcbd952311f962ff717f64949bfea1ef5d01c261a1e6d11f4b789aa7de",
+        "372d977c4b6ab24814805ad416fef28e06a1e401c031c8180f409343c0f3b0a2",
       );
     } finally {
       await running.close();

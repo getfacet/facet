@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
@@ -10,6 +10,9 @@ import { chromium } from "playwright";
 import type { Browser, Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { buildQuickstartDesignPageBundle } from "./design-page-bundle.js";
+import { resolveQuickstartDesignOverlay } from "./design-overlay.js";
+import type { QuickstartDesignOverlay } from "./design-overlay.js";
 import { screenPatterns } from "./page/screen-gallery-fixtures.js";
 import { startQuickstart } from "./server.js";
 import type { QuickstartServerOptions, RunningQuickstart } from "./server.js";
@@ -18,6 +21,8 @@ const execFileAsync = promisify(execFile);
 const SRC_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SRC_DIR, "../../../..");
 const BUNDLE_PATH = join(REPO_ROOT, "packages/tools/quickstart/dist/page/app.js");
+const PAGE_MAIN_BUNDLE_PATH = join(REPO_ROOT, "packages/tools/quickstart/dist/page/main.js");
+const DESIGN_OVERLAY_TYPE_IMPORT = join(SRC_DIR, "design-overlay.js").replaceAll(sep, "/");
 const RUN_VISUAL = process.env.FACET_QUICKSTART_VISUAL === "1";
 const visualDescribe = RUN_VISUAL ? describe : describe.skip;
 
@@ -70,9 +75,133 @@ function activeOutputDir(): string {
   return outputDir;
 }
 
+function VisualPromoBanner(): null {
+  return null;
+}
+
+const ACTIVE_VISUAL_OVERLAY: QuickstartDesignOverlay = Object.freeze({
+  theme: Object.freeze({
+    foundation: Object.freeze({
+      palette: Object.freeze({
+        brand500: "#6741d9",
+      }),
+    }),
+  }),
+  components: Object.freeze([
+    Object.freeze({
+      tag: "PromoBanner",
+      whenToUse: "Use for an active design visual promo.",
+      props: Object.freeze({}),
+      acceptsChildren: false,
+    }),
+  ]),
+  registry: Object.freeze({ PromoBanner: VisualPromoBanner }),
+  examples: Object.freeze([
+    Object.freeze({
+      id: "visual-promo-screen",
+      kind: "screen",
+      label: "Visual promo screen",
+      description: "Active visual design screen example.",
+      tags: Object.freeze(["Screen", "PromoBanner"]),
+      markup: `<Facet entry="preview">
+  <Screen name="preview">
+    <PromoBanner />
+  </Screen>
+</Facet>`,
+    }),
+  ]),
+  notes: Object.freeze([
+    Object.freeze({
+      id: "visual-overlay",
+      title: "Visual overlay",
+      body: "The visual Assets tab is using the active design module.",
+    }),
+  ]),
+});
+
+async function makeActiveDesignVisualBundle() {
+  const root = await mkdtemp(join(tmpdir(), "facet-quickstart-active-design-"));
+  const overlayPath = join(root, "facet-design.tsx");
+  await writeFile(
+    overlayPath,
+    [
+      `import type { QuickstartDesignOverlay } from "${DESIGN_OVERLAY_TYPE_IMPORT}";`,
+      "",
+      "function PromoBanner() {",
+      '  return <section data-facet-visual-promo="PromoBanner">Visual overlay promo</section>;',
+      "}",
+      "",
+      "export default {",
+      "  theme: {",
+      "    foundation: {",
+      "      palette: {",
+      '        brand500: "#6741d9",',
+      "      },",
+      "    },",
+      "  },",
+      "  components: [",
+      "    {",
+      '      tag: "PromoBanner",',
+      '      whenToUse: "Use for an active design visual promo.",',
+      "      props: {},",
+      "      acceptsChildren: false,",
+      "    },",
+      "  ],",
+      "  registry: { PromoBanner },",
+      "  examples: [",
+      "    {",
+      '      id: "visual-promo-screen",',
+      '      kind: "screen",',
+      '      label: "Visual promo screen",',
+      '      description: "Active visual design screen example.",',
+      '      tags: ["Screen", "PromoBanner"],',
+      '      markup: `<Facet entry="preview">',
+      '  <Screen name="preview">',
+      "    <PromoBanner />",
+      "  </Screen>",
+      "</Facet>`,",
+      "    },",
+      "  ],",
+      "  notes: [",
+      "    {",
+      '      id: "visual-overlay",',
+      '      title: "Visual overlay",',
+      '      body: "The visual Assets tab is using the active design module.",',
+      "    },",
+      "  ],",
+      "} satisfies QuickstartDesignOverlay;",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  const resolved = resolveQuickstartDesignOverlay(ACTIVE_VISUAL_OVERLAY);
+  if (!resolved.ok) {
+    await rm(root, { force: true, recursive: true });
+    throw new Error(`${resolved.error.code}: ${resolved.error.detail}`);
+  }
+  const bundle = await buildQuickstartDesignPageBundle({
+    overlayModulePath: overlayPath,
+    pageMountModulePath: PAGE_MAIN_BUNDLE_PATH,
+    temporaryParentDirectory: join(root, "bundles"),
+    resolvedDesign: resolved.design,
+  });
+  return Object.freeze({
+    design: resolved.design,
+    bundle,
+    async cleanup(): Promise<void> {
+      await bundle.cleanup();
+      await rm(root, { force: true, recursive: true });
+    },
+  });
+}
+
 async function openAssets(): Promise<void> {
+  await openAssetsAt(activeRunning());
+}
+
+async function openAssetsAt(target: RunningQuickstart): Promise<void> {
   const current = activePage();
-  await current.goto(activeRunning().url, { waitUntil: "domcontentloaded" });
+  await current.goto(target.url, { waitUntil: "domcontentloaded" });
   await current.getByRole("button", { name: "Assets" }).click();
   await current.locator("[data-facet-asset-explorer]").waitFor();
   await current.locator('[data-facet-asset-tab="screens"]').click();
@@ -232,6 +361,39 @@ visualDescribe("quickstart visual assets gallery", () => {
         path: join(activeOutputDir(), `${example.id}.png`),
         fullPage: true,
       });
+    }
+  }, 180_000);
+
+  it("captures the active design Assets tab", async () => {
+    const fixture = await makeActiveDesignVisualBundle();
+    const customRunning = await boot({
+      catalog: fixture.design.catalog,
+      pageBundlePath: fixture.bundle.bundlePath,
+      theme: fixture.design.theme,
+      themeExtensions: fixture.design.themeExtensions,
+    });
+
+    try {
+      await openAssetsAt(customRunning);
+
+      expect(await activePage().locator("[data-facet-active-design-mode]").textContent()).toBe(
+        "Custom design",
+      );
+      expect(
+        await activePage().locator("[data-facet-active-design-custom-tags]").textContent(),
+      ).toContain("PromoBanner");
+      await activePage().locator('[data-screen-pattern-option="visual-promo-screen"]').waitFor();
+
+      await activePage().locator('[data-facet-asset-tab="components"]').click();
+      await activePage().locator('[data-component-option="PromoBanner"]').waitFor();
+
+      await activePage().screenshot({
+        path: join(activeOutputDir(), "active-design-assets.png"),
+        fullPage: true,
+      });
+    } finally {
+      await customRunning.close().catch(() => undefined);
+      await fixture.cleanup();
     }
   }, 180_000);
 });

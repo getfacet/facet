@@ -8,6 +8,8 @@ import test from "node:test";
 import { fileURLToPath, URL } from "node:url";
 
 const SCRIPT_PATH = fileURLToPath(new URL("./check-docs.mjs", import.meta.url));
+const REPO_ROOT = path.resolve(path.dirname(SCRIPT_PATH), "..");
+const QUICKSTART_README_PATH = path.join(REPO_ROOT, "packages/tools/quickstart/README.md");
 
 async function makeFixture(t) {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "facet-docs-"));
@@ -50,6 +52,17 @@ function runCheck(cwd, files = []) {
     encoding: "utf8",
   });
 }
+
+test("quickstart design module docs", async () => {
+  const source = await readFile(QUICKSTART_README_PATH, "utf8");
+
+  assert.match(source, /--design <path>/);
+  assert.match(source, /default-first/u);
+  assert.match(source, /fail-closed/u);
+  assert.match(source, /does not inspect service URLs/u);
+  assert.match(source, /does not generate design files/u);
+  assert.match(source, /satisfies QuickstartDesignOverlay/u);
+});
 
 test("accepts repository-relative links, anchors, and canonical GitHub links", async (t) => {
   const cwd = await makeFixture(t);

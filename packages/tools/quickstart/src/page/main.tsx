@@ -8,12 +8,12 @@
  * that served it — no new client network capability (invariant #7).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent, ReactNode } from "react";
+import type { FormEvent, KeyboardEvent, ReactNode, RefObject } from "react";
 import { createRoot } from "react-dom/client";
 import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
 import { DEFAULT_REGISTRY } from "@facet/assets/react";
 import { browserSessionKey, SseTransport } from "@facet/client";
-import { validateVisitorText } from "@facet/core";
+import { validateTheme, validateVisitorText } from "@facet/core";
 import type {
   VisitorEvent,
   ComponentDocument,
@@ -23,10 +23,16 @@ import type {
   MountedComponent,
   StageRevision,
 } from "@facet/core";
-import { bootstrapRenderer, ConversationSurface, StageRenderer, useFacet } from "@facet/react";
-import type { ComponentRegistry, RendererBootstrap } from "@facet/react";
+import { ConversationSurface, StageRenderer, useFacet } from "@facet/react";
+import type { ComponentRegistry } from "@facet/react";
 
+import {
+  resolveQuickstartPageActiveDesign,
+  type QuickstartPageActiveDesign,
+  type QuickstartPageActiveDesignError,
+} from "./active-design.js";
 import { AssetExplorer } from "./asset-explorer.js";
+import type { QuickstartDesignOverlay } from "../design-overlay.js";
 
 declare global {
   interface Window {
@@ -37,7 +43,6 @@ declare global {
 }
 
 type QuickstartSpace = "live" | "assets";
-type AcceptedBootstrap = Extract<RendererBootstrap, { readonly ok: true }>;
 
 const EMPTY_DATA: FacetStage["data"] = Object.freeze({});
 const QUICKSTART_SPACES: readonly QuickstartSpace[] = ["live", "assets"];
@@ -107,6 +112,15 @@ function readPostTimeoutMs(): number {
     : QUICKSTART_POST_TIMEOUT_MS;
 }
 
+function readShellTheme(): FacetTheme {
+  const rawTheme = readWindowValue("__FACET_THEME__");
+  if (!isRecord(rawTheme)) {
+    return DEFAULT_THEME;
+  }
+  const theme = validateTheme(rawTheme, { catalog: DEFAULT_CATALOG });
+  return theme.ok ? theme.theme : DEFAULT_THEME;
+}
+
 function readInitialDocument(): ComponentDocument | undefined {
   const raw = readWindowValue("__FACET_INITIAL_STAGE__");
   if (!isRecord(raw)) {
@@ -146,28 +160,6 @@ function quickstartRegistry(onOpenAssets: () => void): ComponentRegistry {
   return Object.freeze({ ...DEFAULT_REGISTRY, Modal: QuickstartModal });
 }
 
-function resolvedBootstrap(registry: ComponentRegistry = DEFAULT_REGISTRY): AcceptedBootstrap {
-  const rawTheme = readWindowValue("__FACET_THEME__");
-  const theme = isRecord(rawTheme) ? (rawTheme as unknown as FacetTheme) : DEFAULT_THEME;
-  const candidate = bootstrapRenderer({
-    catalog: DEFAULT_CATALOG,
-    registry,
-    theme,
-  });
-  if (candidate.ok) {
-    return candidate;
-  }
-  const fallback = bootstrapRenderer({
-    catalog: DEFAULT_CATALOG,
-    registry,
-    theme: DEFAULT_THEME,
-  });
-  if (fallback.ok) {
-    return fallback;
-  }
-  throw new Error("Facet quickstart default renderer bootstrap failed.");
-}
-
 function nextEventId(prefix: string): string {
   localEventId += 1;
   return `${prefix}-${randomEventSuffix()}-${localEventId}`;
@@ -203,25 +195,77 @@ function visitorEvent(
 
 export interface PageProps {
   readonly assetExplorer?: ReactNode;
+  readonly overlay?: QuickstartDesignOverlay;
 }
 
-export function Page({ assetExplorer }: PageProps = {}): ReactNode {
+export interface QuickstartDesignPageMountOptions {
+  readonly overlay?: QuickstartDesignOverlay;
+}
+
+export function Page({ assetExplorer, overlay }: PageProps = {}): ReactNode {
+  const [activeSpace, setActiveSpaceState] = useState<QuickstartSpace>("live");
+  const assetsTabRef = useRef<HTMLButtonElement>(null);
+  const openAssets = useCallback((): void => {
+    setActiveSpaceState("assets");
+    assetsTabRef.current?.focus();
+  }, []);
+  const setActiveSpace = useCallback((space: QuickstartSpace): void => {
+    setActiveSpaceState(space);
+  }, []);
+  const shellTheme = useMemo(readShellTheme, []);
+  const registry = useMemo(() => quickstartRegistry(openAssets), [openAssets]);
+  const activeDesign = useMemo(
+    () =>
+      resolveQuickstartPageActiveDesign({
+        ...(overlay === undefined ? {} : { overlay }),
+        defaultRegistry: registry,
+        theme: shellTheme,
+      }),
+    [overlay, registry, shellTheme],
+  );
+
+  if (!activeDesign.ok) {
+    return <QuickstartActiveDesignErrorView error={activeDesign.error} />;
+  }
+
+  return (
+    <QuickstartPageContent
+      activeDesign={activeDesign.design}
+      activeSpace={activeSpace}
+      assetExplorer={assetExplorer}
+      assetsTabRef={assetsTabRef}
+      openAssets={openAssets}
+      setActiveSpace={setActiveSpace}
+    />
+  );
+}
+
+interface QuickstartPageContentProps {
+  readonly activeDesign: QuickstartPageActiveDesign;
+  readonly activeSpace: QuickstartSpace;
+  readonly assetExplorer?: ReactNode;
+  readonly assetsTabRef: RefObject<HTMLButtonElement | null>;
+  readonly openAssets: () => void;
+  readonly setActiveSpace: (space: QuickstartSpace) => void;
+}
+
+function QuickstartPageContent({
+  activeDesign,
+  activeSpace,
+  assetExplorer,
+  assetsTabRef,
+  openAssets,
+  setActiveSpace,
+}: QuickstartPageContentProps): ReactNode {
   const sessionKey = useMemo(() => browserSessionKey(), []);
   const initialDocument = useMemo(readInitialDocument, []);
   const [draft, setDraft] = useState("");
   const [initialPending, setInitialPending] = useState(false);
-  const [activeSpace, setActiveSpace] = useState<QuickstartSpace>("live");
   const [chatOpen, setChatOpen] = useState(false);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
-  const assetsTabRef = useRef<HTMLButtonElement>(null);
   const stageRevisionRef = useRef<StageRevision>(0);
   const visitSent = useRef(false);
-  const openAssets = useCallback((): void => {
-    setActiveSpace("assets");
-    assetsTabRef.current?.focus();
-  }, []);
-  const registry = useMemo(() => quickstartRegistry(openAssets), [openAssets]);
-  const bootstrap = useMemo(() => resolvedBootstrap(registry), [registry]);
+  const bootstrap = activeDesign.bootstrap;
   const postTimeoutMs = useMemo(readPostTimeoutMs, []);
   const transport = useMemo(
     () => new SseTransport("", sessionKey, { postTimeoutMs }),
@@ -464,9 +508,31 @@ export function Page({ assetExplorer }: PageProps = {}): ReactNode {
         hidden={activeSpace !== "assets"}
         style={activeSpace === "assets" ? styles.spacePanel : styles.spacePanelHidden}
       >
-        {assetExplorer ?? <AssetExplorer suppressPreviewModals={activeSpace !== "assets"} />}
+        {assetExplorer ?? (
+          <AssetExplorer
+            activeDesign={activeDesign}
+            suppressPreviewModals={activeSpace !== "assets"}
+          />
+        )}
       </div>
     </div>
+  );
+}
+
+function QuickstartActiveDesignErrorView({
+  error,
+}: {
+  readonly error: QuickstartPageActiveDesignError;
+}): ReactNode {
+  const at = error.at.length === 0 ? "" : ` at ${error.at}`;
+  return (
+    <main data-facet-active-design-error style={styles.activeDesignError}>
+      <h1 style={styles.activeDesignErrorTitle}>Active design failed</h1>
+      <p style={styles.activeDesignErrorBody}>
+        {error.code}
+        {at}: {error.detail}
+      </p>
+    </main>
   );
 }
 
@@ -836,6 +902,32 @@ const styles = {
     whiteSpace: "nowrap",
     border: 0,
   },
+  activeDesignError: {
+    boxSizing: "border-box",
+    display: "grid",
+    gap: "0.75rem",
+    margin: "0 auto",
+    maxWidth: "42rem",
+    minHeight: "100vh",
+    padding: "24px",
+    placeContent: "center",
+  },
+  activeDesignErrorTitle: {
+    color: DEFAULT_THEME.semantic.status.dangerText,
+    fontSize: "1.25rem",
+    fontWeight: 750,
+    lineHeight: 1.2,
+    margin: 0,
+  },
+  activeDesignErrorBody: {
+    border: `1px solid ${DEFAULT_THEME.semantic.status.dangerBorder}`,
+    borderRadius: "0.375rem",
+    color: DEFAULT_THEME.semantic.status.dangerText,
+    fontSize: "0.875rem",
+    lineHeight: 1.45,
+    margin: 0,
+    padding: "0.875rem",
+  },
   modalAssetsButton: {
     alignSelf: "flex-start",
     border: "1px solid #1f4f52",
@@ -851,7 +943,20 @@ const styles = {
   },
 } as const;
 
-const rootElement = document.getElementById("root");
-if (rootElement !== null) {
-  createRoot(rootElement).render(<Page />);
+export function mountQuickstartDesignPage(options: QuickstartDesignPageMountOptions = {}): void {
+  const rootElement = document.getElementById("root");
+  if (rootElement === null) return;
+  const pageProps = options.overlay === undefined ? {} : { overlay: options.overlay };
+  createRoot(rootElement).render(<Page {...pageProps} />);
+}
+
+function shouldAutoMountQuickstartPage(): boolean {
+  const globalScope = globalThis as {
+    readonly __FACET_QUICKSTART_DISABLE_AUTOMOUNT__?: boolean;
+  };
+  return globalScope.__FACET_QUICKSTART_DISABLE_AUTOMOUNT__ !== true;
+}
+
+if (shouldAutoMountQuickstartPage()) {
+  mountQuickstartDesignPage();
 }

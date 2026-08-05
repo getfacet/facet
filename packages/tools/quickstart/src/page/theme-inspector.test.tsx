@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
 
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
+import type {
+  ComponentSpec,
+  FacetCatalog,
+  FacetTheme,
+  FacetThemeExtensionDeclaration,
+} from "@facet/core";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -14,6 +21,60 @@ import {
 import { ThemeInspector } from "./theme-inspector.js";
 
 const LAYERS: readonly AssetTokenLayer[] = ["foundation", "semantic", "recipe"];
+const ACTIVE_THEME_EXTENSIONS: readonly FacetThemeExtensionDeclaration[] = Object.freeze([
+  Object.freeze({
+    namespace: "campaign",
+    tokens: Object.freeze({
+      accent: "color",
+    }),
+  }),
+]);
+const PROMO_BANNER_SPEC: ComponentSpec = Object.freeze({
+  tag: "PromoBanner",
+  whenToUse: "Use for a branded promotional callout.",
+  props: Object.freeze({}),
+  acceptsChildren: false,
+  themeRecipe: Object.freeze({
+    tokens: Object.freeze({
+      accent: "color",
+    }),
+  }),
+});
+const ACTIVE_CATALOG: FacetCatalog = Object.freeze({
+  components: Object.freeze([...DEFAULT_CATALOG.components, PROMO_BANNER_SPEC]),
+});
+const ACTIVE_THEME: FacetTheme = Object.freeze({
+  ...DEFAULT_THEME,
+  foundation: Object.freeze({
+    ...DEFAULT_THEME.foundation,
+    palette: Object.freeze({
+      ...DEFAULT_THEME.foundation.palette,
+      brand500: "#6741d9",
+    }),
+  }),
+  semantic: Object.freeze({
+    ...DEFAULT_THEME.semantic,
+    action: Object.freeze({
+      ...DEFAULT_THEME.semantic.action,
+      primaryBg: "#123456",
+    }),
+  }),
+  recipes: Object.freeze({
+    ...DEFAULT_THEME.recipes,
+    button: Object.freeze({
+      ...DEFAULT_THEME.recipes?.button,
+      primaryBg: "var(--facet-ext-campaign-accent)",
+    }),
+    "promo-banner": Object.freeze({
+      accent: "var(--facet-ext-campaign-accent)",
+    }),
+  }),
+  extensions: Object.freeze({
+    campaign: Object.freeze({
+      accent: "#ff5a1f",
+    }),
+  }),
+});
 
 function renderThemeInspector(rows: readonly AssetTokenRow[]): HTMLElement {
   const host = document.createElement("div");
@@ -92,6 +153,53 @@ function sampleRows(): readonly AssetTokenRow[] {
 }
 
 describe("ThemeInspector", () => {
+  it("renders active theme token values", () => {
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(
+      <ThemeInspector
+        catalog={ACTIVE_CATALOG}
+        theme={ACTIVE_THEME}
+        themeExtensions={ACTIVE_THEME_EXTENSIONS}
+        title="Active design system"
+      />,
+    );
+    const root = host.querySelector("[data-facet-theme-inspector]");
+
+    expect(root).toBeInstanceOf(HTMLElement);
+    expect(host.querySelector("[data-theme-overview]")?.getAttribute("aria-label")).toBe(
+      "Active design system overview",
+    );
+    expect(host.querySelector("[data-theme-overview]")?.textContent).toContain(
+      "Active design system",
+    );
+    expect(
+      (root as HTMLElement).style.getPropertyValue("--facet-foundation-palette-brand500"),
+    ).toBe("#6741d9");
+    expect((root as HTMLElement).style.getPropertyValue("--facet-semantic-action-primary-bg")).toBe(
+      "#123456",
+    );
+    expect((root as HTMLElement).style.getPropertyValue("--facet-ext-campaign-accent")).toBe(
+      "#ff5a1f",
+    );
+
+    expect(textIn(tokenRow(host, "foundation.palette.brand500"), "code", "#6741d9")).toBeTruthy();
+    expect(textIn(tokenRow(host, "semantic.action.primaryBg"), "code", "#123456")).toBeTruthy();
+    expect(
+      textIn(tokenRow(host, "recipe.button.primaryBg"), "code", "var(--facet-ext-campaign-accent)"),
+    ).toBeTruthy();
+    expect(
+      textIn(
+        tokenRow(host, "recipe.promo-banner.accent"),
+        "code",
+        "var(--facet-ext-campaign-accent)",
+      ),
+    ).toBeTruthy();
+    expect(textIn(tokenRow(host, "extension.campaign.accent"), "code", "#ff5a1f")).toBeTruthy();
+    expect(host.querySelector('[data-theme-overview-count="extension"]')?.textContent).toContain(
+      "extension 1",
+    );
+  }, 15_000);
+
   it("uses every default token row when no rows are injected", () => {
     const host = document.createElement("div");
     host.innerHTML = renderToStaticMarkup(<ThemeInspector />);
@@ -136,7 +244,7 @@ describe("ThemeInspector", () => {
         const renderedRow = tokenRow(section, row.path);
         expect(renderedRow.getAttribute("data-token-kind")).toBe(row.visual.kind);
         expect(renderedRow.getAttribute("data-token-group")).toBe(
-          row.layer === "recipe" ? row.namespace : row.group,
+          row.layer === "recipe" || row.layer === "extension" ? row.namespace : row.group,
         );
         expect(textIn(renderedRow, "code", row.path)).toBeTruthy();
         expect(textIn(renderedRow, "code", row.value)).toBeTruthy();

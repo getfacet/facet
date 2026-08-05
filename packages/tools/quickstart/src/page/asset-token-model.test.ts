@@ -7,13 +7,21 @@ import {
   themeTokenRef,
   themeTokenVar,
 } from "@facet/core";
-import type { FacetThemeGroupSpec } from "@facet/core";
+import type {
+  ComponentSpec,
+  FacetCatalog,
+  FacetTheme,
+  FacetThemeExtensionDeclaration,
+  FacetThemeGroupSpec,
+} from "@facet/core";
 import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_THEME_CSS_VARS,
   DEFAULT_THEME_TOKEN_ROWS,
+  deriveThemeCssVars,
   deriveDefaultThemeTokenRows,
+  deriveThemeTokenRows,
   type AssetTokenRow,
 } from "./asset-token-model.js";
 
@@ -38,6 +46,61 @@ function recipePaths(): readonly string[] {
 function rowMap(rows: readonly AssetTokenRow[]): ReadonlyMap<string, AssetTokenRow> {
   return new Map(rows.map((row) => [row.path, row]));
 }
+
+const ACTIVE_THEME_EXTENSIONS: readonly FacetThemeExtensionDeclaration[] = Object.freeze([
+  Object.freeze({
+    namespace: "campaign",
+    tokens: Object.freeze({
+      accent: "color",
+    }),
+  }),
+]);
+const PROMO_BANNER_SPEC: ComponentSpec = Object.freeze({
+  tag: "PromoBanner",
+  whenToUse: "Use for a branded promotional callout.",
+  props: Object.freeze({}),
+  acceptsChildren: false,
+  themeRecipe: Object.freeze({
+    tokens: Object.freeze({
+      accent: "color",
+    }),
+  }),
+});
+const ACTIVE_CATALOG: FacetCatalog = Object.freeze({
+  components: Object.freeze([...DEFAULT_CATALOG.components, PROMO_BANNER_SPEC]),
+});
+const ACTIVE_THEME: FacetTheme = Object.freeze({
+  ...DEFAULT_THEME,
+  foundation: Object.freeze({
+    ...DEFAULT_THEME.foundation,
+    palette: Object.freeze({
+      ...DEFAULT_THEME.foundation.palette,
+      brand500: "#6741d9",
+    }),
+  }),
+  semantic: Object.freeze({
+    ...DEFAULT_THEME.semantic,
+    action: Object.freeze({
+      ...DEFAULT_THEME.semantic.action,
+      primaryBg: "#123456",
+    }),
+  }),
+  recipes: Object.freeze({
+    ...DEFAULT_THEME.recipes,
+    button: Object.freeze({
+      ...DEFAULT_THEME.recipes?.button,
+      primaryBg: "var(--facet-ext-campaign-accent)",
+    }),
+    "promo-banner": Object.freeze({
+      accent: "var(--facet-ext-campaign-accent)",
+    }),
+  }),
+  extensions: Object.freeze({
+    campaign: Object.freeze({
+      accent: "#ff5a1f",
+    }),
+  }),
+});
 
 describe("asset token model", () => {
   it("derives foundation semantic and recipe token rows from the default assets", () => {
@@ -103,6 +166,50 @@ describe("asset token model", () => {
         ),
       );
     }
+  });
+
+  it("derives active rows and CSS variables from an injected theme catalog and extensions", () => {
+    const rows = deriveThemeTokenRows({
+      catalog: ACTIVE_CATALOG,
+      theme: ACTIVE_THEME,
+      themeExtensions: ACTIVE_THEME_EXTENSIONS,
+    });
+    const vars = deriveThemeCssVars({
+      catalog: ACTIVE_CATALOG,
+      theme: ACTIVE_THEME,
+      themeExtensions: ACTIVE_THEME_EXTENSIONS,
+    });
+    const byPath = rowMap(rows);
+
+    expect(byPath.get("foundation.palette.brand500")).toMatchObject({
+      value: "#6741d9",
+      cssVariable: "--facet-foundation-palette-brand500",
+    });
+    expect(byPath.get("semantic.action.primaryBg")).toMatchObject({
+      value: "#123456",
+      cssVariable: "--facet-semantic-action-primary-bg",
+    });
+    expect(byPath.get("recipe.button.primaryBg")).toMatchObject({
+      value: "var(--facet-ext-campaign-accent)",
+      visual: {
+        referencedVariables: ["--facet-ext-campaign-accent"],
+      },
+    });
+    expect(byPath.get("recipe.promo-banner.accent")).toMatchObject({
+      layer: "recipe",
+      namespace: "promo-banner",
+      value: "var(--facet-ext-campaign-accent)",
+    });
+    expect(byPath.get("extension.campaign.accent")).toMatchObject({
+      layer: "extension",
+      namespace: "campaign",
+      value: "#ff5a1f",
+      cssVariable: "--facet-ext-campaign-accent",
+    });
+    expect(vars["--facet-foundation-palette-brand500"]).toBe("#6741d9");
+    expect(vars["--facet-semantic-action-primary-bg"]).toBe("#123456");
+    expect(vars["--facet-recipe-promo-banner-accent"]).toBe("var(--facet-ext-campaign-accent)");
+    expect(vars["--facet-ext-campaign-accent"]).toBe("#ff5a1f");
   });
 
   it("exposes frozen default rows for page rendering", () => {

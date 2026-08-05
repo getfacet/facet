@@ -85,4 +85,20 @@ describe("component inspector model", () => {
       kind: "color",
     });
   });
+
+  it("marks additive component specs as imported", () => {
+    const importedSpec: ComponentSpec = {
+      tag: "PromoBanner",
+      whenToUse: "Use for active design announcements.",
+      props: {},
+      acceptsChildren: false,
+    };
+    const rows = deriveComponentInspectorRows({
+      components: [...DEFAULT_CATALOG.components, importedSpec],
+    });
+
+    expect(rows.find((row) => row.tag === "Screen")?.source).toBe("default");
+    expect(rows.find((row) => row.tag === "PromoBanner")?.source).toBe("imported");
+    expect(rows.find((row) => row.tag === "PromoBanner")?.presentation.section).toBe("other");
+  });
 });

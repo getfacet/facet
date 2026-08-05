@@ -32,7 +32,8 @@ component markup:
   validate, and authorize patches
 - data providers and agent tools fetch domain data; Facet renders only bounded
   data bindings and explicit visitor events
-- layout stays flow-contained through registered default-catalog components:
+- layout stays flow-contained through the active registered catalog; the built-in
+  quickstart starts with:
   Screen, AppShell, Stack, Row, Split, Grid, Modal, Card, Empty, LogoMark, Nav,
   SideNav, SideNavItem, Section, Divider, Hero, Avatar, ProfileHeader,
   ProductShowcase, VisualPanel,
@@ -68,7 +69,7 @@ When changing the page:
 - Prefer editing the existing quickstart components before appending more
   content.
 - Keep every screen compact; do not make a long scrolling marketing page.
-- Author only registered default-catalog components and declared scalar props.
+- Author only tags from the active registered catalog and declared scalar props.
 - Use data bindings only for data the tools have published into Facet.
 - Use nav: targets only for declared screens and agent: targets only for
   deliberate visitor events.
@@ -181,7 +182,7 @@ export const QUICKSTART_INITIAL_MARKUP = `<Facet entry="what">
   <Screen name="try" title="Try It Live" maxWidth="wide">
     <Stack gap="lg">
       ${quickstartNavigationMarkup()}
-      <ProfileHeader name="Build with the agent" role="Live quickstart" summary="Describe a product surface in the floating chat or use the controls below. The agent should update this stage with safe default-catalog markup." align="start" tone="accent">
+      <ProfileHeader name="Build with the agent" role="Live quickstart" summary="Describe a product surface in the floating chat or use the controls below. The agent should update this stage with safe markup from the active registered catalog." align="start" tone="accent">
         <Row gap="sm">
           <Button label="Open possibilities" action="nav:build" />
           <Button label="Inspect the system" action="nav:system" />

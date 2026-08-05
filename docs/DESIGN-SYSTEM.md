@@ -32,6 +32,9 @@ available for workspace/report surfaces, but it is not the center of every
 default example. `Table` is a content/data-display component: it can support a
 report, a resume, a booking list, or an order queue without turning the whole
 screen into a dashboard.
+`Badge` is a compact status label, not an action surrogate: its tones map to the
+semantic status tokens and the default React implementation keeps it inline
+width inside stretched stacks.
 
 `Screen` is the root for a named screen. `AppShell`, `Stack`, `Row`, `Split`,
 and `Grid` keep authored layout flow-contained. `Modal` is the dedicated overlap contract. Expression
@@ -129,6 +132,17 @@ A custom component set has three required parts:
 Renderer bootstrap rejects mismatched tag sets. Unknown authored tags and
 undeclared props reject at author validation before any React component can
 mount.
+
+Quickstart's `--design <path>` flag is a local inspection path for trusted design
+modules. It starts from the default catalog/theme/registry, lets the module
+change default theme values, declare extension token namespaces when needed, and
+add component specs with matching trusted registry entries. Replacing default
+component tags or default registry entries is rejected; untrusted design input
+should use a host-owned data-only integration instead of executable local module
+loading.
+When a design module is active, the Quickstart Assets source filter can show
+`Imported` component tags and screen examples separately from `Default` assets,
+or combine both in `All`.
 
 ## Data and actions
 

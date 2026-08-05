@@ -4,11 +4,15 @@ import { useMemo } from "react";
 import {
   DEFAULT_THEME_CSS_VARS,
   DEFAULT_THEME_TOKEN_ROWS,
+  deriveThemeCssVars,
+  deriveThemeTokenRows,
   type AssetTokenLayer,
   type AssetTokenRow,
+  type ThemeTokenDerivationOptions,
 } from "./asset-token-model.js";
 
-const TOKEN_LAYERS: readonly AssetTokenLayer[] = ["foundation", "semantic", "recipe"];
+const DEFAULT_THEME_TITLE = "Default design system";
+const BASE_TOKEN_LAYERS: readonly AssetTokenLayer[] = ["foundation", "semantic", "recipe"];
 
 interface TokenGroup {
   readonly key: string;
@@ -16,47 +20,80 @@ interface TokenGroup {
   readonly rows: readonly AssetTokenRow[];
 }
 
-export interface ThemeInspectorProps {
+export interface ThemeInspectorProps extends ThemeTokenDerivationOptions {
+  readonly cssVars?: Readonly<Record<string, string>>;
   readonly rows?: readonly AssetTokenRow[];
+  readonly title?: string;
 }
 
 export function ThemeInspector({
-  rows = DEFAULT_THEME_TOKEN_ROWS,
+  catalog,
+  cssVars: injectedCssVars,
+  rows: injectedRows,
+  theme,
+  themeExtensions,
+  title = DEFAULT_THEME_TITLE,
 }: ThemeInspectorProps = {}): ReactNode {
-  const groupsByLayer = useMemo(() => groupRowsByLayer(rows), [rows]);
+  const hasActiveInputs =
+    theme !== undefined || catalog !== undefined || themeExtensions !== undefined;
+  const rows = useMemo(
+    () =>
+      injectedRows ??
+      (hasActiveInputs
+        ? deriveThemeTokenRows({ catalog, theme, themeExtensions })
+        : DEFAULT_THEME_TOKEN_ROWS),
+    [catalog, hasActiveInputs, injectedRows, theme, themeExtensions],
+  );
+  const cssVars = useMemo(
+    () =>
+      injectedCssVars ??
+      (hasActiveInputs
+        ? deriveThemeCssVars({ catalog, theme, themeExtensions })
+        : DEFAULT_THEME_CSS_VARS),
+    [catalog, hasActiveInputs, injectedCssVars, theme, themeExtensions],
+  );
+  const layers = useMemo(() => tokenLayersFor(rows), [rows]);
+  const groupsByLayer = useMemo(() => groupRowsByLayer(rows, layers), [layers, rows]);
   const inspectorStyle = useMemo(
-    (): CSSProperties => ({ ...styles.inspector, ...DEFAULT_THEME_CSS_VARS }),
-    [],
+    (): CSSProperties => ({ ...styles.inspector, ...cssVars }),
+    [cssVars],
   );
 
   return (
     <section aria-label="Theme inspector" data-facet-theme-inspector style={inspectorStyle}>
-      <ThemeOverview rows={rows} />
+      <ThemeOverview layers={layers} rows={rows} title={title} />
       <FoundationShowcase rows={rows} />
       <SemanticShowcase rows={rows} />
       <RecipeShowcase rows={rows} />
       <details data-theme-raw-tokens style={styles.rawDetails}>
         <summary style={styles.rawSummary}>Raw tokens</summary>
-        <RawTokenSections groupsByLayer={groupsByLayer} />
+        <RawTokenSections groupsByLayer={groupsByLayer} layers={layers} />
       </details>
     </section>
   );
 }
 
-function ThemeOverview({ rows }: { readonly rows: readonly AssetTokenRow[] }): ReactNode {
-  const tokenCounts = TOKEN_LAYERS.map((layer) => ({
+function ThemeOverview({
+  layers,
+  rows,
+  title,
+}: {
+  readonly layers: readonly AssetTokenLayer[];
+  readonly rows: readonly AssetTokenRow[];
+  readonly title: string;
+}): ReactNode {
+  const tokenCounts = layers.map((layer) => ({
     layer,
     count: rows.filter((row) => row.layer === layer).length,
   }));
+  const systemSteps = layers.includes("extension")
+    ? ["Foundation", "Semantic", "Recipe", "Extensions", "Screens"]
+    : ["Foundation", "Semantic", "Recipe", "Screens"];
 
   return (
-    <section
-      aria-label="Default design system overview"
-      data-theme-overview
-      style={styles.overview}
-    >
+    <section aria-label={`${title} overview`} data-theme-overview style={styles.overview}>
       <header style={styles.overviewHeader}>
-        <h2 style={styles.overviewTitle}>Default design system</h2>
+        <h2 style={styles.overviewTitle}>{title}</h2>
         <div style={styles.overviewStats}>
           {tokenCounts.map(({ layer, count }) => (
             <span data-theme-overview-count={layer} key={layer} style={styles.overviewStat}>
@@ -69,7 +106,7 @@ function ThemeOverview({ rows }: { readonly rows: readonly AssetTokenRow[] }): R
       <div style={styles.overviewGrid}>
         <OverviewPanel id="system-map" meta="flow" title="System map">
           <div style={styles.systemMap}>
-            {["Foundation", "Semantic", "Recipe", "Screens"].map((label, index) => (
+            {systemSteps.map((label, index) => (
               <div data-theme-system-map-step={label} key={label} style={styles.systemMapStep}>
                 <span style={styles.systemMapIndex}>{index + 1}</span>
                 <span style={styles.systemMapLabel}>{label}</span>
@@ -328,7 +365,9 @@ function layerRows(
 ): readonly AssetTokenRow[] {
   return rows.filter((row) => {
     if (row.layer !== layer) return false;
-    return row.layer === "recipe" ? row.namespace === group : row.group === group;
+    return row.layer === "recipe" || row.layer === "extension"
+      ? row.namespace === group
+      : row.group === group;
   });
 }
 
@@ -868,12 +907,14 @@ function RecipeShowcase({ rows }: { readonly rows: readonly AssetTokenRow[] }): 
 
 function RawTokenSections({
   groupsByLayer,
+  layers,
 }: {
   readonly groupsByLayer: ReadonlyMap<AssetTokenLayer, readonly TokenGroup[]>;
+  readonly layers: readonly AssetTokenLayer[];
 }): ReactNode {
   return (
     <div style={styles.rawTokenGrid}>
-      {TOKEN_LAYERS.map((layer) => {
+      {layers.map((layer) => {
         const groups = groupsByLayer.get(layer) ?? [];
         return (
           <section
@@ -951,9 +992,10 @@ function TokenVisual({ row }: { readonly row: AssetTokenRow }): ReactNode {
 
 function groupRowsByLayer(
   rows: readonly AssetTokenRow[],
+  layers: readonly AssetTokenLayer[],
 ): ReadonlyMap<AssetTokenLayer, readonly TokenGroup[]> {
   const next = new Map<AssetTokenLayer, TokenGroup[]>();
-  for (const layer of TOKEN_LAYERS) {
+  for (const layer of layers) {
     next.set(layer, []);
   }
 
@@ -976,7 +1018,13 @@ function groupRowsByLayer(
 }
 
 function groupKey(row: AssetTokenRow): string {
-  return row.layer === "recipe" ? row.namespace : row.group;
+  return row.layer === "recipe" || row.layer === "extension" ? row.namespace : row.group;
+}
+
+function tokenLayersFor(rows: readonly AssetTokenRow[]): readonly AssetTokenLayer[] {
+  return rows.some((row) => row.layer === "extension")
+    ? Object.freeze([...BASE_TOKEN_LAYERS, "extension"] as const)
+    : BASE_TOKEN_LAYERS;
 }
 
 function countRows(groups: readonly TokenGroup[]): number {
@@ -1044,7 +1092,7 @@ function lengthSampleStyle(row: AssetTokenRow): CSSProperties {
     ...styles.visualSample,
     ["--token-sample-length" as string]: row.visual.value,
     background: "#fbf5e8",
-    borderColor: "#827763",
+    borderColor: "#6f6048",
     color: "#14231f",
     textTransform: "none",
   };
@@ -1221,7 +1269,7 @@ const styles = {
     lineHeight: 1.2,
   },
   overviewPanelMeta: {
-    color: "#827763",
+    color: "#6f6048",
     fontSize: "0.75rem",
     lineHeight: 1,
     whiteSpace: "nowrap",
@@ -1392,7 +1440,7 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    border: "1px solid #827763",
+    border: "1px solid #6f6048",
     color: "#625844",
     fontSize: "0.75rem",
     fontWeight: 650,
@@ -1472,7 +1520,7 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    border: "1px solid #827763",
+    border: "1px solid #6f6048",
     borderRadius: "0.375rem",
     color: "#625844",
     fontSize: "0.6875rem",
@@ -1484,7 +1532,7 @@ const styles = {
   },
   measureSample: {
     minWidth: 0,
-    border: "1px dashed #827763",
+    border: "1px dashed #6f6048",
     borderRadius: "0.25rem",
     color: "#625844",
     fontSize: "0.6875rem",
@@ -1694,7 +1742,7 @@ const styles = {
     overflowWrap: "anywhere",
   },
   recipeArrow: {
-    color: "#827763",
+    color: "#6f6048",
     fontSize: "0.6875rem",
   },
   recipeTokenValue: {
@@ -1835,7 +1883,7 @@ const styles = {
   },
   variableText: {
     minWidth: 0,
-    color: "#827763",
+    color: "#6f6048",
     fontSize: "0.6875rem",
     overflowWrap: "anywhere",
   },

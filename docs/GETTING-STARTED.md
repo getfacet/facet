@@ -19,6 +19,15 @@ Quickstart is the supported runnable evidence path for the public packages. Use
 it to prove a real boot before wiring the individual packages into your own
 host.
 
+When you already have a trusted local design module for evaluation, Quickstart
+can load it with `--design <path>` and show the resolved design system,
+components, and screen examples in the local Assets view. Quickstart does not
+inspect service URLs or generate design files; it validates the local module
+before listening.
+The Assets source filter separates `All`, `Imported`, and `Default` so imported
+component tags and screen examples can be reviewed without being mixed into the
+built-in default examples.
+
 ## Install the core pieces
 
 Most integrations choose a subset of these packages:

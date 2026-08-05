@@ -42,6 +42,7 @@ export interface ComponentThemeRecipeMetadata {
 
 export interface ComponentInspectorRow {
   readonly tag: string;
+  readonly source: "default" | "imported";
   readonly presentation: ComponentPresentation;
   readonly whenToUse: string;
   readonly acceptsChildren: boolean;
@@ -102,6 +103,9 @@ export const DEFAULT_COMPONENT_PRESENTATION_BY_TAG: Readonly<
 });
 
 const OTHER_PRESENTATION = presentation("other", "Other", Number.MAX_SAFE_INTEGER);
+const DEFAULT_COMPONENT_TAGS: ReadonlySet<string> = new Set(
+  DEFAULT_CATALOG.components.map((component) => component.tag),
+);
 
 function presentationForTag(tag: string): ComponentPresentation {
   return DEFAULT_COMPONENT_PRESENTATION_BY_TAG[tag] ?? OTHER_PRESENTATION;
@@ -176,6 +180,7 @@ function themeRecipeMetadata(spec: ComponentSpec): ComponentThemeRecipeMetadata 
 function rowForSpec(spec: ComponentSpec): ComponentInspectorRow {
   return Object.freeze({
     tag: spec.tag,
+    source: DEFAULT_COMPONENT_TAGS.has(spec.tag) ? "default" : "imported",
     presentation: presentationForTag(spec.tag),
     whenToUse: spec.whenToUse,
     acceptsChildren: spec.acceptsChildren,

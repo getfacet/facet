@@ -62,8 +62,8 @@ describe("quickstart guide", () => {
   it("pins the regenerated seed size and sha256 golden", () => {
     const json = JSON.stringify(QUICKSTART_INITIAL_STAGE);
 
-    expect(json).toHaveLength(24685);
-    expect(sha256(json)).toBe("418a30dcbd952311f962ff717f64949bfea1ef5d01c261a1e6d11f4b789aa7de");
+    expect(json).toHaveLength(24704);
+    expect(sha256(json)).toBe("372d977c4b6ab24814805ad416fef28e06a1e401c031c8180f409343c0f3b0a2");
   });
 
   it("keeps the seed within the quickstart prompt budget", () => {
@@ -96,7 +96,7 @@ describe("quickstart guide", () => {
     expect(QUICKSTART_PAGE_BRIEF).toContain("# Facet quickstart tour");
     expect(QUICKSTART_PAGE_BRIEF).toContain("safe declarative");
     expect(QUICKSTART_PAGE_BRIEF).toContain("component markup");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("registered default-catalog components");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("active registered catalog");
     expect(QUICKSTART_PAGE_BRIEF).toContain(
       "Do not say the page changed unless a mutation tool returned an accepted patch",
     );
@@ -112,5 +112,11 @@ describe("quickstart guide", () => {
     expect(QUICKSTART_PAGE_BRIEF).toContain("Marketing / Landing");
     expect(QUICKSTART_PAGE_BRIEF).toContain("Data / Report");
     expect(QUICKSTART_PAGE_BRIEF).toContain("dashboard/workspace is only one group");
+  });
+
+  it("describes the active registered catalog", () => {
+    expect(QUICKSTART_PAGE_BRIEF).toContain("active registered catalog");
+    expect(QUICKSTART_PAGE_BRIEF).not.toContain("registered default-catalog components");
+    expect(QUICKSTART_PAGE_BRIEF).not.toContain("Author only registered default-catalog");
   });
 });

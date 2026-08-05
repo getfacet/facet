@@ -526,10 +526,41 @@ describe("the content components render what they were handed", () => {
     expect(container.textContent ?? "").not.toContain("NaN");
   });
 
-  it("renders a Badge label under every tone in the declared domain", () => {
+  it("renders a compact status Badge with the tone's status tokens", () => {
+    const toneTokens = {
+      neutral: [
+        "--facet-recipe-badge-background",
+        "--facet-recipe-badge-border",
+        "--facet-recipe-badge-text",
+      ],
+      positive: [
+        "--facet-semantic-status-success-bg",
+        "--facet-semantic-status-success-border",
+        "--facet-semantic-status-success-text",
+      ],
+      warning: [
+        "--facet-semantic-status-warning-bg",
+        "--facet-semantic-status-warning-border",
+        "--facet-semantic-status-warning-text",
+      ],
+      danger: [
+        "--facet-semantic-status-danger-bg",
+        "--facet-semantic-status-danger-border",
+        "--facet-semantic-status-danger-text",
+      ],
+    } as const;
+
     for (const tone of ["neutral", "positive", "warning", "danger"] as const) {
       const { container } = render(<Badge {...mount({ label: `state-${tone}`, tone })} />);
-      expect(container.textContent).toBe(`state-${tone}`);
+      const badge = rootOf(container);
+      const style = badge.getAttribute("style") ?? "";
+
+      expect(badge.textContent).toBe(`state-${tone}`);
+      expect(badge.style.display).toBe("inline-flex");
+      expect(badge.style.alignSelf).toBe("flex-start");
+      for (const token of toneTokens[tone]) {
+        expect(style).toContain(`var(${token})`);
+      }
       cleanup();
     }
   });

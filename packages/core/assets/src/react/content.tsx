@@ -200,16 +200,28 @@ export const Metric: MountedComponent<ReactNode, ReactNode> = (mount) => {
   );
 };
 
-/**
- * What each `Badge` tone paints with. Neutral reads as quiet secondary text;
- * the other three borrow the semantic colour that already means that outcome
- * everywhere else in the theme, so a status word never needs a colour of its own.
- */
+/** The colour system each `Badge` tone borrows from the semantic status roles. */
 const BADGE_TONES = {
-  neutral: recipe("badge", "text"),
-  positive: semantic("status", "successText"),
-  warning: semantic("status", "warningText"),
-  danger: semantic("status", "dangerText"),
+  neutral: {
+    background: recipe("badge", "background"),
+    border: recipe("badge", "border"),
+    text: recipe("badge", "text"),
+  },
+  positive: {
+    background: semantic("status", "successBg"),
+    border: semantic("status", "successBorder"),
+    text: semantic("status", "successText"),
+  },
+  warning: {
+    background: semantic("status", "warningBg"),
+    border: semantic("status", "warningBorder"),
+    text: semantic("status", "warningText"),
+  },
+  danger: {
+    background: semantic("status", "dangerBg"),
+    border: semantic("status", "dangerBorder"),
+    text: semantic("status", "dangerText"),
+  },
 } as const;
 
 const BADGE_TONE_NAMES = Object.keys(BADGE_TONES) as readonly (keyof typeof BADGE_TONES)[];
@@ -218,17 +230,18 @@ const BADGE_TONE_NAMES = Object.keys(BADGE_TONES) as readonly (keyof typeof BADG
 export const Badge: MountedComponent<ReactNode, ReactNode> = (mount) => {
   const label = readString(mount, "label", "");
   const tone = readEnum(mount, "tone", BADGE_TONE_NAMES, "neutral");
-  const accent = BADGE_TONES[tone];
+  const colors = BADGE_TONES[tone];
 
   const style: FlowStyle = {
     display: "inline-flex",
+    alignSelf: "flex-start",
     alignItems: "center",
     gap: foundation("space", "xs"),
     padding: `${recipe("badge", "paddingBlock")} ${recipe("badge", "paddingInline")}`,
     borderRadius: recipe("badge", "radius"),
-    border: `${foundation("borderWidth", "thin")} solid ${recipe("badge", "border")}`,
-    background: recipe("badge", "background"),
-    color: accent,
+    border: `${foundation("borderWidth", "thin")} solid ${colors.border}`,
+    background: colors.background,
+    color: colors.text,
     fontFamily: foundation("typography", "fontFamilySans"),
     fontSize: foundation("typography", "fontSizeXs"),
     fontWeight: foundation("typography", "fontWeightMedium"),

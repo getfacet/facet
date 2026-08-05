@@ -8,16 +8,18 @@ import {
 } from "@facet/core";
 import type {
   FacetCatalog,
+  FacetExtensionTokenRef,
   FacetFoundationGroupName,
   FacetFoundationTokenRef,
   FacetSemanticGroupName,
   FacetSemanticTokenRef,
   FacetTheme,
+  FacetThemeExtensionDeclaration,
   FacetThemeTokenValueKind,
   FacetThemeTokenValues,
 } from "@facet/core";
 
-export type AssetTokenLayer = "foundation" | "semantic" | "recipe";
+export type AssetTokenLayer = "foundation" | "semantic" | "recipe" | "extension";
 
 export type AssetTokenVisualKind =
   | "color"
@@ -62,29 +64,52 @@ export interface RecipeAssetTokenRow extends AssetTokenRowBase {
   readonly namespace: string;
 }
 
-export type AssetTokenRow = FoundationAssetTokenRow | SemanticAssetTokenRow | RecipeAssetTokenRow;
+export interface ExtensionAssetTokenRow extends AssetTokenRowBase {
+  readonly layer: "extension";
+  readonly namespace: string;
+}
+
+export type AssetTokenRow =
+  FoundationAssetTokenRow | SemanticAssetTokenRow | RecipeAssetTokenRow | ExtensionAssetTokenRow;
+
+export interface ThemeTokenDerivationOptions {
+  readonly theme?: FacetTheme | undefined;
+  readonly catalog?: FacetCatalog | undefined;
+  readonly themeExtensions?: readonly FacetThemeExtensionDeclaration[] | undefined;
+}
 
 const EMPTY_TOKEN_VALUES = Object.freeze({}) as FacetThemeTokenValues;
+const EMPTY_THEME_EXTENSIONS = Object.freeze([]) as readonly FacetThemeExtensionDeclaration[];
 const CSS_VAR_REF_PATTERN = /var\(\s*(--facet-[^) ,]+)\s*(?:,[^)]+)?\)/g;
 
 export const DEFAULT_THEME_TOKEN_ROWS: readonly AssetTokenRow[] = deriveDefaultThemeTokenRows();
-export const DEFAULT_THEME_CSS_VARS: Readonly<Record<string, string>> = themeToCssVars(
-  DEFAULT_THEME,
-  {
-    catalog: DEFAULT_CATALOG,
-  },
-);
+export const DEFAULT_THEME_CSS_VARS: Readonly<Record<string, string>> = deriveThemeCssVars();
 
 export function deriveDefaultThemeTokenRows(): readonly AssetTokenRow[] {
-  return deriveThemeTokenRows(DEFAULT_THEME, DEFAULT_CATALOG);
+  return deriveThemeTokenRows();
 }
 
-function deriveThemeTokenRows(theme: FacetTheme, catalog: FacetCatalog): readonly AssetTokenRow[] {
+export function deriveThemeTokenRows(
+  options: ThemeTokenDerivationOptions = {},
+): readonly AssetTokenRow[] {
+  const theme = options.theme ?? DEFAULT_THEME;
+  const catalog = options.catalog ?? DEFAULT_CATALOG;
+  const themeExtensions = options.themeExtensions ?? EMPTY_THEME_EXTENSIONS;
   return Object.freeze([
     ...deriveFoundationRows(theme),
     ...deriveSemanticRows(theme),
     ...deriveRecipeRows(theme, catalog),
+    ...deriveExtensionRows(theme, themeExtensions),
   ]);
+}
+
+export function deriveThemeCssVars(
+  options: ThemeTokenDerivationOptions = {},
+): Readonly<Record<string, string>> {
+  return themeToCssVars(options.theme ?? DEFAULT_THEME, {
+    catalog: options.catalog ?? DEFAULT_CATALOG,
+    extensions: options.themeExtensions ?? EMPTY_THEME_EXTENSIONS,
+  });
 }
 
 function deriveFoundationRows(theme: FacetTheme): readonly FoundationAssetTokenRow[] {
@@ -166,11 +191,39 @@ function deriveRecipeRows(
   });
 }
 
+function deriveExtensionRows(
+  theme: FacetTheme,
+  themeExtensions: readonly FacetThemeExtensionDeclaration[],
+): readonly ExtensionAssetTokenRow[] {
+  const extensions = theme.extensions ?? EMPTY_TOKEN_VALUES;
+  return themeExtensions.flatMap((extension) =>
+    Object.entries(extension.tokens).map(([token, kind]) => {
+      const value = readRequiredToken(extensions, extension.namespace, token);
+      const tokenRef: FacetExtensionTokenRef = {
+        layer: "extension",
+        namespace: extension.namespace,
+        token,
+      };
+      return freezeRow({
+        layer: "extension",
+        namespace: extension.namespace,
+        token,
+        path: tokenPath("extension", extension.namespace, token),
+        value,
+        kind,
+        cssVariable: themeTokenVar(tokenRef),
+        cssReference: themeTokenRef(tokenRef),
+        visual: visualFor(kind, value),
+      });
+    }),
+  );
+}
+
 function readRequiredToken(groups: FacetThemeTokenValues, group: string, token: string): string {
   const values = groups[group];
   const value = values?.[token];
   if (value === undefined) {
-    throw new Error(`Missing default theme token: ${group}.${token}`);
+    throw new Error(`Missing theme token: ${group}.${token}`);
   }
   return value;
 }

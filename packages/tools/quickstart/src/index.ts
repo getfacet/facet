@@ -3,6 +3,20 @@
 export { QUICKSTART_INITIAL_STAGE } from "./guide.js";
 export { createQuickstartAgent } from "./agent.js";
 export type { QuickstartAgentOptions } from "./agent.js";
+export type {
+  QuickstartDesignExample,
+  QuickstartDesignExampleKind,
+  QuickstartDesignNote,
+  QuickstartDesignOverlay,
+  QuickstartDesignOverlayError,
+  QuickstartDesignOverlayValidationResult,
+  QuickstartDesignRegistry,
+  QuickstartDesignRegistryEntry,
+  QuickstartReadonlyDeepPartial,
+  QuickstartResolvedDesign,
+  QuickstartResolvedDesignExample,
+  QuickstartThemeOverlay,
+} from "./design-overlay.js";
 export { startQuickstart } from "./server.js";
 export type { QuickstartServerOptions, RunningQuickstart } from "./server.js";
 
