@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design System From URL"
+  short_description: "Create Facet design overlays from service URLs"
+  default_prompt: "Use $design-system-from-url to create and verify a Facet design overlay from this service URL."
