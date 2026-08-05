@@ -16,11 +16,29 @@ Capture screenshots with a real browser and inspect the image files:
 Do not pass based only on server logs, DOM text, unit tests, or a single cropped
 screenshot.
 
+## Required Contrast Scan
+
+Run `scripts/rendered-contrast-scan.mjs` through the Playwright CLI on the same
+viewports used for screenshot review. Save JSON outputs next to the screenshots.
+
+Minimum scans:
+
+- Live page, first viewport.
+- Live page, scrolled region.
+- Assets > Design System with source filter `Imported`.
+- Assets > Screens with source filter `All`.
+
+Treat nonzero `failureCount` as blocking. If a failure is a false positive, note
+the exact selector/text and inspect the matching screenshot before waiving it.
+The scanner uses computed solid text/background colors; it cannot judge image or
+gradient backgrounds, hierarchy, layout, or brand fit.
+
 ## Blocking Failures
 
 Any of these require another fix pass:
 
 - White or low-contrast text on bright accent backgrounds.
+- Any non-waived rendered contrast scan failure.
 - Invisible inactive navigation items, muted text, labels, table text, or badge
   text.
 - Side navigation rendered as a detached card or short block when the screen is

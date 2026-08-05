@@ -51,7 +51,10 @@ shows the default design system cannot express a recurring source pattern.
    - Assets > Design System with `Imported`.
    - Assets > Components with `All`, `Imported`, and `Default`.
    - Assets > Screens with `All`, `Imported`, and `Default`.
-8. Fix failures and repeat the visual gate until the result is visibly coherent.
+8. Run rendered contrast scans on the same Live/Assets viewports. Treat any
+   text below contrast threshold as blocking unless it is non-content,
+   intentionally decorative text and the screenshot confirms it is harmless.
+9. Fix failures and repeat the visual gate until the result is visibly coherent.
 
 ## Design Rules
 
@@ -82,8 +85,24 @@ shows the default design system cannot express a recurring source pattern.
   node .agents/skills/design-system-from-url/scripts/contrast-check.mjs "accent:#d7ff00:#050505" "bad-accent:#d7ff00:#ffffff"
   ```
 
+- Use `scripts/rendered-contrast-scan.mjs` with the Playwright CLI skill to scan
+  actual computed text/background pairs in the rendered page:
+
+  ```bash
+  PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playwright_cli.sh"
+  "$PWCLI" --raw run-code "$(node .agents/skills/design-system-from-url/scripts/rendered-contrast-scan.mjs --playwright-code --url http://localhost:5292)" > output/playwright/design-import/<slug>/contrast-top.json
+  node .agents/skills/design-system-from-url/scripts/rendered-contrast-scan.mjs --assert output/playwright/design-import/<slug>/contrast-top.json
+  "$PWCLI" --raw run-code "$(node .agents/skills/design-system-from-url/scripts/rendered-contrast-scan.mjs --playwright-code --url http://localhost:5292 --scroll-y 900)" > output/playwright/design-import/<slug>/contrast-scrolled.json
+  node .agents/skills/design-system-from-url/scripts/rendered-contrast-scan.mjs --assert output/playwright/design-import/<slug>/contrast-scrolled.json
+  ```
+
+  The scanner catches solid-color contrast failures from rendered DOM state. It
+  does not replace screenshot review for gradients, image backgrounds, layout,
+  navigation shape, badge/button hierarchy, or overall polish.
+
 ## Completion Report
 
 Report the source URL, overlay path, Quickstart URL, inspected screenshot paths,
-contrast failures fixed, whether components/examples were added, and any
-tokens intentionally left as defaults with evidence.
+manual token-pair contrast results, rendered contrast scan results, contrast
+failures fixed, whether components/examples were added, and any tokens
+intentionally left as defaults with evidence.
