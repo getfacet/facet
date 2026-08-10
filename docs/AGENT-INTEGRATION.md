@@ -54,6 +54,16 @@ tools require an existing page and a generated node id from a prior read. All
 successful visible mutations produce runtime patch messages; after initial page
 creation, document changes still travel as patches.
 
+The complete document has exactly one `<Facet entry="...">` root. Its direct
+children are uniquely named `<Screen name="...">` roots, and `entry` matches one
+of those names. A valid service-neutral minimum is
+`<Facet entry="main"><Screen name="main" /></Facet>`. Registered components go
+inside screens, and Facet owns generated node ids.
+
+That minimum demonstrates the envelope grammar only. It is not a completed
+user-facing page: read the specs for the visible component tags you intend to
+use, and put task-relevant visible components inside every requested screen.
+
 ## Publishing data
 
 `publish_data` writes one bounded JSON value at a named-key path. The host must
