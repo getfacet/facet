@@ -49,6 +49,10 @@ describe("FACET_PROMPT_KIT", () => {
       "Inside Screen roots, use only component tags present in the active catalog",
     );
     expect(FACET_PROMPT_KIT).toContain("call read_component_spec");
+    expect(FACET_PROMPT_KIT).toContain(
+      "request all independent read_component_spec calls together",
+    );
+    expect(FACET_PROMPT_KIT).toContain("one tool-only response");
     expect(FACET_PROMPT_KIT).toContain("do not guess");
     expect(FACET_PROMPT_KIT).toContain("ok: true");
     expect(FACET_PROMPT_KIT).toContain("ok: false");
