@@ -142,7 +142,7 @@ export const FACET_TOOL_SPECS: readonly FacetToolSpec[] = Object.freeze([
   ),
   spec(
     "publish_data",
-    "Publish one bounded JSON value through the runtime data lane. This changes visible UI only where current markup already binds the exact path.",
+    "Publish one bounded JSON value through the runtime data lane. For a new binding, publish projected data before rendering markup that binds its exact path; for an existing exact binding, republishing updates visible UI without a markup rewrite.",
     objectSchema(
       {
         path: stringSchema("Parsed data path represented as dot-separated named keys."),

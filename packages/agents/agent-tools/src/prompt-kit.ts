@@ -15,7 +15,7 @@ export const FACET_PROMPT_KIT = [
   `Use exactly these tools: ${TOOL_ROSTER}.`,
   "render_page takes { markup }. It is the only tool that can create the first page. The other mutation tools require an existing target id.",
   `read_data returns at most ${BOUNDS.readDataResult.items} array items and at most ${BOUNDS.readDataResult.chars} characters, whichever binds first; it clamps instead of failing for size.`,
-  `publish_data accepts at most ${BOUNDS.publishDataPayloadChars} authored JSON characters and returns only a descriptor. It changes visible UI only at an already-bound exact path; otherwise author markup that binds the path before finishing.`,
-  "Treat every tool result as authoritative. A mutation is complete only after ok: true. On ok: false, use its code and any cause and repair fields to fix one fault, then retry; never repeat unchanged invalid input or claim success.",
+  `publish_data accepts at most ${BOUNDS.publishDataPayloadChars} authored JSON characters and returns only a descriptor. For a new data-bound component, publish the projected data first, then render markup that binds its exact path. If current markup already has that exact binding, republishing updates visible UI without a markup rewrite.`,
+  "Treat every tool result as authoritative. A mutation is complete only after ok: true. On ok: false, use its code and any cause and repair fields, keep the current authoring goal active, use bounded reads when needed, then retry a corrected mutation. Do not switch to unrelated tools or claim success; never repeat unchanged invalid input.",
   "Conversation text is outside the tool roster. Final assistant prose is a turn result, not a tool call.",
 ].join("\n");

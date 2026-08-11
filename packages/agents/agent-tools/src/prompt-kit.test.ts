@@ -63,9 +63,14 @@ describe("FACET_PROMPT_KIT", () => {
   });
 
   it("does not let data publication stand in for visible authoring", () => {
-    expect(FACET_PROMPT_KIT).toContain("It changes visible UI only at an already-bound exact path");
-    expect(FACET_PROMPT_KIT).toContain(
-      "otherwise author markup that binds the path before finishing",
-    );
+    expect(FACET_PROMPT_KIT).toContain("publish the projected data first");
+    expect(FACET_PROMPT_KIT).toContain("then render markup that binds its exact path");
+    expect(FACET_PROMPT_KIT).toContain("current markup already has that exact binding");
+  });
+
+  it("keeps failed authoring focused on a corrected mutation", () => {
+    expect(FACET_PROMPT_KIT).toContain("keep the current authoring goal active");
+    expect(FACET_PROMPT_KIT).toContain("use bounded reads when needed");
+    expect(FACET_PROMPT_KIT).toContain("Do not switch to unrelated tools");
   });
 });

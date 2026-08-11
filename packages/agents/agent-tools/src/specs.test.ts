@@ -56,9 +56,8 @@ describe("FACET_TOOL_SPECS", () => {
   it("describes publish_data as data-lane work rather than visible authoring", () => {
     const publishData = FACET_TOOL_SPECS.find((spec) => spec.name === "publish_data");
 
-    expect(publishData?.description).toContain(
-      "visible UI only where current markup already binds",
-    );
+    expect(publishData?.description).toContain("publish projected data before rendering markup");
+    expect(publishData?.description).toContain("existing exact binding");
   });
 
   it("does not expose raw JSON Patch or a conversation-producing tool", () => {
