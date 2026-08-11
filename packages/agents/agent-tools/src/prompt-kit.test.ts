@@ -63,9 +63,12 @@ describe("FACET_PROMPT_KIT", () => {
   });
 
   it("does not let data publication stand in for visible authoring", () => {
-    expect(FACET_PROMPT_KIT).toContain("publish the projected data first");
-    expect(FACET_PROMPT_KIT).toContain("then render markup that binds its exact path");
-    expect(FACET_PROMPT_KIT).toContain("current markup already has that exact binding");
+    expect(FACET_PROMPT_KIT).toContain(
+      "For a new binding, that descriptor is not visible markup or completion",
+    );
+    expect(FACET_PROMPT_KIT).toContain("publish once, then immediately mutate markup");
+    expect(FACET_PROMPT_KIT).toContain("never republish unchanged data");
+    expect(FACET_PROMPT_KIT).toContain("current markup already binds that path");
   });
 
   it("keeps failed authoring focused on a corrected mutation", () => {

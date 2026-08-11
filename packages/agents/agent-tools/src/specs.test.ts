@@ -56,7 +56,10 @@ describe("FACET_TOOL_SPECS", () => {
   it("describes publish_data as data-lane work rather than visible authoring", () => {
     const publishData = FACET_TOOL_SPECS.find((spec) => spec.name === "publish_data");
 
-    expect(publishData?.description).toContain("publish projected data before rendering markup");
+    expect(publishData?.description).toContain("creates no visible markup");
+    expect(publishData?.description).toContain("cannot finish that binding");
+    expect(publishData?.description).toContain("publish once, then mutate markup");
+    expect(publishData?.description).toContain("never republish unchanged data");
     expect(publishData?.description).toContain("existing exact binding");
   });
 
