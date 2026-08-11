@@ -61,4 +61,11 @@ describe("FACET_PROMPT_KIT", () => {
     expect(FACET_PROMPT_KIT).toContain("repair");
     expect(FACET_PROMPT_KIT).toContain("never repeat unchanged invalid input");
   });
+
+  it("does not let data publication stand in for visible authoring", () => {
+    expect(FACET_PROMPT_KIT).toContain("It changes visible UI only at an already-bound exact path");
+    expect(FACET_PROMPT_KIT).toContain(
+      "otherwise author markup that binds the path before finishing",
+    );
+  });
 });
