@@ -46,6 +46,10 @@ console.log(FACET_TOOL_SPECS.length, result.ok, observation.stageRevision);
 
 The model should receive every tool result as data. If a mutation returns an
 author error, ask the model to repair that one reported fault and retry.
+Before first-page rendering, choose the intended visible component set and read
+each unknown contract. A provider that supports multiple tool calls can return
+those independent `read_component_spec` requests in one tool-only response;
+the host remains responsible for bounded admission and execution of each call.
 
 ## Rendering a page
 
@@ -53,6 +57,16 @@ author error, ask the model to repair that one reported fault and retry.
 tools require an existing page and a generated node id from a prior read. All
 successful visible mutations produce runtime patch messages; after initial page
 creation, document changes still travel as patches.
+
+The complete document has exactly one `<Facet entry="...">` root. Its direct
+children are uniquely named `<Screen name="...">` roots, and `entry` matches one
+of those names. A valid service-neutral minimum is
+`<Facet entry="main"><Screen name="main" /></Facet>`. Registered components go
+inside screens, and Facet owns generated node ids.
+
+That minimum demonstrates the envelope grammar only. It is not a completed
+user-facing page: read the specs for the visible component tags you intend to
+use, and put task-relevant visible components inside every requested screen.
 
 ## Publishing data
 

@@ -31,7 +31,13 @@ surface:
 - remove a subtree.
 
 `FACET_TOOL_NAMES` pins the same list for host dispatch. `FACET_PROMPT_KIT`
-contains the reusable contract text a host can include in its system prompt.
+contains the reusable contract text a host can include in its system prompt. It
+teaches the complete first-page envelope, active-catalog discovery, generated-id
+ownership, non-empty user-facing completion, and result-driven repair without
+prescribing a service or component composition. When a provider supports
+multiple tool calls in one response, the kit directs it to request independent
+`read_component_spec` calls together; the host may still execute those reads
+serially and enforce every per-call admission bound.
 
 ```ts check-docs
 import {
