@@ -248,6 +248,16 @@ function parseMatches(stdout, groupName) {
   return matches;
 }
 
+function uniqueMatchesByLine(matches) {
+  const seen = new Set();
+  return matches.filter((match) => {
+    const key = `${match.group}\0${match.path}\0${String(match.line)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function isDefaultMissingSearch(error, rgPath) {
   return rgPath === "rg" && error?.code === "ENOENT";
 }
@@ -420,7 +430,7 @@ function searchGroupPortable({ cwd, group, mode }) {
   const filtered = group.docsScope
     ? matches.filter((match) => isDocsScopePath(match.path, group.name))
     : matches;
-  return filtered.sort(
+  return uniqueMatchesByLine(filtered).sort(
     (left, right) =>
       left.path.localeCompare(right.path) ||
       left.line - right.line ||
@@ -456,7 +466,7 @@ function searchGroup({ cwd, group, mode, rgPath }) {
   const filtered = group.docsScope
     ? matches.filter((match) => isDocsScopePath(match.path, group.name))
     : matches;
-  return filtered.sort(
+  return uniqueMatchesByLine(filtered).sort(
     (left, right) =>
       left.path.localeCompare(right.path) ||
       left.line - right.line ||

@@ -807,19 +807,31 @@ export const Section: MountedComponent<ReactNode, ReactNode> = ({
     >
       {title === undefined ? null : (
         <h2
-          style={flowStyle(
-            headingStyle(
+          style={flowStyle({
+            ...headingStyle(
               recipe("section", "text"),
               recipe("section", "titleFontSize"),
               recipe("section", "titleFontWeight"),
             ),
-          )}
+            minWidth: 0,
+            maxWidth: "100%",
+            overflowWrap: "anywhere",
+          })}
         >
           {title}
         </h2>
       )}
       {description === undefined ? null : (
-        <p style={flowStyle(paragraphStyle(recipe("section", "mutedText")))}>{description}</p>
+        <p
+          style={flowStyle({
+            ...paragraphStyle(recipe("section", "mutedText")),
+            minWidth: 0,
+            maxWidth: "100%",
+            overflowWrap: "anywhere",
+          })}
+        >
+          {description}
+        </p>
       )}
       {children}
     </section>
@@ -886,6 +898,7 @@ export const Hero: MountedComponent<ReactNode, ReactNode> = ({
       style={frameStyle(themeVars, {
         display: "flex",
         flexDirection: "column",
+        containerType: "inline-size",
         alignItems: align === "center" ? "center" : "flex-start",
         gap: foundation("space", "lg"),
         padding: recipe("hero", "padding"),
@@ -909,13 +922,16 @@ export const Hero: MountedComponent<ReactNode, ReactNode> = ({
         </p>
       )}
       <h1
-        style={flowStyle(
-          headingStyle(
+        style={flowStyle({
+          ...headingStyle(
             HERO_TEXT[tone],
-            recipe("hero", "titleFontSize"),
+            `clamp(${foundation("typography", "fontSize2xl")}, 8cqi, ${recipe("hero", "titleFontSize")})`,
             recipe("hero", "titleFontWeight"),
           ),
-        )}
+          minWidth: 0,
+          maxWidth: "100%",
+          overflowWrap: "anywhere",
+        })}
       >
         {title}
       </h1>
@@ -1047,7 +1063,8 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
       data-facet-product-showcase-tone={tone}
       style={frameStyle(themeVars, {
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))",
+        gridTemplateColumns: "repeat(auto-fit, minmax(min(16rem, 100%), 1fr))",
+        maxWidth: "100%",
         alignItems: "stretch",
         gap: foundation("space", "xl"),
         padding: recipe("product-showcase", "padding"),
@@ -1062,7 +1079,9 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
     >
       <div
         style={flowStyle({
+          boxSizing: "border-box",
           minWidth: 0,
+          maxWidth: "100%",
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
@@ -1076,27 +1095,36 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
               fontWeight: foundation("typography", "fontWeightBold"),
               textTransform: "uppercase",
               letterSpacing: foundation("typography", "letterSpacingWide"),
+              minWidth: 0,
+              maxWidth: "100%",
+              overflowWrap: "anywhere",
             })}
           >
             {eyebrow}
           </p>
         )}
         <h1
-          style={flowStyle(
-            headingStyle(
+          style={flowStyle({
+            ...headingStyle(
               PRODUCT_TEXT[tone],
               recipe("product-showcase", "titleFontSize"),
               recipe("product-showcase", "titleFontWeight"),
             ),
-          )}
+            minWidth: 0,
+            maxWidth: "100%",
+            overflowWrap: "anywhere",
+          })}
         >
           {title}
         </h1>
         {description === undefined ? null : (
           <p
-            style={flowStyle(
-              paragraphStyle(PRODUCT_MUTED_TEXT[tone], foundation("typography", "fontSizeLg")),
-            )}
+            style={flowStyle({
+              ...paragraphStyle(PRODUCT_MUTED_TEXT[tone], foundation("typography", "fontSizeLg")),
+              minWidth: 0,
+              maxWidth: "100%",
+              overflowWrap: "anywhere",
+            })}
           >
             {description}
           </p>
@@ -1106,7 +1134,10 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
       <div
         aria-label={meta ?? title}
         style={flowStyle({
+          boxSizing: "border-box",
           minWidth: 0,
+          width: "100%",
+          maxWidth: "100%",
           minHeight: "16rem",
           display: "flex",
           flexDirection: "column",
@@ -1123,6 +1154,9 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
       >
         <span
           style={flowStyle({
+            minWidth: 0,
+            maxWidth: "100%",
+            overflowWrap: "anywhere",
             color: tone === "inverse" ? semantic("text", "muted") : PRODUCT_MUTED_TEXT[tone],
             fontFamily: foundation("typography", "fontFamilyMono"),
             fontSize: foundation("typography", "fontSizeSm"),
@@ -1134,12 +1168,14 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
         </span>
         <span
           style={flowStyle({
+            minWidth: 0,
+            maxWidth: "min(12ch, 100%)",
+            overflowWrap: "anywhere",
             color: tone === "inverse" ? semantic("text", "default") : PRODUCT_TEXT[tone],
             fontFamily: foundation("typography", "fontFamilySans"),
             fontSize: foundation("typography", "fontSize4xl"),
             fontWeight: foundation("typography", "fontWeightBlack"),
             lineHeight: foundation("typography", "lineHeightTight"),
-            maxWidth: "12ch",
           })}
         >
           {title}
@@ -1271,11 +1307,14 @@ export const MediaCard: MountedComponent<ReactNode, ReactNode> = ({
         {eyebrow === undefined ? null : (
           <span
             style={flowStyle({
+              minWidth: 0,
+              maxWidth: "100%",
               color: MEDIA_CARD_VISUAL_TEXT[tone],
               fontFamily: foundation("typography", "fontFamilyMono"),
               fontSize: foundation("typography", "fontSize2xs"),
               fontWeight: foundation("typography", "fontWeightBold"),
               lineHeight: foundation("typography", "lineHeightTight"),
+              overflowWrap: "anywhere",
               textTransform: "uppercase",
               letterSpacing: foundation("typography", "letterSpacingWide"),
             })}
@@ -1285,12 +1324,14 @@ export const MediaCard: MountedComponent<ReactNode, ReactNode> = ({
         )}
         <span
           style={flowStyle({
+            minWidth: 0,
             color: MEDIA_CARD_VISUAL_TEXT[tone],
             fontFamily: foundation("typography", "fontFamilySans"),
             fontSize: foundation("typography", "fontSize2xl"),
             fontWeight: foundation("typography", "fontWeightBlack"),
             lineHeight: foundation("typography", "lineHeightTight"),
-            maxWidth: "10ch",
+            maxWidth: "min(10ch, 100%)",
+            overflowWrap: "anywhere",
           })}
         >
           {meta ?? title}

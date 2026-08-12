@@ -381,13 +381,17 @@ describe("Button reports the interaction and navigates nothing", () => {
     }
   });
 
-  it("keeps action labels on one line by default", () => {
+  it("keeps action labels contained when their parent is narrow", () => {
     const { container } = render(
       <Button {...mount({ label: "Open forecast", action: "agent:openForecast" })} />,
     );
     const button = container.querySelector("button") as HTMLButtonElement;
 
-    expect(button.style.whiteSpace).toBe("nowrap");
+    expect(button.style.boxSizing).toBe("border-box");
+    expect(button.style.minWidth).toBe("0px");
+    expect(button.style.maxWidth).toBe("100%");
+    expect(button.style.whiteSpace).toBe("normal");
+    expect(button.style.overflowWrap).toBe("anywhere");
   });
 });
 

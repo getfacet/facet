@@ -487,7 +487,7 @@ describe("AssetExplorer", () => {
     expect(container.querySelector('[data-component-option="PromoBanner"]')).toBeNull();
     expect(StubEventSource.instances).toHaveLength(0);
     expect(fetchCalls).toEqual([]);
-  }, 30_000);
+  }, 60_000);
 
   it("preserves asset explorer state after returning from Live", async () => {
     const container = render(

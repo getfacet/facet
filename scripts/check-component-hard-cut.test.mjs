@@ -365,6 +365,27 @@ test("flags retired operational residue in root docs and agent process surfaces"
   );
 });
 
+test("reports each hard-cut group at most once per source line", async (t) => {
+  const cwd = await makeFixture(t);
+  const validateTree = ["validate", "Tree"].join("");
+  const nativeBrick = ["native", ["Br", "ick"].join("")].join(" ");
+  const styleVocabulary = ["style", "vocabulary"].join(" ");
+  await writeFixture(
+    cwd,
+    "CHANGELOG.md",
+    `One line contains ${validateTree}, ${nativeBrick}, ${styleVocabulary}, the facet CLI, a Postgres adapter, and a local bridge.\n`,
+  );
+
+  const result = scanHardCut({ cwd });
+
+  assert.deepEqual(
+    result.violations
+      .filter((entry) => entry.group === "retired_operational_contracts")
+      .map(({ group, path: violationPath, line }) => [group, violationPath, line]),
+    [["retired_operational_contracts", "CHANGELOG.md", 1]],
+  );
+});
+
 test("allows current lookalikes in scanned root and process surfaces", async (t) => {
   const cwd = await makeFixture(t);
   const agentToken = ["FACET", "AGENT", "TOKEN"].join("_");

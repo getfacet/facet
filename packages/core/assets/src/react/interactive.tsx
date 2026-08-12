@@ -106,6 +106,9 @@ export const Button: MountedComponent<ReactNode, ReactNode> = (mount) => {
   const onAction = mount.onAction;
 
   const style: FlowStyle = {
+    boxSizing: "border-box",
+    minWidth: 0,
+    maxWidth: "100%",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
@@ -120,7 +123,8 @@ export const Button: MountedComponent<ReactNode, ReactNode> = (mount) => {
     fontSize: foundation("typography", "fontSizeSm"),
     fontWeight: foundation("typography", "fontWeightMedium"),
     lineHeight: foundation("typography", "lineHeightTight"),
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
     cursor: "pointer",
   };
 
