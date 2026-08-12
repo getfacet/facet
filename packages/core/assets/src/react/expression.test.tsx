@@ -239,6 +239,22 @@ describe("expression React implementations", () => {
     expect(panel.style.height).toBe("100%");
   });
 
+  it("keeps long hero titles contained on narrow screens", () => {
+    const hero = renderComponent(
+      REGISTERED.find((registered) => registered.spec.tag === "Hero")!,
+      { title: "Averylongservicenamewithoutanaturalbreakpoint" },
+    );
+    const title = hero.querySelector("h1");
+
+    expect(title).toBeInstanceOf(HTMLElement);
+    expect((hero as HTMLElement).style.containerType).toBe("inline-size");
+    expect((title as HTMLElement).style.minWidth).toBe("0px");
+    expect((title as HTMLElement).style.maxWidth).toBe("100%");
+    expect((title as HTMLElement).style.overflowWrap).toBe("anywhere");
+    expect((title as HTMLElement).style.fontSize).toContain("clamp(");
+    expect((title as HTMLElement).style.fontSize).toContain("8cqi");
+  });
+
   it("lets side navigation fill the stretched rail its parent establishes", () => {
     const sideNav = renderComponent(
       REGISTERED.find((registered) => registered.spec.tag === "SideNav")!,
@@ -271,5 +287,62 @@ describe("expression React implementations", () => {
     expect((visual as HTMLElement).style.flexShrink).toBe("0");
     expect(body).toBeInstanceOf(HTMLElement);
     expect((body as HTMLElement).style.flex).toBe("1 1 0%");
+  });
+
+  it("keeps media-card visual labels contained on narrow screens", () => {
+    const mediaCard = renderComponent(
+      REGISTERED.find((registered) => registered.spec.tag === "MediaCard")!,
+      {
+        title: "LiveFrame",
+        eyebrow: "averylonglabelwithoutbreakpoints",
+        meta: "liveframe.dev",
+      },
+    );
+    const labels = mediaCard.firstElementChild?.querySelectorAll("span");
+
+    expect(labels).toHaveLength(2);
+    for (const label of labels ?? []) {
+      expect((label as HTMLElement).style.minWidth).toBe("0px");
+      expect((label as HTMLElement).style.maxWidth).toContain("100%");
+      expect((label as HTMLElement).style.overflowWrap).toBe("anywhere");
+    }
+  });
+
+  it("keeps product showcases contained on narrow screens", () => {
+    const showcase = renderComponent(
+      REGISTERED.find((registered) => registered.spec.tag === "ProductShowcase")!,
+      {
+        title: "Averylongservicenamewithoutanaturalbreakpoint",
+        description: "Averylongdescriptionwithoutanaturalbreakpoint",
+        eyebrow: "Averylongeyebrowwithoutanaturalbreakpoint",
+        meta: "averylonglabelwithoutbreakpoints",
+      },
+    );
+    const [content, visual] = Array.from(showcase.children);
+    const title = content?.querySelector("h1");
+    const paragraphs = content?.querySelectorAll("p");
+    const labels = visual?.querySelectorAll("span");
+
+    expect(showcase.style.gridTemplateColumns).toContain("min(16rem, 100%)");
+    expect(showcase.style.maxWidth).toBe("100%");
+    expect(content).toBeInstanceOf(HTMLElement);
+    expect((content as HTMLElement).style.boxSizing).toBe("border-box");
+    expect((content as HTMLElement).style.maxWidth).toBe("100%");
+    expect(title).toBeInstanceOf(HTMLElement);
+    expect((title as HTMLElement).style.overflowWrap).toBe("anywhere");
+    expect(paragraphs).toHaveLength(2);
+    for (const paragraph of paragraphs ?? []) {
+      expect((paragraph as HTMLElement).style.maxWidth).toBe("100%");
+      expect((paragraph as HTMLElement).style.overflowWrap).toBe("anywhere");
+    }
+    expect(visual).toBeInstanceOf(HTMLElement);
+    expect((visual as HTMLElement).style.boxSizing).toBe("border-box");
+    expect((visual as HTMLElement).style.width).toBe("100%");
+    expect((visual as HTMLElement).style.maxWidth).toBe("100%");
+    expect(labels).toHaveLength(2);
+    for (const label of labels ?? []) {
+      expect((label as HTMLElement).style.maxWidth).toContain("100%");
+      expect((label as HTMLElement).style.overflowWrap).toBe("anywhere");
+    }
   });
 });

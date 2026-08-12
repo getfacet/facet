@@ -340,6 +340,8 @@ export const Split: MountedComponent<ReactNode, ReactNode> = function Split({
   const reverse = flagProp(props, "reverse", false);
   const collapse = flagProp(props, "collapse", true);
   const weights = SPLIT_RATIO_WEIGHTS[ratio];
+  const minColumnWidth = recipe("split", "minColumnWidth");
+  const containedColumnWidth = `min(${minColumnWidth}, 100%)`;
   const childArray = layoutChildren(children);
   const primaryChild = childArray[0] ?? null;
   const secondaryChildren = childArray.slice(1);
@@ -350,8 +352,9 @@ export const Split: MountedComponent<ReactNode, ReactNode> = function Split({
         style={flowStyle({
           display: "flex",
           flexDirection: "column",
-          minWidth: recipe("split", "minColumnWidth"),
-          flex: `${weights[0]} 1 ${recipe("split", "minColumnWidth")}`,
+          minWidth: collapse ? containedColumnWidth : 0,
+          maxWidth: "100%",
+          flex: `${weights[0]} 1 ${containedColumnWidth}`,
           alignSelf: align === "stretch" ? "stretch" : "auto",
         })}
       >
@@ -365,8 +368,9 @@ export const Split: MountedComponent<ReactNode, ReactNode> = function Split({
         style={flowStyle({
           display: "flex",
           flexDirection: "column",
-          minWidth: recipe("split", "minColumnWidth"),
-          flex: `${weights[1]} 1 ${recipe("split", "minColumnWidth")}`,
+          minWidth: collapse ? containedColumnWidth : 0,
+          maxWidth: "100%",
+          flex: `${weights[1]} 1 ${containedColumnWidth}`,
           alignSelf: align === "stretch" ? "stretch" : "auto",
         })}
       >
@@ -386,6 +390,7 @@ export const Split: MountedComponent<ReactNode, ReactNode> = function Split({
         boxSizing: "border-box",
         width: "100%",
         minWidth: 0,
+        maxWidth: "100%",
         gap: gap === "lg" ? recipe("split", "defaultGap") : space(gap),
       })}
     >

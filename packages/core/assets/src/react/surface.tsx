@@ -50,6 +50,9 @@ const CARD_PADDINGS = ["none", "sm", "md", "lg"] as const;
 function surfaceHeading(color: string): ReturnType<typeof flowStyle> {
   return flowStyle({
     margin: 0,
+    minWidth: 0,
+    maxWidth: "100%",
+    overflowWrap: "anywhere",
     fontSize: foundation("typography", "fontSizeLg"),
     fontWeight: foundation("typography", "fontWeightMedium"),
     lineHeight: foundation("typography", "lineHeightTight"),
@@ -99,6 +102,7 @@ export const Card: MountedComponent<ReactNode, ReactNode> = function Card({
         flexDirection: "column",
         boxSizing: "border-box",
         minWidth: 0,
+        maxWidth: "100%",
         height: "100%",
         gap: foundation("space", "sm"),
         padding: padding === "md" ? recipe("card", "padding") : space(padding),

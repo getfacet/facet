@@ -579,6 +579,11 @@ describe("AppShell and Split", () => {
     expect(root.style.getPropertyValue("gap")).toBe("var(--facet-recipe-split-default-gap)");
     expect(primary?.style.getPropertyValue("flex")).toContain("7 1");
     expect(secondary?.style.getPropertyValue("flex")).toContain("3 1");
+    expect(root.style.getPropertyValue("max-width")).toBe("100%");
+    for (const slot of [primary, secondary]) {
+      expect(slot?.style.getPropertyValue("min-width")).toContain("100%");
+      expect(slot?.style.getPropertyValue("max-width")).toBe("100%");
+    }
   });
 
   it("keeps every child after the first inside the secondary split column", () => {
@@ -608,6 +613,8 @@ describe("AppShell and Split", () => {
       </>,
     );
     expect(root.style.getPropertyValue("flex-wrap")).toBe("nowrap");
+    expect((root.firstElementChild as HTMLElement).style.getPropertyValue("min-width")).toBe("0px");
+    expect((root.lastElementChild as HTMLElement).style.getPropertyValue("min-width")).toBe("0px");
     expect(root.firstElementChild?.textContent).toBe("second");
     expect(root.lastElementChild?.textContent).toBe("first");
   });
