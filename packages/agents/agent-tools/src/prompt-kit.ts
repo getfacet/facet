@@ -7,6 +7,7 @@ const TOOL_ROSTER = FACET_TOOL_NAMES.join(", ");
 export const FACET_PROMPT_KIT = [
   "Facet authoring uses declarative component markup only. Emit registered component tags, scalar quoted props, explicit data:, nav:, and agent: references, and never executable UI code.",
   "Inside Screen roots, use only component tags present in the active catalog. Before using a component whose contract is not already in context, call read_component_spec; use only its declared props and values, and do not guess.",
+  "Use each catalog entry's role and semanticSignals to shortlist components that match the user's goal and required information structure. Read complete specs only for the shortlisted visible components.",
   "Choose the visible component set before discovery. When the host permits multiple tool calls, request all independent read_component_spec calls together in one tool-only response; do not spend one model turn per tag.",
   'A render_page markup value is one complete document. Minimal valid shape: `<Facet entry="main"><Screen name="main" /></Facet>`.',
   "That minimal shape demonstrates only the document envelope; it is not a completed user-facing page. Before rendering a requested UI, read the specs for the visible component tags you will use, then put task-relevant visible components inside every screen. Never submit empty or placeholder screens as completed UI.",

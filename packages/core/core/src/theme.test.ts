@@ -44,6 +44,11 @@ const RECIPE_CATALOG: FacetCatalog = Object.freeze({
     Object.freeze({
       tag: "Screen",
       whenToUse: "Root screen.",
+      authoring: {
+        role: "display",
+        informationTypes: ["test_content"],
+        visualEmphasis: "supporting",
+      } as const,
       props: Object.freeze({
         name: Object.freeze({
           type: "string",
@@ -59,6 +64,11 @@ const RECIPE_CATALOG: FacetCatalog = Object.freeze({
     Object.freeze({
       tag: "Button",
       whenToUse: "Trigger an action.",
+      authoring: {
+        role: "display",
+        informationTypes: ["test_content"],
+        visualEmphasis: "supporting",
+      } as const,
       props: Object.freeze({
         label: Object.freeze({ type: "string", guidance: "Button label." }),
       }),
@@ -169,6 +179,11 @@ describe("Facet Design Contract v1 theme validation", () => {
         Object.freeze({
           tag: "MetricCard",
           whenToUse: "Show one metric.",
+          authoring: {
+            role: "display",
+            informationTypes: ["test_content"],
+            visualEmphasis: "supporting",
+          } as const,
           props: Object.freeze({}),
           acceptsChildren: false,
           themeRecipe: Object.freeze({ tokens: Object.freeze({ accent: "color" }) }),
@@ -176,6 +191,11 @@ describe("Facet Design Contract v1 theme validation", () => {
         Object.freeze({
           tag: "Metric-Card",
           whenToUse: "Show one metric.",
+          authoring: {
+            role: "display",
+            informationTypes: ["test_content"],
+            visualEmphasis: "supporting",
+          } as const,
           props: Object.freeze({}),
           acceptsChildren: false,
           themeRecipe: Object.freeze({ tokens: Object.freeze({ accent: "color" }) }),

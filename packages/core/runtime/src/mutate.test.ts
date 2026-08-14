@@ -43,6 +43,11 @@ function catalogRecord(): Record<string, unknown> {
       {
         tag: "Screen",
         whenToUse: "Root screen used to render a page.",
+        authoring: {
+          role: "display",
+          informationTypes: ["test_content"],
+          visualEmphasis: "supporting",
+        } as const,
         props: {
           name: {
             type: "string",
@@ -55,12 +60,22 @@ function catalogRecord(): Record<string, unknown> {
       {
         tag: "Text",
         whenToUse: "Short visible text.",
+        authoring: {
+          role: "display",
+          informationTypes: ["test_content"],
+          visualEmphasis: "supporting",
+        } as const,
         props: { value: { type: "string", guidance: "Text to show." } },
         acceptsChildren: false,
       },
       {
         tag: "Stack",
         whenToUse: "Flow container.",
+        authoring: {
+          role: "display",
+          informationTypes: ["test_content"],
+          visualEmphasis: "supporting",
+        } as const,
         props: {},
         acceptsChildren: true,
       },

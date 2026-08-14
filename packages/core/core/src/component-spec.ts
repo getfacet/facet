@@ -71,6 +71,7 @@
  */
 
 import { BOUNDS } from "./bounds.js";
+import { validateComponentAuthoring, type ComponentAuthoring } from "./component-authoring.js";
 import { isFacetIdentifier } from "./identifiers.js";
 import { facetThemeToKebabCase, type FacetThemeTokenValueKind } from "./theme-contract.js";
 
@@ -148,6 +149,8 @@ export interface ComponentSpec {
   readonly tag: string;
   /** One line, at most B-12 characters: when an agent should reach for this. */
   readonly whenToUse: string;
+  /** Closed role-specific semantics for agent discovery and component selection. */
+  readonly authoring: ComponentAuthoring;
   readonly props: Readonly<Record<string, PropSchema>>;
   readonly acceptsChildren: boolean;
   readonly collect?: CollectSpec;
@@ -182,6 +185,7 @@ type SpecRejection = Extract<ComponentSpecValidationResult, { readonly ok: false
 const SPEC_KEYS: readonly string[] = [
   "tag",
   "whenToUse",
+  "authoring",
   "props",
   "acceptsChildren",
   "collect",
@@ -312,6 +316,11 @@ function validateSpec(value: unknown): ComponentSpecValidationResult {
     return reject("when_to_use_too_long", "whenToUse", "When-to-use text exceeds B-12.");
   }
 
+  const authoring = validateComponentAuthoring(value["authoring"]);
+  if (!authoring.ok) {
+    return authoring;
+  }
+
   const acceptsChildren = value["acceptsChildren"];
   if (typeof acceptsChildren !== "boolean") {
     return reject(
@@ -342,6 +351,7 @@ function validateSpec(value: unknown): ComponentSpecValidationResult {
   const base: ComponentSpec = {
     tag,
     whenToUse,
+    authoring: authoring.authoring,
     props: props.props,
     acceptsChildren,
   };

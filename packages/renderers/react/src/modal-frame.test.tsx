@@ -544,20 +544,55 @@ describe("a Modal node declared inside a Card inside a Grid", () => {
     {
       tag: "Screen",
       whenToUse: "A screen root.",
+      authoring: {
+        role: "display",
+        informationTypes: ["test_content"],
+        visualEmphasis: "supporting",
+      } as const,
       props: { name: { type: "string", required: true, guidance: "The screen name." } },
       acceptsChildren: true,
     },
-    { tag: "Grid", whenToUse: "A layout container.", props: {}, acceptsChildren: true },
-    { tag: "Card", whenToUse: "A surface.", props: {}, acceptsChildren: true },
+    {
+      tag: "Grid",
+      whenToUse: "A layout container.",
+      authoring: {
+        role: "display",
+        informationTypes: ["test_content"],
+        visualEmphasis: "supporting",
+      } as const,
+      props: {},
+      acceptsChildren: true,
+    },
+    {
+      tag: "Card",
+      whenToUse: "A surface.",
+      authoring: {
+        role: "display",
+        informationTypes: ["test_content"],
+        visualEmphasis: "supporting",
+      } as const,
+      props: {},
+      acceptsChildren: true,
+    },
     {
       tag: "Rogue",
       whenToUse: "A registered component that tries to escape its stacking context.",
+      authoring: {
+        role: "display",
+        informationTypes: ["test_content"],
+        visualEmphasis: "supporting",
+      } as const,
       props: {},
       acceptsChildren: false,
     },
     {
       tag: "Modal",
       whenToUse: "The one overlap primitive: flow content the framework frame carries.",
+      authoring: {
+        role: "display",
+        informationTypes: ["test_content"],
+        visualEmphasis: "supporting",
+      } as const,
       props: {
         triggerLabel: { type: "string", required: true, guidance: "What opens it." },
         title: { type: "string", required: true, guidance: "The dialog's name." },

@@ -40,6 +40,12 @@ export const MODAL_SPEC: ComponentSpec = {
   tag: "Modal",
   whenToUse:
     "Interrupt the screen for one focused decision or a short form. Facet owns the frame; this describes only what goes inside it.",
+  authoring: {
+    role: "layout",
+    layoutPurpose: "modal_frame",
+    responsiveBehavior:
+      "Contains focused flow content inside the framework-owned responsive modal frame.",
+  },
   props: {
     triggerLabel: {
       type: "string",
@@ -79,6 +85,11 @@ export const CARD_SPEC: ComponentSpec = {
   tag: "Card",
   whenToUse:
     "Group related content into one bounded surface with its own edge and padding — a summary, a record, a settings block.",
+  authoring: {
+    role: "layout",
+    layoutPurpose: "bounded_surface",
+    responsiveBehavior: "Contains related child content within the available parent width.",
+  },
   props: {
     title: {
       type: "string",
@@ -121,6 +132,11 @@ export const EMPTY_SPEC: ComponentSpec = {
   tag: "Empty",
   whenToUse:
     "Stand in for a view with nothing in it yet — a search that matched nothing, a fresh account, a list before its first row.",
+  authoring: {
+    role: "display",
+    informationTypes: ["empty_state", "next_step"],
+    visualEmphasis: "supporting",
+  },
   props: {
     title: {
       type: "string",

@@ -54,6 +54,11 @@ const FRAMEWORK_PROPS: readonly string[] = ["name", "collect", "arg"];
 const SCREEN_STUB: Record<string, unknown> = {
   tag: "Screen",
   whenToUse: "The screen root a catalog must register, standing in for the real one.",
+  authoring: {
+    role: "display",
+    informationTypes: ["test_content"],
+    visualEmphasis: "supporting",
+  } as const,
   props: {
     name: { type: "string", guidance: "The screen's name.", required: true },
   },

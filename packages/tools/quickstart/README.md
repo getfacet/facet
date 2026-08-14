@@ -125,6 +125,11 @@ export default {
     {
       tag: "PromoBanner",
       whenToUse: "Use for a branded promotional banner.",
+      authoring: {
+        role: "display",
+        informationTypes: ["promotion"],
+        visualEmphasis: "primary",
+      },
       props: {},
       acceptsChildren: false,
     },

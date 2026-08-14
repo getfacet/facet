@@ -111,6 +111,7 @@ async function makeOverlayBundle() {
       "    {",
       '      tag: "PromoBanner",',
       '      whenToUse: "Use for an overlay-generated bundle promo.",',
+      '      authoring: { role: "display", informationTypes: ["promotion"], visualEmphasis: "primary" },',
       "      props: {},",
       "      acceptsChildren: false,",
       "    },",

@@ -19,6 +19,11 @@ export function testCatalog(): FacetCatalog {
       {
         tag: "Screen",
         whenToUse: "Root screen.",
+        authoring: {
+          role: "display",
+          informationTypes: ["test_content"],
+          visualEmphasis: "supporting",
+        } as const,
         props: {
           name: {
             type: "string",
@@ -31,6 +36,11 @@ export function testCatalog(): FacetCatalog {
       {
         tag: "Text",
         whenToUse: "Short text.",
+        authoring: {
+          role: "display",
+          informationTypes: ["test_content"],
+          visualEmphasis: "supporting",
+        } as const,
         props: {
           value: { type: "string", guidance: "Text value.", bindable: true },
           arg: { type: "string", guidance: "Event argument." },

@@ -266,11 +266,33 @@ function ComponentDetail({
 
       <div aria-label={`${row.tag} contract summary`} style={styles.specBar}>
         <SpecBarItem label="tag" value={row.tag} />
+        <SpecBarItem label="role" value={row.authoringRole} />
         <SpecBarItem label="group" value={row.presentation.label} />
         <SpecBarItem label="children" value={row.acceptsChildren ? "accepted" : "none"} />
         <SpecBarItem label="props" value={String(row.props.length)} />
         <SpecBarItem label="recipe" value={`${row.themeRecipe?.tokens.length ?? 0} tokens`} />
       </div>
+
+      <section
+        aria-label={`${row.tag} authoring semantics`}
+        data-component-authoring={row.tag}
+        style={styles.metadataSection}
+      >
+        <header style={styles.sectionHeader}>
+          <div style={styles.sectionTitleBlock}>
+            <h4 style={styles.sectionTitle}>Authoring semantics</h4>
+            <span style={styles.sectionHint}>Compact signals exposed during agent discovery</span>
+          </div>
+          <span style={styles.sectionCount}>{row.semanticSignals.length}</span>
+        </header>
+        <div style={styles.tokenList}>
+          {row.semanticSignals.map((signal) => (
+            <span data-component-semantic-signal={signal} key={signal} style={styles.token}>
+              {signal}
+            </span>
+          ))}
+        </div>
+      </section>
 
       <section
         aria-label={`${row.tag} specimens`}
@@ -506,6 +528,8 @@ function searchableText(row: ComponentInspectorRow): string {
     row.presentation.label,
     row.presentation.section,
     row.whenToUse,
+    row.authoringRole,
+    ...row.semanticSignals,
     String(row.acceptsChildren),
     ...row.props.flatMap((prop) => [
       prop.name,

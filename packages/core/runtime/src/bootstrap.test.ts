@@ -15,6 +15,11 @@ function spec(tag: string, overrides: Record<string, unknown> = {}): Record<stri
   return {
     tag,
     whenToUse: `Use ${tag} when this component fits the page.`,
+    authoring: {
+      role: "display",
+      informationTypes: ["test_content"],
+      visualEmphasis: "supporting",
+    } as const,
     props: {},
     acceptsChildren: false,
     ...overrides,
@@ -43,6 +48,11 @@ function textSpec(): Record<string, unknown> {
 function modalSpec(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return spec("Modal", {
     whenToUse: "Show focused content over the page without leaving the screen.",
+    authoring: {
+      role: "display",
+      informationTypes: ["test_content"],
+      visualEmphasis: "supporting",
+    } as const,
     props: {
       triggerLabel: { type: "string", required: true, guidance: "Label of the opening control." },
       title: { type: "string", required: true, guidance: "Title shown in the frame header." },
