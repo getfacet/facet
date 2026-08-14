@@ -1067,7 +1067,7 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
         maxWidth: "100%",
         alignItems: "stretch",
         gap: foundation("space", "xl"),
-        padding: recipe("product-showcase", "padding"),
+        padding: `min(${recipe("product-showcase", "padding")}, 8%)`,
         border: `${foundation("borderWidth", "thin")} solid ${recipe(
           "product-showcase",
           "border",
