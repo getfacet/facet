@@ -311,19 +311,32 @@ describe("expression React implementations", () => {
     const mediaCard = renderComponent(
       REGISTERED.find((registered) => registered.spec.tag === "MediaCard")!,
       {
-        title: "LiveFrame",
+        title: "Averylongmediatitlewithoutanaturalbreakpoint",
+        description: "Averylongmediadescriptionwithoutanaturalbreakpoint",
         eyebrow: "averylonglabelwithoutbreakpoints",
         meta: "liveframe.dev",
       },
     );
+    const body = mediaCard.firstElementChild?.nextElementSibling;
+    const title = body?.querySelector("h3");
+    const description = body?.querySelector("p");
     const labels = mediaCard.firstElementChild?.querySelectorAll("span");
 
+    expect(mediaCard.style.maxWidth).toBe("100%");
+    expect(mediaCard.style.containerType).toBe("inline-size");
     expect(labels).toHaveLength(2);
+    expect((labels?.[1] as HTMLElement).style.fontSize).toContain("11cqi");
     for (const label of labels ?? []) {
       expect((label as HTMLElement).style.minWidth).toBe("0px");
       expect((label as HTMLElement).style.maxWidth).toContain("100%");
       expect((label as HTMLElement).style.overflowWrap).toBe("anywhere");
     }
+    for (const text of [title, description]) {
+      expect(text).toBeInstanceOf(HTMLElement);
+      expect((text as HTMLElement).style.maxWidth).toBe("100%");
+      expect((text as HTMLElement).style.overflowWrap).toBe("anywhere");
+    }
+    expect((title as HTMLElement).style.fontSize).toContain("11cqi");
   });
 
   it("keeps product showcases contained on narrow screens", () => {
