@@ -325,6 +325,7 @@ describe("expression React implementations", () => {
 
     expect(showcase.style.gridTemplateColumns).toContain("min(16rem, 100%)");
     expect(showcase.style.maxWidth).toBe("100%");
+    expect(showcase.style.padding).toBe("min(var(--facet-recipe-product-showcase-padding), 8%)");
     expect(content).toBeInstanceOf(HTMLElement);
     expect((content as HTMLElement).style.boxSizing).toBe("border-box");
     expect((content as HTMLElement).style.maxWidth).toBe("100%");
