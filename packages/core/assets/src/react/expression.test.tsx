@@ -325,11 +325,15 @@ describe("expression React implementations", () => {
 
     expect(showcase.style.gridTemplateColumns).toContain("min(16rem, 100%)");
     expect(showcase.style.maxWidth).toBe("100%");
+    expect(showcase.style.containerType).toBe("inline-size");
     expect(showcase.style.padding).toBe("min(var(--facet-recipe-product-showcase-padding), 8%)");
     expect(content).toBeInstanceOf(HTMLElement);
     expect((content as HTMLElement).style.boxSizing).toBe("border-box");
     expect((content as HTMLElement).style.maxWidth).toBe("100%");
     expect(title).toBeInstanceOf(HTMLElement);
+    expect((title as HTMLElement).style.fontSize).toBe(
+      "min(var(--facet-recipe-product-showcase-title-font-size), 16cqw)",
+    );
     expect((title as HTMLElement).style.overflowWrap).toBe("anywhere");
     expect(paragraphs).toHaveLength(2);
     for (const paragraph of paragraphs ?? []) {
@@ -341,6 +345,9 @@ describe("expression React implementations", () => {
     expect((visual as HTMLElement).style.width).toBe("100%");
     expect((visual as HTMLElement).style.maxWidth).toBe("100%");
     expect(labels).toHaveLength(2);
+    expect((labels?.[1] as HTMLElement).style.fontSize).toBe(
+      "min(var(--facet-foundation-typography-font-size4xl), 16cqw)",
+    );
     for (const label of labels ?? []) {
       expect((label as HTMLElement).style.maxWidth).toContain("100%");
       expect((label as HTMLElement).style.overflowWrap).toBe("anywhere");
