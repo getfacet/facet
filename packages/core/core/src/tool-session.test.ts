@@ -207,11 +207,6 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Text",
     whenToUse: "Show one run of copy.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: false,
     props: {
       value: { type: "string", guidance: "The copy to show.", required: true, bindable: true },
@@ -220,11 +215,6 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Screen",
     whenToUse: "Hold one named screen of the document.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: true,
     props: {
       name: {

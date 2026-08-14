@@ -1,7 +1,5 @@
 import { DEFAULT_CATALOG } from "@facet/assets";
-import { componentSemanticSignals } from "@facet/core";
 import type {
-  ComponentAuthoringRole,
   ComponentSpec,
   FacetCatalog,
   FacetThemeTokenValueKind,
@@ -47,8 +45,6 @@ export interface ComponentInspectorRow {
   readonly source: "default" | "imported";
   readonly presentation: ComponentPresentation;
   readonly whenToUse: string;
-  readonly authoringRole: ComponentAuthoringRole;
-  readonly semanticSignals: readonly string[];
   readonly acceptsChildren: boolean;
   readonly props: readonly ComponentPropMetadata[];
   readonly collect: ComponentCollectMetadata | null;
@@ -187,8 +183,6 @@ function rowForSpec(spec: ComponentSpec): ComponentInspectorRow {
     source: DEFAULT_COMPONENT_TAGS.has(spec.tag) ? "default" : "imported",
     presentation: presentationForTag(spec.tag),
     whenToUse: spec.whenToUse,
-    authoringRole: spec.authoring.role,
-    semanticSignals: componentSemanticSignals(spec.authoring),
     acceptsChildren: spec.acceptsChildren,
     props: Object.freeze(
       Object.entries(spec.props).map(([name, schema]) => propMetadata(name, schema)),

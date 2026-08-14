@@ -52,11 +52,6 @@ export default {
     {
       tag: "PromoHero",
       whenToUse: "Use for a promotional hero fixture.",
-      authoring: {
-        role: "task",
-        userIntents: ["understand_offer"],
-        outcomes: ["The visitor understands the promoted offer."],
-      },
       props: {},
       acceptsChildren: false,
     },
@@ -89,11 +84,6 @@ export default {
       {
         tag: "PromoHero",
         whenToUse: "Use for a promotional hero fixture.",
-        authoring: {
-          role: "display",
-          informationTypes: ["test_content"],
-          visualEmphasis: "supporting",
-        } as const,
         props: {},
         acceptsChildren: false,
       },
@@ -161,11 +151,6 @@ export default {
     {
       tag: "BrowserOnly",
       whenToUse: "Use for a divergent browser-only fixture.",
-      authoring: {
-        role: "display",
-        informationTypes: ["test_content"],
-        visualEmphasis: "supporting",
-      },
       props: {},
       acceptsChildren: false,
     },

@@ -10,11 +10,6 @@ function component(tag: string, overrides: Record<string, unknown> = {}): Record
   return {
     tag,
     whenToUse: `Use ${tag} when the page needs it.`,
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: {},
     acceptsChildren: false,
     ...overrides,

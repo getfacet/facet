@@ -124,11 +124,6 @@ function catalog(): FacetCatalog {
       {
         tag: "Screen",
         whenToUse: "Root screen container.",
-        authoring: {
-          role: "display",
-          informationTypes: ["test_content"],
-          visualEmphasis: "supporting",
-        } as const,
         props: {
           name: { type: "string", required: true, guidance: "Screen name." },
         },

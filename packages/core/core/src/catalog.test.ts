@@ -8,11 +8,6 @@ function spec(tag: string, overrides: Record<string, unknown> = {}): Record<stri
   return {
     tag,
     whenToUse: `Use ${tag} when the content calls for it.`,
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: {},
     acceptsChildren: false,
     ...overrides,
@@ -28,11 +23,6 @@ function conformingModal(overrides: Record<string, unknown> = {}): Record<string
   return {
     tag: "Modal",
     whenToUse: "Show focused content over the page without leaving the screen.",
-    authoring: {
-      role: "layout",
-      layoutPurpose: "modal_frame",
-      responsiveBehavior: "Contains focused content in the trusted modal frame.",
-    },
     props: {
       triggerLabel: { type: "string", required: true, guidance: "Label of the opening control." },
       title: { type: "string", required: true, guidance: "Title shown in the frame header." },

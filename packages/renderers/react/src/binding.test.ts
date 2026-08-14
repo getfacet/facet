@@ -60,11 +60,6 @@ function node(tag: string, props: Readonly<Record<string, StoredValue>>): Compon
 const SPEC: ComponentSpec = {
   tag: "Panel",
   whenToUse: "A fixture, not a real component.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     caption: { type: "string", required: true, guidance: "The required one." },
     rows: { type: "array", bindable: true, guidance: "Bound rows." },
@@ -194,11 +189,6 @@ describe("resolveProps hands a trusted component declared props only", () => {
     const spec: ComponentSpec = {
       tag: "Panel",
       whenToUse: "A fixture.",
-      authoring: {
-        role: "display",
-        informationTypes: ["test_content"],
-        visualEmphasis: "supporting",
-      } as const,
       props: {
         caption: { type: "string", required: true, guidance: "The required one." },
         limit: { type: "number", minimum: 1, maximum: 50, default: 999, guidance: "Bounded." },
@@ -222,11 +212,6 @@ describe("resolveProps hands a trusted component declared props only", () => {
     const spec: ComponentSpec = {
       tag: "Panel",
       whenToUse: "A fixture.",
-      authoring: {
-        role: "display",
-        informationTypes: ["test_content"],
-        visualEmphasis: "supporting",
-      } as const,
       props: {
         caption: { type: "string", required: true, guidance: "The required one." },
         limit: { type: "number", default: Number.NaN, guidance: "Not a finite number." },
@@ -555,11 +540,6 @@ describe("one hostile prop cannot erase the props that resolved beside it", () =
     const spec: ComponentSpec = {
       tag: "Panel",
       whenToUse: "A fixture.",
-      authoring: {
-        role: "display",
-        informationTypes: ["test_content"],
-        visualEmphasis: "supporting",
-      } as const,
       props: {
         caption: { type: "string", required: true, guidance: "The required one." },
         rows: hostile as unknown as ComponentSpec["props"][string],
@@ -591,11 +571,6 @@ describe("one hostile prop cannot erase the props that resolved beside it", () =
     const spec: ComponentSpec = {
       tag: "Panel",
       whenToUse: "A fixture.",
-      authoring: {
-        role: "display",
-        informationTypes: ["test_content"],
-        visualEmphasis: "supporting",
-      } as const,
       props: {
         caption: { type: "string", required: true, guidance: "The required one." },
         tone: { type: "string", enum: domain, default: "primary", guidance: "A domain." },
@@ -700,11 +675,6 @@ describe("one hostile prop cannot erase the props that resolved beside it", () =
     const spec = {
       tag: "Panel",
       whenToUse: "A fixture.",
-      authoring: {
-        role: "display",
-        informationTypes: ["test_content"],
-        visualEmphasis: "supporting",
-      } as const,
       props: { ["__proto__"]: { type: "string", guidance: "Hostile." } },
       acceptsChildren: false,
     } as unknown as ComponentSpec;

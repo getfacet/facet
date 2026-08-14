@@ -91,11 +91,6 @@ const ACTIVE_VISUAL_OVERLAY: QuickstartDesignOverlay = Object.freeze({
     Object.freeze({
       tag: "PromoBanner",
       whenToUse: "Use for an active design visual promo.",
-      authoring: {
-        role: "display",
-        informationTypes: ["test_content"],
-        visualEmphasis: "supporting",
-      } as const,
       props: Object.freeze({}),
       acceptsChildren: false,
     }),
@@ -148,7 +143,6 @@ async function makeActiveDesignVisualBundle() {
       "    {",
       '      tag: "PromoBanner",',
       '      whenToUse: "Use for an active design visual promo.",',
-      '      authoring: { role: "display", informationTypes: ["promotion"], visualEmphasis: "primary" },',
       "      props: {},",
       "      acceptsChildren: false,",
       "    },",

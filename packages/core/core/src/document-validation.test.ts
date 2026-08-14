@@ -76,11 +76,6 @@ function screenSpec(props: Record<string, unknown> = {}): unknown {
   return {
     tag: "Screen",
     whenToUse: "Declare one screen of the page.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: { ...props, name: { ...SCREEN_NAME_SCHEMA } },
     acceptsChildren: true,
   };
@@ -101,11 +96,6 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Stack",
     whenToUse: "Group related content in one flow column.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: true,
     props: {
       gap: {
@@ -119,11 +109,6 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Text",
     whenToUse: "Show one run of copy.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: false,
     props: {
       value: { type: "string", guidance: "The copy to show.", required: true, bindable: true },
@@ -133,11 +118,6 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Metric",
     whenToUse: "Show one labelled number.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: false,
     props: {
       label: { type: "string", guidance: "What the number measures.", required: true },
@@ -154,22 +134,12 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Toggle",
     whenToUse: "Show one on/off state.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: false,
     props: { on: { type: "boolean", guidance: "Whether the state is on." } },
   },
   {
     tag: "Table",
     whenToUse: "Show published rows.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: false,
     props: {
       rows: { type: "array", guidance: "The published rows.", required: true, bindable: true },
@@ -179,11 +149,6 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Button",
     whenToUse: "Offer one action.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: false,
     props: {
       label: { type: "string", guidance: "What the action does.", required: true },
@@ -201,11 +166,6 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Field",
     whenToUse: "Ask the visitor for one value a control can name in its collect list.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: false,
     props: {
       name: {
@@ -222,11 +182,6 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Wide",
     whenToUse: "Declare more props than one element is allowed to carry.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: false,
     props: widePropContract(),
   },
@@ -243,11 +198,6 @@ const NEIGHBOUR_CATALOG = catalogOf([
   {
     tag: "Panel",
     whenToUse: "A component declaring the reserved name and its near neighbours.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: false,
     props: {
       id: { type: "string", guidance: "A spec trying to claim Facet's node identity." },
@@ -280,11 +230,6 @@ const STRUCTURAL_CATALOG = {
     {
       tag: "Facet",
       whenToUse: "A registration claiming the envelope position.",
-      authoring: {
-        role: "display",
-        informationTypes: ["test_content"],
-        visualEmphasis: "supporting",
-      } as const,
       acceptsChildren: true,
       props: { entry: { type: "string", guidance: "The entry screen." } },
     },
@@ -500,11 +445,6 @@ describe("validateAuthorMarkup — the accepted document", () => {
       {
         tag: "Reading",
         whenToUse: "Show one unbounded numeric reading.",
-        authoring: {
-          role: "display",
-          informationTypes: ["test_content"],
-          visualEmphasis: "supporting",
-        } as const,
         acceptsChildren: false,
         props: {
           amount: { type: "number", guidance: "The reading.", required: true },
@@ -531,11 +471,6 @@ describe("validateAuthorMarkup — the accepted document", () => {
       {
         tag: "Reading",
         whenToUse: "Show one unbounded numeric reading.",
-        authoring: {
-          role: "display",
-          informationTypes: ["test_content"],
-          visualEmphasis: "supporting",
-        } as const,
         acceptsChildren: false,
         props: {
           amount: { type: "number", guidance: "The reading.", required: true },
@@ -1481,11 +1416,6 @@ describe("validateAuthorMarkup — the collection request list", () => {
         {
           tag: "Button",
           whenToUse: "Offer one action.",
-          authoring: {
-            role: "display",
-            informationTypes: ["test_content"],
-            visualEmphasis: "supporting",
-          } as const,
           acceptsChildren: false,
           props: {
             label: { type: "string", guidance: "What the action does.", required: true },
@@ -1627,11 +1557,6 @@ describe("validateAuthorMarkup — the authored collection address", () => {
       {
         tag: "Plain",
         whenToUse: "Carry an ordinary prop that happens to be spelled `name`.",
-        authoring: {
-          role: "display",
-          informationTypes: ["test_content"],
-          visualEmphasis: "supporting",
-        } as const,
         acceptsChildren: false,
         props: { name: { type: "string", guidance: "An ordinary label, not an address." } },
       },
@@ -1711,11 +1636,6 @@ const ARG_DOMAIN_CATALOG = catalogOf([
   {
     tag: "Choice",
     whenToUse: "Send one of a closed set of arguments, with no action prop of its own.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     acceptsChildren: false,
     props: {
       arg: {
@@ -1855,11 +1775,6 @@ describe("validateAuthorMarkup — the authored event argument", () => {
         {
           tag: "Button",
           whenToUse: "Offer one action.",
-          authoring: {
-            role: "display",
-            informationTypes: ["test_content"],
-            visualEmphasis: "supporting",
-          } as const,
           acceptsChildren: false,
           props: {
             label: { type: "string", guidance: "What the action does.", required: true },

@@ -57,47 +57,6 @@ const DEFAULT_TAGS: readonly string[] = [
   "Field",
 ];
 
-const DEFAULT_AUTHORING_ROLES = Object.freeze({
-  Screen: "layout",
-  AppShell: "layout",
-  Stack: "layout",
-  Row: "layout",
-  Split: "layout",
-  Grid: "layout",
-  Modal: "layout",
-  Card: "layout",
-  Empty: "display",
-  LogoMark: "display",
-  Nav: "task",
-  SideNav: "task",
-  SideNavItem: "action",
-  Section: "layout",
-  Divider: "display",
-  Hero: "task",
-  Avatar: "display",
-  ProfileHeader: "task",
-  ProductShowcase: "task",
-  VisualPanel: "display",
-  MediaCard: "display",
-  LinkList: "task",
-  SocialLinks: "task",
-  FeatureList: "task",
-  StatStrip: "display",
-  Gallery: "display",
-  Testimonial: "display",
-  Timeline: "display",
-  CTA: "task",
-  Alert: "display",
-  Progress: "display",
-  Footer: "task",
-  Text: "display",
-  Metric: "display",
-  Badge: "display",
-  Table: "display",
-  Button: "action",
-  Field: "action",
-} as const);
-
 /** The exact `@facet/assets` root key set — Barrel Export Contract list 2 (D-12). */
 const BARREL_KEYS: readonly string[] = [
   "DEFAULT_CATALOG",
@@ -142,13 +101,6 @@ describe("DEFAULT_CATALOG — exact default service-surface roster (DC-016)", ()
   it("registers exactly the default tags, no more and no fewer", () => {
     expect(sortedTags(DEFAULT_COMPONENT_SPECS)).toEqual([...DEFAULT_TAGS].sort());
     expect(DEFAULT_COMPONENT_SPECS).toHaveLength(38);
-  });
-
-  it("pins the exact authoring role roster independently from the spec groups", () => {
-    expect(
-      Object.fromEntries(DEFAULT_COMPONENT_SPECS.map((spec) => [spec.tag, spec.authoring.role])),
-    ).toEqual(DEFAULT_AUTHORING_ROLES);
-    expect(Object.keys(DEFAULT_AUTHORING_ROLES)).toHaveLength(38);
   });
 
   it("carries those same specs into the catalog it publishes", () => {

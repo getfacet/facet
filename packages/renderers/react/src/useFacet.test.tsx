@@ -52,11 +52,6 @@ const EMPTY_STAGE: FacetStage = Object.freeze({ document: null, data: Object.fre
 const SCREEN_SPEC: ComponentSpec = {
   tag: "Screen",
   whenToUse: "The root of one named screen.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     name: { type: "string", required: true, guidance: "The screen name." },
   },
@@ -66,11 +61,6 @@ const SCREEN_SPEC: ComponentSpec = {
 const TEXT_SPEC: ComponentSpec = {
   tag: "Text",
   whenToUse: "Show a line of prose.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     value: { type: "string", required: true, bindable: true, guidance: "The words to show." },
   },
@@ -80,11 +70,6 @@ const TEXT_SPEC: ComponentSpec = {
 const FIELD_SPEC: ComponentSpec = {
   tag: "Field",
   whenToUse: "Ask the visitor for one value.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     name: { type: "string", required: true, guidance: "The collection address." },
     label: { type: "string", required: true, guidance: "The field label." },
@@ -97,11 +82,6 @@ const FIELD_SPEC: ComponentSpec = {
 const MODAL_SPEC: ComponentSpec = {
   tag: "Modal",
   whenToUse: "Interrupt the screen for one focused decision.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     triggerLabel: { type: "string", required: true, guidance: "The trigger label." },
     title: { type: "string", required: true, guidance: "The dialog title." },
@@ -112,11 +92,6 @@ const MODAL_SPEC: ComponentSpec = {
 const EXPLODER_SPEC: ComponentSpec = {
   tag: "Exploder",
   whenToUse: "A test component that can throw.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     mode: { type: "string", required: true, enum: ["boom", "safe"], guidance: "Throw or render." },
   },

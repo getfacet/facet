@@ -69,10 +69,7 @@ contract.
 ## Read outcomes
 
 `read_component_spec` returns `{ ok: true, spec, stageRevision }` or
-`component_not_found` with the available tag list. The turn's compact catalog
-index already exposes each tag's authoring role and semantic signals; this read
-returns the complete role-specific authoring metadata, prop contract, child
-support, collect contract, and theme recipe for a selected candidate.
+`component_not_found` with the available tag list.
 
 `read_screen` returns `{ ok: true, screen, markup, issues, stageRevision }` or
 `page_not_rendered`. Serialization issues are included as structured issue

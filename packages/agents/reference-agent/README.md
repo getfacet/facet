@@ -52,8 +52,7 @@ next model step, not partial UI commits.
 
 The prompt starts from `FACET_PROMPT_KIT`, the current screen summary, data
 summary, and compact component index. The model can read a full component spec
-only through `read_component_spec`; the index exposes role and semantic signals
-to make candidate selection meaningful while keeping discovery progressive and
+only through `read_component_spec`, keeping catalog discovery progressive and
 bounded. Component implementations and theme values remain host-side trusted
 inputs; they are never executable model output.
 

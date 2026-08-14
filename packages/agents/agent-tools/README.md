@@ -34,12 +34,10 @@ surface:
 contains the reusable contract text a host can include in its system prompt. It
 teaches the complete first-page envelope, active-catalog discovery, generated-id
 ownership, non-empty user-facing completion, and result-driven repair without
-prescribing a service or component composition. The compact catalog observation
-includes each component's role and semantic signals so the model can choose a
-small candidate set before reading full contracts. When a provider supports
+prescribing a service or component composition. When a provider supports
 multiple tool calls in one response, the kit directs it to request independent
-`read_component_spec` calls together; the host should execute independent reads
-concurrently while enforcing every per-call admission bound.
+`read_component_spec` calls together; the host may still execute those reads
+serially and enforce every per-call admission bound.
 
 ```ts check-docs
 import {

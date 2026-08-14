@@ -46,12 +46,10 @@ console.log(FACET_TOOL_SPECS.length, result.ok, observation.stageRevision);
 
 The model should receive every tool result as data. If a mutation returns an
 author error, ask the model to repair that one reported fault and retry.
-Before first-page rendering, use the compact catalog roles and semantic signals
-to choose a small intended visible component set, then read each unknown
-contract. A provider that supports multiple tool calls can return those
-independent `read_component_spec` requests in one tool-only response; the host
-remains responsible for bounded admission and should execute independent reads
-concurrently.
+Before first-page rendering, choose the intended visible component set and read
+each unknown contract. A provider that supports multiple tool calls can return
+those independent `read_component_spec` requests in one tool-only response;
+the host remains responsible for bounded admission and execution of each call.
 
 ## Rendering a page
 

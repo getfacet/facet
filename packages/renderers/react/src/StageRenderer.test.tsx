@@ -285,11 +285,6 @@ function rogueImpl(): ReactNode {
 const SCREEN_SPEC: ComponentSpec = {
   tag: "Screen",
   whenToUse: "The root of one named screen.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     name: { type: "string", required: true, guidance: "This screen's name, as `nav:` reaches it." },
   },
@@ -299,11 +294,6 @@ const SCREEN_SPEC: ComponentSpec = {
 const STACK_SPEC: ComponentSpec = {
   tag: "Stack",
   whenToUse: "Stack children vertically in reading order.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     gap: {
       type: "string",
@@ -318,11 +308,6 @@ const STACK_SPEC: ComponentSpec = {
 const TEXT_SPEC: ComponentSpec = {
   tag: "Text",
   whenToUse: "Show a line of prose.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     value: { type: "string", required: true, bindable: true, guidance: "The words to show." },
   },
@@ -332,11 +317,6 @@ const TEXT_SPEC: ComponentSpec = {
 const METRIC_SPEC: ComponentSpec = {
   tag: "Metric",
   whenToUse: "Show one headline number with the label that says what it measures.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     label: { type: "string", required: true, guidance: "What the number measures." },
     value: { type: "number", required: true, bindable: true, guidance: "The number itself." },
@@ -347,11 +327,6 @@ const METRIC_SPEC: ComponentSpec = {
 const BUTTON_SPEC: ComponentSpec = {
   tag: "Button",
   whenToUse: "Give the visitor one control that navigates or sends an event.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     label: { type: "string", required: true, guidance: "The words on the control." },
     action: {
@@ -374,11 +349,6 @@ const BUTTON_SPEC: ComponentSpec = {
 const FIELD_SPEC: ComponentSpec = {
   tag: "Field",
   whenToUse: "Ask the visitor for one value a `Button` can name in its `collect` list.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     name: {
       type: "string",
@@ -396,11 +366,6 @@ const FIELD_SPEC: ComponentSpec = {
 const TABLE_SPEC: ComponentSpec = {
   tag: "Table",
   whenToUse: "Show a published collection of records as rows.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     rows: { type: "array", required: true, bindable: true, guidance: "The rows, bound from data." },
   },
@@ -410,11 +375,6 @@ const TABLE_SPEC: ComponentSpec = {
 const MODAL_SPEC: ComponentSpec = {
   tag: "Modal",
   whenToUse: "Interrupt the screen for one focused decision. Facet owns the frame.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     triggerLabel: {
       type: "string",
@@ -453,11 +413,6 @@ const EXAMPLE_REGISTRY: ComponentRegistry = Object.freeze({
 const GRID_SPEC: ComponentSpec = {
   tag: "Grid",
   whenToUse: "A layout container.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {},
   acceptsChildren: true,
 };
@@ -465,11 +420,6 @@ const GRID_SPEC: ComponentSpec = {
 const CARD_SPEC: ComponentSpec = {
   tag: "Card",
   whenToUse: "A bounded surface.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {},
   acceptsChildren: true,
 };
@@ -477,11 +427,6 @@ const CARD_SPEC: ComponentSpec = {
 const ROGUE_SPEC: ComponentSpec = {
   tag: "Rogue",
   whenToUse: "A registered component that tries to escape its stacking context.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {},
   acceptsChildren: false,
 };

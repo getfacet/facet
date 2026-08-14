@@ -251,11 +251,6 @@ export default {
     {
       tag: "PromoBanner",
       whenToUse: "Use for a promotional banner fixture.",
-      authoring: {
-        role: "display",
-        informationTypes: ["promotion"],
-        visualEmphasis: "primary",
-      },
       props: {
         title: {
           type: "string",
@@ -291,11 +286,6 @@ export default {
     {
       tag: "PromoBanner",
       whenToUse: "Use for a promotional banner fixture.",
-      authoring: {
-        role: "display",
-        informationTypes: ["promotion"],
-        visualEmphasis: "primary",
-      },
       props: {},
       acceptsChildren: false,
     },
