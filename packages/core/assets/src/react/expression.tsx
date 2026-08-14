@@ -1295,6 +1295,8 @@ export const MediaCard: MountedComponent<ReactNode, ReactNode> = ({
       style={frameStyle(themeVars, {
         height: "100%",
         minWidth: 0,
+        maxWidth: "100%",
+        containerType: "inline-size",
         display: "flex",
         flexDirection: "column",
         gap: foundation("space", "md"),
@@ -1346,7 +1348,7 @@ export const MediaCard: MountedComponent<ReactNode, ReactNode> = ({
             minWidth: 0,
             color: MEDIA_CARD_VISUAL_TEXT[tone],
             fontFamily: foundation("typography", "fontFamilySans"),
-            fontSize: foundation("typography", "fontSize2xl"),
+            fontSize: `clamp(${foundation("typography", "fontSizeMd")}, 11cqi, ${foundation("typography", "fontSize2xl")})`,
             fontWeight: foundation("typography", "fontWeightBlack"),
             lineHeight: foundation("typography", "lineHeightTight"),
             maxWidth: "min(10ch, 100%)",
@@ -1359,6 +1361,7 @@ export const MediaCard: MountedComponent<ReactNode, ReactNode> = ({
       <div
         style={flowStyle({
           minWidth: 0,
+          maxWidth: "100%",
           flex: 1,
           display: "flex",
           flexDirection: "column",
@@ -1367,18 +1370,30 @@ export const MediaCard: MountedComponent<ReactNode, ReactNode> = ({
         })}
       >
         <h3
-          style={flowStyle(
-            headingStyle(
+          style={flowStyle({
+            ...headingStyle(
               MEDIA_CARD_TEXT[tone],
-              recipe("media-card", "titleFontSize"),
+              `clamp(${foundation("typography", "fontSizeLg")}, 11cqi, ${recipe("media-card", "titleFontSize")})`,
               foundation("typography", "fontWeightBlack"),
             ),
-          )}
+            minWidth: 0,
+            maxWidth: "100%",
+            overflowWrap: "anywhere",
+          })}
         >
           {title}
         </h3>
         {description === undefined ? null : (
-          <p style={flowStyle(paragraphStyle(MEDIA_CARD_MUTED_TEXT[tone]))}>{description}</p>
+          <p
+            style={flowStyle({
+              ...paragraphStyle(MEDIA_CARD_MUTED_TEXT[tone]),
+              minWidth: 0,
+              maxWidth: "100%",
+              overflowWrap: "anywhere",
+            })}
+          >
+            {description}
+          </p>
         )}
         {children}
       </div>
