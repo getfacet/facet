@@ -350,7 +350,7 @@ describe("expression React implementations", () => {
     expect((content as HTMLElement).style.maxWidth).toBe("100%");
     expect(title).toBeInstanceOf(HTMLElement);
     expect((title as HTMLElement).style.fontSize).toBe(
-      "min(var(--facet-recipe-product-showcase-title-font-size), 16cqw)",
+      "clamp(var(--facet-foundation-typography-font-size-lg), 11cqi, var(--facet-recipe-product-showcase-title-font-size))",
     );
     expect((title as HTMLElement).style.overflowWrap).toBe("anywhere");
     expect(paragraphs).toHaveLength(2);
@@ -364,7 +364,7 @@ describe("expression React implementations", () => {
     expect((visual as HTMLElement).style.maxWidth).toBe("100%");
     expect(labels).toHaveLength(2);
     expect((labels?.[1] as HTMLElement).style.fontSize).toBe(
-      "min(var(--facet-foundation-typography-font-size4xl), 16cqw)",
+      "clamp(var(--facet-foundation-typography-font-size-lg), 11cqi, var(--facet-foundation-typography-font-size4xl))",
     );
     for (const label of labels ?? []) {
       expect((label as HTMLElement).style.maxWidth).toContain("100%");

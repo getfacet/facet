@@ -1108,7 +1108,7 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
           style={flowStyle({
             ...headingStyle(
               PRODUCT_TEXT[tone],
-              `min(${recipe("product-showcase", "titleFontSize")}, 16cqw)`,
+              `clamp(${foundation("typography", "fontSizeLg")}, 11cqi, ${recipe("product-showcase", "titleFontSize")})`,
               recipe("product-showcase", "titleFontWeight"),
             ),
             minWidth: 0,
@@ -1174,7 +1174,7 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
             overflowWrap: "anywhere",
             color: tone === "inverse" ? semantic("text", "default") : PRODUCT_TEXT[tone],
             fontFamily: foundation("typography", "fontFamilySans"),
-            fontSize: `min(${foundation("typography", "fontSize4xl")}, 16cqw)`,
+            fontSize: `clamp(${foundation("typography", "fontSizeLg")}, 11cqi, ${foundation("typography", "fontSize4xl")})`,
             fontWeight: foundation("typography", "fontWeightBlack"),
             lineHeight: foundation("typography", "lineHeightTight"),
           })}
