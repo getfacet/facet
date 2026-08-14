@@ -1062,6 +1062,7 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
       data-facet-component="ProductShowcase"
       data-facet-product-showcase-tone={tone}
       style={frameStyle(themeVars, {
+        containerType: "inline-size",
         display: "grid",
         gridTemplateColumns: "repeat(auto-fit, minmax(min(16rem, 100%), 1fr))",
         maxWidth: "100%",
@@ -1107,7 +1108,7 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
           style={flowStyle({
             ...headingStyle(
               PRODUCT_TEXT[tone],
-              recipe("product-showcase", "titleFontSize"),
+              `min(${recipe("product-showcase", "titleFontSize")}, 16cqw)`,
               recipe("product-showcase", "titleFontWeight"),
             ),
             minWidth: 0,
@@ -1173,7 +1174,7 @@ export const ProductShowcase: MountedComponent<ReactNode, ReactNode> = ({
             overflowWrap: "anywhere",
             color: tone === "inverse" ? semantic("text", "default") : PRODUCT_TEXT[tone],
             fontFamily: foundation("typography", "fontFamilySans"),
-            fontSize: foundation("typography", "fontSize4xl"),
+            fontSize: `min(${foundation("typography", "fontSize4xl")}, 16cqw)`,
             fontWeight: foundation("typography", "fontWeightBlack"),
             lineHeight: foundation("typography", "lineHeightTight"),
           })}
