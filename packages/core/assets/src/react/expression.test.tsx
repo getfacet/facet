@@ -233,10 +233,28 @@ describe("expression React implementations", () => {
   it("lets visual panels stretch to the row height their parent establishes", () => {
     const panel = renderComponent(
       REGISTERED.find((registered) => registered.spec.tag === "VisualPanel")!,
-      { title: "Campaign tile", caption: "Launch proof" },
+      {
+        title: "Averylongtechnicalheadingwithoutanaturalbreakpoint",
+        value: "Averylongstatuswithoutanaturalbreakpoint",
+        caption: "Averylongcaptionwithoutanaturalbreakpoint",
+      },
     );
+    const title = panel.querySelector("h2");
+    const content = panel.querySelector("div");
+    const value = content?.querySelector("span");
+    const caption = content?.querySelector("p");
 
     expect(panel.style.height).toBe("100%");
+    expect(panel.style.maxWidth).toBe("100%");
+    expect(panel.style.containerType).toBe("inline-size");
+    expect((title as HTMLElement).style.fontSize).toContain("12cqi");
+    for (const element of [title, content, value, caption]) {
+      expect(element).toBeInstanceOf(HTMLElement);
+      expect((element as HTMLElement).style.maxWidth).toBe("100%");
+      if (element !== content) {
+        expect((element as HTMLElement).style.overflowWrap).toBe("anywhere");
+      }
+    }
   });
 
   it("keeps long hero titles contained on narrow screens", () => {

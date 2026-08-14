@@ -1203,7 +1203,9 @@ export const VisualPanel: MountedComponent<ReactNode, ReactNode> = ({
       data-facet-visual-panel-tone={tone}
       style={frameStyle(themeVars, {
         height: "100%",
+        maxWidth: "100%",
         minHeight: scale === "hero" ? "20rem" : "12rem",
+        containerType: "inline-size",
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
@@ -1216,21 +1218,25 @@ export const VisualPanel: MountedComponent<ReactNode, ReactNode> = ({
       })}
     >
       <h2
-        style={flowStyle(
-          headingStyle(
+        style={flowStyle({
+          ...headingStyle(
             VISUAL_PANEL_TEXT[tone],
             scale === "hero"
-              ? foundation("typography", "fontSize5xl")
-              : recipe("visual-panel", "titleFontSize"),
+              ? `clamp(${foundation("typography", "fontSizeLg")}, 12cqi, ${foundation("typography", "fontSize5xl")})`
+              : `clamp(${foundation("typography", "fontSizeLg")}, 12cqi, ${recipe("visual-panel", "titleFontSize")})`,
             foundation("typography", "fontWeightBlack"),
           ),
-        )}
+          minWidth: 0,
+          maxWidth: "100%",
+          overflowWrap: "anywhere",
+        })}
       >
         {title}
       </h2>
       <div
         style={flowStyle({
           minWidth: 0,
+          maxWidth: "100%",
           display: "flex",
           flexDirection: "column",
           gap: foundation("space", "sm"),
@@ -1244,13 +1250,25 @@ export const VisualPanel: MountedComponent<ReactNode, ReactNode> = ({
               fontSize: recipe("visual-panel", "valueFontSize"),
               fontWeight: recipe("visual-panel", "valueFontWeight"),
               lineHeight: foundation("typography", "lineHeightTight"),
+              minWidth: 0,
+              maxWidth: "100%",
+              overflowWrap: "anywhere",
             })}
           >
             {value}
           </span>
         )}
         {caption === undefined ? null : (
-          <p style={flowStyle(paragraphStyle(VISUAL_PANEL_MUTED_TEXT[tone]))}>{caption}</p>
+          <p
+            style={flowStyle({
+              ...paragraphStyle(VISUAL_PANEL_MUTED_TEXT[tone]),
+              minWidth: 0,
+              maxWidth: "100%",
+              overflowWrap: "anywhere",
+            })}
+          >
+            {caption}
+          </p>
         )}
         {children}
       </div>
