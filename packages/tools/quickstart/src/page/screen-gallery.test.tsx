@@ -83,6 +83,11 @@ function activeScreenPatterns() {
 const PROMO_BANNER_SPEC = Object.freeze({
   tag: "PromoBanner",
   whenToUse: "Use for active design launch announcements.",
+  authoring: {
+    role: "display",
+    informationTypes: ["test_content"],
+    visualEmphasis: "supporting",
+  } as const,
   acceptsChildren: false,
   props: Object.freeze({
     title: Object.freeze({

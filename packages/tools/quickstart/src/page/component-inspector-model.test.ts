@@ -41,6 +41,17 @@ describe("component inspector model", () => {
       expect(row).not.toHaveProperty("category");
       expect(row).not.toHaveProperty("group");
       expect(row.whenToUse).toBe(spec.whenToUse);
+      expect(row.authoringRole).toBe(spec.authoring.role);
+      expect(row.semanticSignals).toEqual(
+        spec.authoring.role === "layout"
+          ? [spec.authoring.layoutPurpose]
+          : spec.authoring.role === "display"
+            ? spec.authoring.informationTypes
+            : spec.authoring.role === "action"
+              ? spec.authoring.interactionTypes
+              : spec.authoring.userIntents,
+      );
+      expect(Object.isFrozen(row.semanticSignals)).toBe(true);
       expect(row.acceptsChildren).toBe(spec.acceptsChildren);
       expect(row.presentation.section).not.toBe("other");
       expect(row.props.map((prop) => prop.name)).toEqual(Object.keys(spec.props));
@@ -90,6 +101,11 @@ describe("component inspector model", () => {
     const importedSpec: ComponentSpec = {
       tag: "PromoBanner",
       whenToUse: "Use for active design announcements.",
+      authoring: {
+        role: "display",
+        informationTypes: ["test_content"],
+        visualEmphasis: "supporting",
+      } as const,
       props: {},
       acceptsChildren: false,
     };
@@ -100,5 +116,9 @@ describe("component inspector model", () => {
     expect(rows.find((row) => row.tag === "Screen")?.source).toBe("default");
     expect(rows.find((row) => row.tag === "PromoBanner")?.source).toBe("imported");
     expect(rows.find((row) => row.tag === "PromoBanner")?.presentation.section).toBe("other");
+    expect(rows.find((row) => row.tag === "PromoBanner")).toMatchObject({
+      authoringRole: "display",
+      semanticSignals: ["test_content"],
+    });
   });
 });

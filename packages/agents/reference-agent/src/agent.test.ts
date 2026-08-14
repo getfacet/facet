@@ -273,7 +273,7 @@ describe("createReferenceAgentWithDependencies", () => {
         agentId: "quickstart",
         summaryStore,
         budget: {
-          maxContextChars: 4_000,
+          maxContextChars: 7_000,
           maxHistoryTurns: 2,
           maxHistoryChars: 10_000,
           compactionTriggerRatio: 0.01,
@@ -416,6 +416,11 @@ function catalog(): FacetCatalog {
       {
         tag: "Screen",
         whenToUse: "Root screen container.",
+        authoring: {
+          role: "display",
+          informationTypes: ["test_content"],
+          visualEmphasis: "supporting",
+        } as const,
         props: {
           name: { type: "string", required: true, guidance: "Screen name." },
         },
@@ -424,6 +429,11 @@ function catalog(): FacetCatalog {
       {
         tag: "Text",
         whenToUse: "Text content.",
+        authoring: {
+          role: "display",
+          informationTypes: ["test_content"],
+          visualEmphasis: "supporting",
+        } as const,
         props: {
           value: { type: "string", required: true, guidance: "Text value." },
         },

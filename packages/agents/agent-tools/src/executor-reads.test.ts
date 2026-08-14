@@ -25,6 +25,11 @@ function catalog(): FacetCatalog {
       {
         tag: "Screen",
         whenToUse: "Root screen.",
+        authoring: {
+          role: "display",
+          informationTypes: ["test_content"],
+          visualEmphasis: "supporting",
+        } as const,
         props: {
           name: { type: "string", required: true, guidance: "Screen name." },
         },
@@ -33,6 +38,11 @@ function catalog(): FacetCatalog {
       {
         tag: "Text",
         whenToUse: "Short text.",
+        authoring: {
+          role: "display",
+          informationTypes: ["test_content"],
+          visualEmphasis: "supporting",
+        } as const,
         props: { value: { type: "string", guidance: "Visible text." } },
         acceptsChildren: false,
       },

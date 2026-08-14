@@ -127,6 +127,11 @@ function catalog(): FacetCatalog {
       {
         tag: "Screen",
         whenToUse: "Root screen container.",
+        authoring: {
+          role: "display",
+          informationTypes: ["test_content"],
+          visualEmphasis: "supporting",
+        } as const,
         props: {
           name: { type: "string", required: true, guidance: "Screen name." },
         },
@@ -135,6 +140,11 @@ function catalog(): FacetCatalog {
       {
         tag: "Text",
         whenToUse: "Text content.",
+        authoring: {
+          role: "display",
+          informationTypes: ["test_content"],
+          visualEmphasis: "supporting",
+        } as const,
         props: {
           value: { type: "string", guidance: "Text value." },
         },

@@ -1,4 +1,4 @@
-import { describeDataValue, serializeScreen } from "@facet/core";
+import { componentSemanticSignals, describeDataValue, serializeScreen } from "@facet/core";
 import type {
   ComponentDocument,
   ComponentNode,
@@ -58,7 +58,12 @@ export function buildTurnObservation(session: FacetToolSession): TurnObservation
     screens: document === null ? Object.freeze([]) : screenNames(document),
     components: Object.freeze(
       session.catalog.components.map((spec) =>
-        Object.freeze({ tag: spec.tag, whenToUse: spec.whenToUse }),
+        Object.freeze({
+          tag: spec.tag,
+          whenToUse: spec.whenToUse,
+          role: spec.authoring.role,
+          semanticSignals: componentSemanticSignals(spec.authoring),
+        }),
       ),
     ),
     data: dataSummary(session.data),

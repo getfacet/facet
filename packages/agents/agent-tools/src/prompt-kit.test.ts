@@ -49,6 +49,8 @@ describe("FACET_PROMPT_KIT", () => {
       "Inside Screen roots, use only component tags present in the active catalog",
     );
     expect(FACET_PROMPT_KIT).toContain("call read_component_spec");
+    expect(FACET_PROMPT_KIT).toContain("role and semanticSignals");
+    expect(FACET_PROMPT_KIT).toContain("shortlist components");
     expect(FACET_PROMPT_KIT).toContain(
       "request all independent read_component_spec calls together",
     );

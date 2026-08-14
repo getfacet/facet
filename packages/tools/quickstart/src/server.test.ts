@@ -22,6 +22,11 @@ interface SseFrame {
 const PROMO_BANNER_SPEC: ComponentSpec = Object.freeze({
   tag: "PromoBanner",
   whenToUse: "Use for a promotional banner fixture.",
+  authoring: {
+    role: "display",
+    informationTypes: ["test_content"],
+    visualEmphasis: "supporting",
+  } as const,
   props: Object.freeze({
     title: Object.freeze({
       type: "string",

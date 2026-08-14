@@ -32,6 +32,11 @@ function component(tag: string, whenToUse = `Use ${tag} when it fits.`): Record<
   return {
     tag,
     whenToUse,
+    authoring: {
+      role: "display",
+      informationTypes: ["test_content"],
+      visualEmphasis: "supporting",
+    },
     props: {
       value: {
         type: "string",
@@ -46,6 +51,11 @@ function screenSpec(): Record<string, unknown> {
   return {
     tag: "Screen",
     whenToUse: "Root screen container.",
+    authoring: {
+      role: "display",
+      informationTypes: ["test_content"],
+      visualEmphasis: "supporting",
+    } as const,
     props: {
       name: {
         type: "string",
@@ -234,7 +244,7 @@ describe("stage observation prompt", () => {
     expect(prompt).toContain("stageRevision=7");
     expect(prompt).toContain("currentScreen=home");
     expect(prompt).toContain("screens=home, hidden");
-    expect(prompt).toContain("- Text: Use Text when it fits.");
+    expect(prompt).toContain("- Text [display; test_content]: Use Text when it fits.");
     expect(prompt).toContain('<Text value="Visible" id="n-visible" />');
     expect(prompt).toContain("- rows: shape=array fields=name, secret count=1");
     expect(prompt).not.toContain("DO_NOT_LEAK_PROP_SCHEMA");
@@ -279,13 +289,20 @@ describe("stage observation prompt", () => {
       stageRevision: 1,
       currentScreen: null,
       screens: ["home"],
-      components: [{ tag: "Card", whenToUse: "Use for grouped content." }],
+      components: [
+        {
+          tag: "Card",
+          whenToUse: "Use for grouped content.",
+          role: "layout",
+          semanticSignals: ["bounded_surface"],
+        },
+      ],
       data: [{ path: "orders", shape: "array", fields: ["id"], count: 1 }],
       issues: ["no_current_screen"],
     });
 
     expect(summary).toContain("stageRevision=1");
-    expect(summary).toContain("- Card: Use for grouped content.");
+    expect(summary).toContain("- Card [layout; bounded_surface]: Use for grouped content.");
     expect(summary).toContain("- orders: shape=array fields=id count=1");
   });
 });

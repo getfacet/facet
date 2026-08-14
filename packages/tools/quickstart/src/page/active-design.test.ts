@@ -39,6 +39,11 @@ describe("quickstart page active design", () => {
           {
             tag: "PromoBanner",
             whenToUse: "Use for a promotional banner.",
+            authoring: {
+              role: "display",
+              informationTypes: ["test_content"],
+              visualEmphasis: "supporting",
+            } as const,
             props: {},
             acceptsChildren: false,
           },

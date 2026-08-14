@@ -61,11 +61,20 @@ console.log(serialized.text);
 author against. A catalog declares:
 
 - tag names;
+- one authoring role (`layout`, `display`, `action`, or `task`) with the
+  role-specific semantic metadata an agent uses to select the component;
 - accepted props and scalar domains;
 - which props may bind to data paths;
 - which components collect visitor input; and
 - which component-owned theme recipe tokens the active theme must fill; and
 - whether a component may contain children.
+
+All components remain ordinary `ComponentSpec` entries. The role does not
+change rendering or create a second component system: it only makes discovery
+explicit. Layout components describe spatial purpose and responsive behavior;
+display components describe information and emphasis; action components
+describe interactions; task components describe user intents and outcomes.
+`whenToUse`, `props`, and `acceptsChildren` remain common to every role.
 
 `validateCatalog`, `buildCatalogIndex`, `validateComponentSpec`, and
 `validateModalConformance` keep that catalog closed and deterministic. `Facet`

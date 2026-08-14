@@ -38,7 +38,10 @@ export function summarizeStageForPrompt(
     `currentScreen=${observation.currentScreen?.name ?? "(none)"}`,
     `screens=${observation.screens.length === 0 ? "(none)" : observation.screens.join(", ")}`,
     "components:",
-    ...components.map((component) => `- ${component.tag}: ${component.whenToUse}`),
+    ...components.map(
+      (component) =>
+        `- ${component.tag} [${component.role}; ${component.semanticSignals.join(", ")}]: ${component.whenToUse}`,
+    ),
   ];
 
   if (omittedComponents > 0) {

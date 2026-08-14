@@ -17,6 +17,7 @@ to Core/runtime surfaces:
 
 - `DEFAULT_CATALOG` — the registered default component tags and prop schemas.
 - `DEFAULT_COMPONENT_SPECS` — the component spec list used to build the catalog.
+  Every spec includes its authoring role and compact semantic discovery data.
 - `DEFAULT_THEME` — one complete Facet Design Contract v1 theme: required
   foundation and semantic tokens plus recipes for the default catalog.
 
@@ -64,6 +65,10 @@ The default catalog has 38 registered tags:
 `FeatureList`, `StatStrip`, `Gallery`, `Testimonial`, `Timeline`, `CTA`,
 `Alert`, `Progress`, `Footer`, `Text`, `Metric`, `Badge`, `Table`, `Button`,
 and `Field`.
+
+The catalog classifies those tags as layout, display, action, or task
+components. This classification is agent-facing selection metadata, not a
+visual hierarchy and not a restriction on `props` or child composition.
 
 The default theme is a coherent baseline for demos, examples, and hosts that do
 not need a custom visual system yet. Foundation and semantic token names remain

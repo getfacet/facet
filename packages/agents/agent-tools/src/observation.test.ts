@@ -18,6 +18,11 @@ function component(tag: string, whenToUse = `Use ${tag} when it fits.`): Record<
   return {
     tag,
     whenToUse,
+    authoring: {
+      role: "display",
+      informationTypes: ["test_content"],
+      visualEmphasis: "supporting",
+    },
     props: {
       value: {
         type: "string",
@@ -32,6 +37,11 @@ function screenSpec(): Record<string, unknown> {
   return {
     tag: "Screen",
     whenToUse: "Root screen container.",
+    authoring: {
+      role: "display",
+      informationTypes: ["test_content"],
+      visualEmphasis: "supporting",
+    } as const,
     props: {
       name: {
         type: "string",
@@ -125,7 +135,7 @@ function renderedLength(value: unknown): number {
 }
 
 describe("buildTurnObservation", () => {
-  it("returns a deterministic current-screen observation with no prop schemas or values in summaries", () => {
+  it("returns role-specific semantic signals with no prop schemas or values in summaries", () => {
     const observation = buildTurnObservation(
       session({ data: { rows: [{ name: "Ada", secret: "do-not-include" }] } }),
     );
@@ -134,8 +144,18 @@ describe("buildTurnObservation", () => {
       stageRevision: 7,
       screens: ["home", "hidden"],
       components: [
-        { tag: "Screen", whenToUse: "Root screen container." },
-        { tag: "Text", whenToUse: "Use Text when it fits." },
+        {
+          tag: "Screen",
+          whenToUse: "Root screen container.",
+          role: "display",
+          semanticSignals: ["test_content"],
+        },
+        {
+          tag: "Text",
+          whenToUse: "Use Text when it fits.",
+          role: "display",
+          semanticSignals: ["test_content"],
+        },
       ],
       data: [{ path: "rows", shape: "array", fields: ["name", "secret"], count: 1 }],
       issues: [],
@@ -145,9 +165,10 @@ describe("buildTurnObservation", () => {
     expect(JSON.stringify(observation)).not.toContain("DO_NOT_LEAK_PROP_SCHEMA");
     expect(JSON.stringify(observation)).not.toContain("Ada");
     expect(JSON.stringify(observation)).not.toContain("do-not-include");
+    expect(Object.isFrozen(observation.components[0]?.semanticSignals)).toBe(true);
   });
 
-  it("measures unused component scaling in characters and includes only tag plus when-to-use", () => {
+  it("bounds compact semantic component scaling without exposing full specs", () => {
     const one = buildTurnObservation(session({ catalog: catalog([component("Card")]) }));
     const many = buildTurnObservation(
       session({
@@ -161,7 +182,7 @@ describe("buildTurnObservation", () => {
     const delta = renderedLength(many) - renderedLength(one);
 
     expect(delta).toBeGreaterThan(0);
-    expect(delta).toBeLessThan(7_000);
+    expect(delta).toBeLessThan(16_000);
     expect(JSON.stringify(many)).not.toContain("props");
     expect(JSON.stringify(many)).not.toContain("DO_NOT_LEAK_PROP_SCHEMA");
   });

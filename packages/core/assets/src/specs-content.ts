@@ -40,6 +40,11 @@ import type { ComponentSpec } from "@facet/core";
 export const TEXT_SPEC: ComponentSpec = {
   tag: "Text",
   whenToUse: "Show a line or a paragraph of prose — a title, a heading, body copy, or a caption.",
+  authoring: {
+    role: "display",
+    informationTypes: ["prose", "heading", "caption"],
+    visualEmphasis: "supporting",
+  },
   props: {
     value: {
       type: "string",
@@ -80,6 +85,11 @@ export const TEXT_SPEC: ComponentSpec = {
 export const METRIC_SPEC: ComponentSpec = {
   tag: "Metric",
   whenToUse: "Show one headline number together with the label that says what it measures.",
+  authoring: {
+    role: "display",
+    informationTypes: ["metric", "measurement"],
+    visualEmphasis: "primary",
+  },
   props: {
     label: {
       type: "string",
@@ -113,6 +123,11 @@ export const METRIC_SPEC: ComponentSpec = {
 export const BADGE_SPEC: ComponentSpec = {
   tag: "Badge",
   whenToUse: "Mark a short status beside the thing it describes.",
+  authoring: {
+    role: "display",
+    informationTypes: ["status", "label"],
+    visualEmphasis: "quiet",
+  },
   props: {
     label: {
       type: "string",
@@ -145,6 +160,11 @@ export const BADGE_SPEC: ComponentSpec = {
 export const TABLE_SPEC: ComponentSpec = {
   tag: "Table",
   whenToUse: "Show a published collection of records as rows and columns.",
+  authoring: {
+    role: "display",
+    informationTypes: ["records", "comparison", "tabular_data"],
+    visualEmphasis: "supporting",
+  },
   props: {
     rows: {
       type: "array",
