@@ -34,23 +34,6 @@ export { isAuthoredNumberLiteral, parseAuthoredNumber } from "./author-scalar.js
 export { BOUNDS } from "./bounds.js";
 export type { Bounds } from "./bounds.js";
 
-export {
-  COMPONENT_AUTHORING_ROLES,
-  COMPONENT_VISUAL_EMPHASES,
-  componentSemanticSignals,
-  validateComponentAuthoring,
-} from "./component-authoring.js";
-export type {
-  ActionComponentAuthoring,
-  ComponentAuthoring,
-  ComponentAuthoringRole,
-  ComponentAuthoringValidationResult,
-  ComponentVisualEmphasis,
-  DisplayComponentAuthoring,
-  LayoutComponentAuthoring,
-  TaskComponentAuthoring,
-} from "./component-authoring.js";
-
 export { buildCatalogIndex, validateCatalog, validateModalConformance } from "./catalog.js";
 export type { CatalogValidationResult, FacetCatalog, ModalConformanceResult } from "./catalog.js";
 

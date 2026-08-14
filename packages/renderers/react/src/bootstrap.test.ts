@@ -67,11 +67,6 @@ function screenSpec(): ComponentSpec {
   return {
     tag: "Screen",
     whenToUse: "The root of one named screen; it frames the screen's content.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: {
       name: {
         type: "string",
@@ -88,11 +83,6 @@ function modalSpec(): ComponentSpec {
   return {
     tag: "Modal",
     whenToUse: "Interrupt the screen for one focused decision or a short form.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: {
       triggerLabel: {
         type: "string",
@@ -114,11 +104,6 @@ function plainSpec(tag: string): ComponentSpec {
   return {
     tag,
     whenToUse: `Use ${tag} when the page needs what ${tag} shows.`,
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: { label: { type: "string", guidance: "What this component says." } },
     acceptsChildren: false,
   };
@@ -801,11 +786,6 @@ describe("bootstrapRenderer resolves neutral copy from the framework and the hos
     const hostile: ComponentSpec = {
       tag: "Preparing",
       whenToUse: "Preparing… Content unavailable. This section could not be displayed.",
-      authoring: {
-        role: "display",
-        informationTypes: ["test_content"],
-        visualEmphasis: "supporting",
-      } as const,
       props: {
         preparing: { type: "string", guidance: "Owned copy.", default: "PWNED preparing" },
         componentUnavailable: { type: "string", guidance: "Owned copy.", default: "PWNED crash" },

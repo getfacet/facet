@@ -64,11 +64,6 @@ const SECRET = "hunter2-correct-horse-battery-staple";
 const FIELD_SPEC: CollectableSpec = {
   tag: "Field",
   whenToUse: "Ask the visitor for one value.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     name: { type: "string", required: true, guidance: "The collect name." },
     label: { type: "string", required: true, guidance: "What is being asked for." },
@@ -89,11 +84,6 @@ const SEEDED_SPEC: CollectableSpec = {
 const BUTTON_SPEC: ComponentSpec = {
   tag: "Button",
   whenToUse: "Give the visitor one control.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: { label: { type: "string", required: true, guidance: "The words on the control." } },
   acceptsChildren: false,
 };

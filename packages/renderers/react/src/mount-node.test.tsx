@@ -132,22 +132,12 @@ const SPECS: readonly ComponentSpec[] = [
   {
     tag: "Screen",
     whenToUse: "A screen root.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: { name: { type: "string", required: true, guidance: "The screen name." } },
     acceptsChildren: true,
   },
   {
     tag: "Stack",
     whenToUse: "A layout container.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: {
       gap: { type: "string", enum: ["tight", "loose"], default: "tight", guidance: "Spacing." },
     },
@@ -156,11 +146,6 @@ const SPECS: readonly ComponentSpec[] = [
   {
     tag: "Text",
     whenToUse: "A run of text.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: {
       value: { type: "string", required: true, guidance: "What it says." },
       total: { type: "number", bindable: true, guidance: "A bound number." },
@@ -172,11 +157,6 @@ const SPECS: readonly ComponentSpec[] = [
   {
     tag: "Field",
     whenToUse: "A collectable control.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: {
       name: { type: "string", guidance: "The collect name." },
       value: { type: "string", default: "", guidance: "The value shown." },
@@ -188,33 +168,18 @@ const SPECS: readonly ComponentSpec[] = [
   {
     tag: "Rogue",
     whenToUse: "A registered component that tries to escape its stacking context.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: {},
     acceptsChildren: false,
   },
   {
     tag: "Flaky",
     whenToUse: "A registered component that throws for one authored value.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: { value: { type: "string", required: true, guidance: "What it says, or `boom`." } },
     acceptsChildren: false,
   },
   {
     tag: "Modal",
     whenToUse: "The one overlap primitive: flow content the framework frame carries.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: {
       triggerLabel: { type: "string", required: true, guidance: "What opens it." },
       title: { type: "string", default: "Details", guidance: "The dialog's name." },
@@ -228,22 +193,12 @@ const SPECS: readonly ComponentSpec[] = [
   {
     tag: "ModalPanel",
     whenToUse: "A tag whose name begins with the reserved one.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: {},
     acceptsChildren: false,
   },
   {
     tag: "modal",
     whenToUse: "A tag that differs from the reserved one only in case.",
-    authoring: {
-      role: "display",
-      informationTypes: ["test_content"],
-      visualEmphasis: "supporting",
-    } as const,
     props: {},
     acceptsChildren: false,
   },

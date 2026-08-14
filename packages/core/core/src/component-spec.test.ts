@@ -14,11 +14,6 @@ function minimalSpec(): Record<string, unknown> {
   return {
     tag: "Card",
     whenToUse: "Group related content in one bounded surface.",
-    authoring: {
-      role: "layout",
-      layoutPurpose: "bounded_surface",
-      responsiveBehavior: "Keeps child content in normal flow within its parent width.",
-    },
     props: {},
     acceptsChildren: true,
   };
@@ -82,10 +77,6 @@ describe("validateComponentSpec — the accepted spec form", () => {
     const spec = accept({
       tag: "Field",
       whenToUse: "Collect one short value from the visitor.",
-      authoring: {
-        role: "action",
-        interactionTypes: ["enter_value"],
-      },
       props: {
         name: stringProp({ required: true, guidance: "The field name used by collect." }),
         label: stringProp({ guidance: "The visible label." }),
@@ -160,7 +151,6 @@ describe("validateComponentSpec — a spec missing a required part is rejected",
   const missing: ReadonlyArray<{ readonly field: string; readonly code: string }> = [
     { field: "tag", code: "invalid_tag" },
     { field: "whenToUse", code: "invalid_when_to_use" },
-    { field: "authoring", code: "authoring_not_an_object" },
     { field: "props", code: "invalid_props" },
     { field: "acceptsChildren", code: "invalid_accepts_children" },
   ];
@@ -188,33 +178,6 @@ describe("validateComponentSpec — a spec missing a required part is rejected",
 
   it("rejects an empty when-to-use line", () => {
     expect(rejectionCode({ ...minimalSpec(), whenToUse: "" })).toBe("invalid_when_to_use");
-  });
-});
-
-describe("validateComponentSpec — authoring metadata", () => {
-  it("preserves the validated role contract on the frozen accepted spec", () => {
-    const spec = accept(minimalSpec());
-    expect(spec.authoring).toEqual({
-      role: "layout",
-      layoutPurpose: "bounded_surface",
-      responsiveBehavior: "Keeps child content in normal flow within its parent width.",
-    });
-    expect(Object.isFrozen(spec.authoring)).toBe(true);
-  });
-
-  it("reports a nested authoring rejection before child and prop validation", () => {
-    expect(
-      validateComponentSpec({
-        ...minimalSpec(),
-        authoring: { role: "task", userIntents: [], outcomes: [] },
-        acceptsChildren: "yes",
-        props: null,
-      }),
-    ).toMatchObject({
-      ok: false,
-      code: "invalid_user_intents",
-      at: "authoring.userIntents",
-    });
   });
 });
 

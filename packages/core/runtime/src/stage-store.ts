@@ -76,11 +76,6 @@ const FALLBACK_CATALOG_INPUT = Object.freeze({
     Object.freeze({
       tag: "Screen",
       whenToUse: "Root screen used for a safe empty restored session.",
-      authoring: {
-        role: "display",
-        informationTypes: ["test_content"],
-        visualEmphasis: "supporting",
-      } as const,
       props: Object.freeze({
         name: Object.freeze({
           type: "string",

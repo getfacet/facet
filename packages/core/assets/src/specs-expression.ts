@@ -3,12 +3,6 @@ import type { ComponentSpec } from "@facet/core";
 export const SECTION_SPEC: ComponentSpec = {
   tag: "Section",
   whenToUse: "Group one named part of a page, with optional heading text and normal flow content.",
-  authoring: {
-    role: "layout",
-    layoutPurpose: "named_section",
-    responsiveBehavior:
-      "Keeps a titled content group in normal flow at the available parent width.",
-  },
   props: {
     title: {
       type: "string",
@@ -49,11 +43,6 @@ export const SECTION_SPEC: ComponentSpec = {
 export const DIVIDER_SPEC: ComponentSpec = {
   tag: "Divider",
   whenToUse: "Separate two neighboring sections in the reading flow.",
-  authoring: {
-    role: "display",
-    informationTypes: ["section_boundary"],
-    visualEmphasis: "quiet",
-  },
   props: {
     label: {
       type: "string",
@@ -79,14 +68,6 @@ export const DIVIDER_SPEC: ComponentSpec = {
 export const HERO_SPEC: ComponentSpec = {
   tag: "Hero",
   whenToUse: "Create the first impression of a page with a headline, supporting copy and actions.",
-  authoring: {
-    role: "task",
-    userIntents: ["understand_service", "start_journey"],
-    outcomes: [
-      "The visitor understands the primary offer.",
-      "The visitor can choose a clear next step.",
-    ],
-  },
   props: {
     title: {
       type: "string",
@@ -134,11 +115,6 @@ export const AVATAR_SPEC: ComponentSpec = {
   tag: "Avatar",
   whenToUse:
     "Show a person's or brand's identity with initials, without loading an external image.",
-  authoring: {
-    role: "display",
-    informationTypes: ["identity", "profile_image"],
-    visualEmphasis: "supporting",
-  },
   props: {
     label: {
       type: "string",
@@ -180,14 +156,6 @@ export const AVATAR_SPEC: ComponentSpec = {
 export const LINK_LIST_SPEC: ComponentSpec = {
   tag: "LinkList",
   whenToUse: "Stack a set of navigation or agent-action buttons, such as a link-in-bio list.",
-  authoring: {
-    role: "task",
-    userIntents: ["choose_destination", "contact_service"],
-    outcomes: [
-      "The visitor can scan available destinations.",
-      "The visitor can choose one action.",
-    ],
-  },
   props: {
     title: {
       type: "string",
@@ -216,14 +184,6 @@ export const LINK_LIST_SPEC: ComponentSpec = {
 export const FEATURE_LIST_SPEC: ComponentSpec = {
   tag: "FeatureList",
   whenToUse: "Group feature, service or proof cards in an even marketing/editorial list.",
-  authoring: {
-    role: "task",
-    userIntents: ["understand_capabilities", "compare_features"],
-    outcomes: [
-      "The visitor understands the important capabilities.",
-      "The visitor can scan meaningful differences.",
-    ],
-  },
   props: {
     title: {
       type: "string",
@@ -251,11 +211,6 @@ export const FEATURE_LIST_SPEC: ComponentSpec = {
 export const TESTIMONIAL_SPEC: ComponentSpec = {
   tag: "Testimonial",
   whenToUse: "Show one quote or endorsement with its source.",
-  authoring: {
-    role: "display",
-    informationTypes: ["endorsement", "social_proof"],
-    visualEmphasis: "supporting",
-  },
   props: {
     quote: {
       type: "string",
@@ -294,14 +249,6 @@ export const TESTIMONIAL_SPEC: ComponentSpec = {
 export const CTA_SPEC: ComponentSpec = {
   tag: "CTA",
   whenToUse: "End a section or page with a clear call to action and one or more child buttons.",
-  authoring: {
-    role: "task",
-    userIntents: ["take_next_step", "complete_call_to_action"],
-    outcomes: [
-      "The visitor understands the requested next step.",
-      "The visitor can act through a child control.",
-    ],
-  },
   props: {
     title: {
       type: "string",
@@ -342,11 +289,6 @@ export const CTA_SPEC: ComponentSpec = {
 export const ALERT_SPEC: ComponentSpec = {
   tag: "Alert",
   whenToUse: "Show one important status, warning or informational message in the flow.",
-  authoring: {
-    role: "display",
-    informationTypes: ["status", "warning", "notice"],
-    visualEmphasis: "primary",
-  },
   props: {
     title: {
       type: "string",
@@ -380,11 +322,6 @@ export const ALERT_SPEC: ComponentSpec = {
 export const PROGRESS_SPEC: ComponentSpec = {
   tag: "Progress",
   whenToUse: "Show bounded completion from zero to one hundred percent.",
-  authoring: {
-    role: "display",
-    informationTypes: ["progress", "completion"],
-    visualEmphasis: "supporting",
-  },
   props: {
     label: {
       type: "string",
@@ -422,11 +359,6 @@ export const PROGRESS_SPEC: ComponentSpec = {
 export const LOGO_MARK_SPEC: ComponentSpec = {
   tag: "LogoMark",
   whenToUse: "Show a compact brand, product or personal mark without loading external media.",
-  authoring: {
-    role: "display",
-    informationTypes: ["brand_identity"],
-    visualEmphasis: "quiet",
-  },
   props: {
     label: {
       type: "string",
@@ -473,14 +405,6 @@ export const LOGO_MARK_SPEC: ComponentSpec = {
 export const NAV_SPEC: ComponentSpec = {
   tag: "Nav",
   whenToUse: "Frame a site or product surface with brand text and child navigation actions.",
-  authoring: {
-    role: "task",
-    userIntents: ["navigate_surface", "find_destination"],
-    outcomes: [
-      "The visitor can identify the surface.",
-      "The visitor can reach a primary destination.",
-    ],
-  },
   props: {
     brand: {
       type: "string",
@@ -525,14 +449,6 @@ export const NAV_SPEC: ComponentSpec = {
 export const PROFILE_HEADER_SPEC: ComponentSpec = {
   tag: "ProfileHeader",
   whenToUse: "Open a personal profile, resume or bio surface with identity and primary actions.",
-  authoring: {
-    role: "task",
-    userIntents: ["understand_profile", "contact_person"],
-    outcomes: [
-      "The visitor understands who the profile represents.",
-      "The visitor can choose a primary profile action.",
-    ],
-  },
   props: {
     name: {
       type: "string",
@@ -579,14 +495,6 @@ export const PROFILE_HEADER_SPEC: ComponentSpec = {
 export const PRODUCT_SHOWCASE_SPEC: ComponentSpec = {
   tag: "ProductShowcase",
   whenToUse: "Present one product, offer or service with a strong title and supporting actions.",
-  authoring: {
-    role: "task",
-    userIntents: ["evaluate_offer", "choose_offer"],
-    outcomes: [
-      "The visitor understands the featured offer.",
-      "The visitor can choose an offer action.",
-    ],
-  },
   props: {
     title: {
       type: "string",
@@ -632,11 +540,6 @@ export const VISUAL_PANEL_SPEC: ComponentSpec = {
   tag: "VisualPanel",
   whenToUse:
     "Create a graphic color panel with large text, numbers or proof without external media.",
-  authoring: {
-    role: "display",
-    informationTypes: ["visual_story", "featured_content"],
-    visualEmphasis: "primary",
-  },
   props: {
     title: {
       type: "string",
@@ -684,11 +587,6 @@ export const MEDIA_CARD_SPEC: ComponentSpec = {
   tag: "MediaCard",
   whenToUse:
     "Show a visual product, work, article or media item with image-like structure but no external URL.",
-  authoring: {
-    role: "display",
-    informationTypes: ["media_summary", "content_preview"],
-    visualEmphasis: "supporting",
-  },
   props: {
     title: {
       type: "string",
@@ -740,11 +638,6 @@ export const STAT_STRIP_SPEC: ComponentSpec = {
   tag: "StatStrip",
   whenToUse:
     "Show a horizontal strip of metrics or compact proof points outside card-heavy layouts.",
-  authoring: {
-    role: "display",
-    informationTypes: ["metric_collection", "summary"],
-    visualEmphasis: "primary",
-  },
   props: {
     title: {
       type: "string",
@@ -782,11 +675,6 @@ export const GALLERY_SPEC: ComponentSpec = {
   tag: "Gallery",
   whenToUse:
     "Arrange selected work, products or media-like cards in a portfolio grid without URLs.",
-  authoring: {
-    role: "display",
-    informationTypes: ["visual_collection", "portfolio"],
-    visualEmphasis: "primary",
-  },
   props: {
     title: {
       type: "string",
@@ -823,14 +711,6 @@ export const GALLERY_SPEC: ComponentSpec = {
 export const SOCIAL_LINKS_SPEC: ComponentSpec = {
   tag: "SocialLinks",
   whenToUse: "Group social, profile, portfolio or contact actions in a compact link row or stack.",
-  authoring: {
-    role: "task",
-    userIntents: ["connect_channel", "open_profile"],
-    outcomes: [
-      "The visitor can scan available channels.",
-      "The visitor can choose where to connect.",
-    ],
-  },
   props: {
     title: {
       type: "string",
@@ -872,11 +752,6 @@ export const SOCIAL_LINKS_SPEC: ComponentSpec = {
 export const TIMELINE_SPEC: ComponentSpec = {
   tag: "Timeline",
   whenToUse: "Show resume history, process steps or milestones in a clear vertical sequence.",
-  authoring: {
-    role: "display",
-    informationTypes: ["timeline", "history", "milestones"],
-    visualEmphasis: "supporting",
-  },
   props: {
     title: {
       type: "string",
@@ -906,14 +781,6 @@ export const TIMELINE_SPEC: ComponentSpec = {
 export const SIDE_NAV_SPEC: ComponentSpec = {
   tag: "SideNav",
   whenToUse: "Frame workspace, admin or app screens with a vertical navigation rail.",
-  authoring: {
-    role: "task",
-    userIntents: ["navigate_workspace", "switch_section"],
-    outcomes: [
-      "The visitor understands the workspace sections.",
-      "The visitor can move to another section.",
-    ],
-  },
   props: {
     title: {
       type: "string",
@@ -950,10 +817,6 @@ export const SIDE_NAV_ITEM_SPEC: ComponentSpec = {
   tag: "SideNavItem",
   whenToUse:
     "Add one row-style destination or command inside a SideNav. Use Button for standalone CTAs.",
-  authoring: {
-    role: "action",
-    interactionTypes: ["navigate", "select_section"],
-  },
   props: {
     label: {
       type: "string",
@@ -1008,14 +871,6 @@ export const SIDE_NAV_ITEM_SPEC: ComponentSpec = {
 export const FOOTER_SPEC: ComponentSpec = {
   tag: "Footer",
   whenToUse: "Close a website or app surface with compact identity text and child actions.",
-  authoring: {
-    role: "task",
-    userIntents: ["find_secondary_destination", "finish_journey"],
-    outcomes: [
-      "The visitor can find secondary destinations.",
-      "The visitor can choose a final action.",
-    ],
-  },
   props: {
     title: {
       type: "string",

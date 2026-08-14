@@ -37,12 +37,9 @@ not executable code.
 
 Catalog validation is the second gate. The host supplies a `FacetCatalog` whose
 component specs declare tags, props, scalar domains, data-bindable props,
-collection addresses, child support, and a closed authoring role with
-role-specific semantic metadata. The metadata drives agent discovery only; it
-does not grant runtime behavior or bypass the registry. `validateAuthorMarkup`
-rejects unknown tags, undeclared props, invalid values, unauthorized bindings,
-and unresolved action/collection contracts atomically with one deterministic
-author error.
+collection addresses, and child support. `validateAuthorMarkup` rejects unknown
+tags, undeclared props, invalid values, unauthorized bindings, and unresolved
+action/collection contracts atomically with one deterministic author error.
 
 ## Catalog and registry trust boundary
 

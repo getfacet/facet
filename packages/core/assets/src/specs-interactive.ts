@@ -31,10 +31,6 @@ export const BUTTON_SPEC: ComponentSpec = {
   tag: "Button",
   whenToUse:
     "Give the visitor one control that moves to another screen or sends an event to the agent.",
-  authoring: {
-    role: "action",
-    interactionTypes: ["submit", "navigate", "trigger_agent"],
-  },
   props: {
     label: {
       type: "string",
@@ -86,10 +82,6 @@ export const BUTTON_SPEC: ComponentSpec = {
 export const FIELD_SPEC: ComponentSpec = {
   tag: "Field",
   whenToUse: "Ask the visitor for one value that a `Button` can name in its `collect` list.",
-  authoring: {
-    role: "action",
-    interactionTypes: ["enter_value", "provide_input"],
-  },
   props: {
     name: {
       type: "string",

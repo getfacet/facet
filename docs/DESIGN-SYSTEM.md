@@ -125,8 +125,7 @@ raw CSS, hex colors, imports, or executable style logic.
 
 A custom component set has three required parts:
 
-1. a Core component spec declaring the tag, authoring role metadata, and prop
-   schema;
+1. a Core component spec declaring the tag and prop schema;
 2. a catalog containing that spec; and
 3. a trusted React registry entry for the same tag.
 
@@ -144,11 +143,6 @@ loading.
 When a design module is active, the Quickstart Assets source filter can show
 `Imported` component tags and screen examples separately from `Default` assets,
 or combine both in `All`.
-
-Authoring metadata is required for default and custom components. Choose one
-role from `layout`, `display`, `action`, or `task`, then provide that role's
-closed semantic fields. Roles help an agent discover a useful component; they
-do not alter theme ownership, registry trust, props, or child composition.
 
 ## Data and actions
 

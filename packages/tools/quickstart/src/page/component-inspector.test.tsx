@@ -100,11 +100,6 @@ function presentedTags(): readonly string[] {
 const PROMO_BANNER_SPEC = Object.freeze({
   tag: "PromoBanner",
   whenToUse: "Use for active design launch announcements.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   acceptsChildren: false,
   props: Object.freeze({
     eyebrow: Object.freeze({
@@ -184,12 +179,6 @@ describe("ComponentInspector", () => {
     expect(
       components.querySelector('[data-component-contract-summary-item="children"]')?.textContent,
     ).toContain("accepted");
-    expect(
-      components.querySelector('[data-component-contract-summary-item="role"]')?.textContent,
-    ).toContain("layout");
-    expect(components.querySelector('[data-component-authoring="Screen"]')?.textContent).toContain(
-      "screen_root",
-    );
     expect(components.querySelector('[data-component-prop="name"]')?.textContent).toContain(
       "required",
     );
@@ -245,13 +234,6 @@ describe("ComponentInspector", () => {
         .querySelector("[data-facet-component-preview]")
         ?.getAttribute("data-facet-component-preview"),
     ).toBe("Badge");
-
-    changeInput(inputNamed(components, "Search components"), "trigger_agent");
-    expect(
-      [...components.querySelectorAll("[data-component-option]")].map((element) =>
-        element.getAttribute("data-component-option"),
-      ),
-    ).toEqual(["Button"]);
   });
 
   it("groups component names behind collapsible sidebar sections", () => {
@@ -391,9 +373,6 @@ describe("ComponentInspector", () => {
     expect(
       components.querySelector('[data-component-detail="PromoBanner"]')?.textContent,
     ).toContain("Use for active design launch announcements.");
-    expect(
-      components.querySelector('[data-component-authoring="PromoBanner"]')?.textContent,
-    ).toContain("test_content");
     expect(components.querySelector('[data-component-prop="title"]')?.textContent).toContain(
       "required",
     );

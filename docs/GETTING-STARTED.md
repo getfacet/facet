@@ -46,12 +46,6 @@ when an external agent dials into that server.
 Agents write one `<Facet>` envelope with named screens and registered component
 tags. Core parses and validates that markup against the active catalog.
 
-Every default or custom `ComponentSpec` also declares one authoring role:
-`layout`, `display`, `action`, or `task`. Its role-specific semantic metadata
-lets an agent shortlist useful components from the compact catalog index before
-reading full prop contracts. Roles do not change rendering, registry trust,
-props, or child composition.
-
 ```ts check-docs
 import { parseMarkup, validateAuthorMarkup } from "@facet/core";
 import { DEFAULT_CATALOG } from "@facet/assets";

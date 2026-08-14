@@ -18,11 +18,6 @@ void NonReactRegistryEntry;
 const PROMO_BANNER_SPEC: ComponentSpec = Object.freeze({
   tag: "PromoBanner",
   whenToUse: "Use for a branded promotional callout.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: Object.freeze({
     eyebrow: Object.freeze({
       type: "string",
@@ -183,11 +178,6 @@ describe("quickstart design overlay validation", () => {
           {
             tag: "PromoBanner",
             whenToUse: "Use for a branded promotional callout.",
-            authoring: {
-              role: "display",
-              informationTypes: ["test_content"],
-              visualEmphasis: "supporting",
-            } as const,
             props: {
               title: {
                 type: "string",

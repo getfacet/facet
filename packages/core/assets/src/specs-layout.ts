@@ -57,12 +57,6 @@ export const SCREEN_SPEC: ComponentSpec = {
   tag: "Screen",
   whenToUse:
     "The root of one named screen: it frames the screen's content, its reading width, and the space around it.",
-  authoring: {
-    role: "layout",
-    layoutPurpose: "screen_root",
-    responsiveBehavior:
-      "Contains one named screen in normal document flow at the available parent width.",
-  },
   props: {
     name: {
       type: "string",
@@ -108,11 +102,6 @@ export const STACK_SPEC: ComponentSpec = {
   tag: "Stack",
   whenToUse:
     "Stack children vertically in reading order. The default container for a section, a form, or a list of cards.",
-  authoring: {
-    role: "layout",
-    layoutPurpose: "vertical_stack",
-    responsiveBehavior: "Keeps children in one vertical reading order with bounded gaps.",
-  },
   props: {
     gap: {
       type: "string",
@@ -163,11 +152,6 @@ export const APP_SHELL_SPEC: ComponentSpec = {
   tag: "AppShell",
   whenToUse:
     "Frame an app-like screen with a side rail and main content, without hand-building the stretch and responsive behavior.",
-  authoring: {
-    role: "layout",
-    layoutPurpose: "application_shell",
-    responsiveBehavior: "Collapses its navigation rail above the main region on narrow containers.",
-  },
   props: {
     gap: {
       type: "string",
@@ -204,12 +188,6 @@ export const ROW_SPEC: ComponentSpec = {
   tag: "Row",
   whenToUse:
     "Lay children out side by side on one line — a toolbar, a label and its value, a pair of buttons.",
-  authoring: {
-    role: "layout",
-    layoutPurpose: "horizontal_row",
-    responsiveBehavior:
-      "Wraps children onto additional rows when the available width is exhausted.",
-  },
   props: {
     gap: {
       type: "string",
@@ -252,12 +230,6 @@ export const SPLIT_SPEC: ComponentSpec = {
   tag: "Split",
   whenToUse:
     "Divide content into two asymmetric columns, such as hero plus form, product story plus proof, or profile plus links.",
-  authoring: {
-    role: "layout",
-    layoutPurpose: "primary_secondary_split",
-    responsiveBehavior:
-      "Stacks the secondary region below the primary region on narrow containers.",
-  },
   props: {
     ratio: {
       type: "string",
@@ -305,12 +277,6 @@ export const GRID_SPEC: ComponentSpec = {
   tag: "Grid",
   whenToUse:
     "Arrange children in an even grid of equal columns — metric tiles, a card gallery, a summary row.",
-  authoring: {
-    role: "layout",
-    layoutPurpose: "responsive_grid",
-    responsiveBehavior:
-      "Reduces column count while preserving child order as the container narrows.",
-  },
   props: {
     columns: {
       type: "number",

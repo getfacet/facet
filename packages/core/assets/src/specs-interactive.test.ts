@@ -128,11 +128,6 @@ const EVENT_ARG_FORBIDDEN_KEYS: readonly string[] = ["default", "bindable"];
 const SCREEN_STUB: Record<string, unknown> = {
   tag: "Screen",
   whenToUse: "The screen root a catalog must register, standing in for the real one.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: {
     name: { type: "string", guidance: "The screen's name.", required: true },
   },

@@ -127,11 +127,6 @@ function modalDocument(): ComponentDocument {
 const PROMO_BANNER_SPEC: ComponentSpec = Object.freeze({
   tag: "PromoBanner",
   whenToUse: "Use for a branded promotional banner.",
-  authoring: {
-    role: "display",
-    informationTypes: ["test_content"],
-    visualEmphasis: "supporting",
-  } as const,
   props: Object.freeze({}),
   acceptsChildren: false,
 });
