@@ -137,6 +137,16 @@ const PUBLIC_SURFACE: readonly string[] = Object.freeze([
   "collectTurnOutcome",
   "FacetAgent",
   "FacetStage",
+  "UI_PATTERN_BOUNDS",
+  "validateUiPatternSet",
+  "UiPattern",
+  "UiPatternComponentChoice",
+  "UiPatternRegion",
+  "UiPatternSet",
+  "UiPatternValidationIssue",
+  "UiPatternValidationIssueCode",
+  "UiPatternValidationResult",
+  "UiPatternVariant",
   "FacetTargetedMutationInput",
   "FacetTargetedMutationResult",
   "FacetToolSession",
@@ -173,7 +183,7 @@ const PUBLIC_SURFACE: readonly string[] = Object.freeze([
 ]);
 
 /** The contract's own count, pinned so a silent list edit is a failure. */
-const PUBLIC_SURFACE_SIZE = 120;
+const PUBLIC_SURFACE_SIZE = 130;
 
 /**
  * The exact off-barrel set named by the contract. `markup-lexer.ts` is private
@@ -382,7 +392,7 @@ describe("gate 1 — the exact barrel key snapshot", () => {
     expect(declared.size).toBe(PUBLIC_SURFACE_SIZE);
   });
 
-  it("pins the contract list itself at 85 unique keys", () => {
+  it("pins the contract list itself at 130 unique keys", () => {
     expect(PUBLIC_SURFACE).toHaveLength(PUBLIC_SURFACE_SIZE);
     expect(new Set(PUBLIC_SURFACE).size).toBe(PUBLIC_SURFACE_SIZE);
   });

@@ -70,6 +70,30 @@ values, disallowed references, unsafe markup syntax, and invalid tree operations
 return a rejected observation and leave the shadow stage unchanged. Successful
 visible mutations return patch messages for runtime delivery.
 
+## UI Pattern resources
+
+`projectUiPatternIndex`, `findUiPattern`, and `renderUiPatternForAgent` expose
+validated design-system UI Patterns as read-only agent resources. They are not
+members of `FACET_TOOL_NAMES`, do not execute or mutate a stage, and do not
+choose a UI Pattern for the agent. A host can show the compact index during
+planning, then include only the chosen bounded body before component discovery
+and authoring.
+
+```ts check-docs
+import { DEFAULT_UI_PATTERN_SET } from "@facet/assets";
+import {
+  findUiPattern,
+  projectUiPatternIndex,
+  renderUiPatternForAgent,
+} from "@facet/agent-tools";
+
+const index = projectUiPatternIndex(DEFAULT_UI_PATTERN_SET);
+const uiPattern = findUiPattern(DEFAULT_UI_PATTERN_SET, "compare");
+const resource = uiPattern === null ? null : renderUiPatternForAgent(uiPattern);
+
+console.log(index.length, resource?.ok);
+```
+
 ## Host boundaries
 
 Facet tools are UI-in/UI-out only. Product data is fetched and authorized by the

@@ -27,6 +27,12 @@ const BARREL_EXPORT_CONTRACT = [
   "ReadDataInput",
   "PublishDataInput",
   "FacetToolSession",
+  "UI_PATTERN_RESOURCE_BOUNDS",
+  "findUiPattern",
+  "projectUiPatternIndex",
+  "renderUiPatternForAgent",
+  "RenderUiPatternResult",
+  "UiPatternSummary",
 ] as const;
 
 const VALUE_EXPORTS = [
@@ -36,6 +42,10 @@ const VALUE_EXPORTS = [
   "buildTurnObservation",
   "createMarkupBuffer",
   "executeFacetTool",
+  "UI_PATTERN_RESOURCE_BOUNDS",
+  "findUiPattern",
+  "projectUiPatternIndex",
+  "renderUiPatternForAgent",
 ] as const;
 
 function source(path: string): string {
@@ -99,6 +109,7 @@ describe("@facet/agent-tools barrel", () => {
       "./observation.ts",
       "./prompt-kit.ts",
       "./buffer.ts",
+      "./ui-pattern.ts",
       "./index.ts",
     ].map(source);
     expect(productionSources.join("\n")).not.toContain("@facet/runtime");

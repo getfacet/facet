@@ -3,9 +3,16 @@ export { executeFacetTool } from "./executor.js";
 export { buildTurnObservation } from "./observation.js";
 export { FACET_PROMPT_KIT } from "./prompt-kit.js";
 export { FACET_TOOL_NAMES, FACET_TOOL_SPECS } from "./specs.js";
+export {
+  UI_PATTERN_RESOURCE_BOUNDS,
+  findUiPattern,
+  projectUiPatternIndex,
+  renderUiPatternForAgent,
+} from "./ui-pattern.js";
 export type { MarkupBuffer } from "./buffer.js";
 export type { FacetToolResult } from "./executor.js";
 export type { FacetToolName, FacetToolSpec } from "./specs.js";
+export type { RenderUiPatternResult, UiPatternSummary } from "./ui-pattern.js";
 export type {
   CatalogIndex,
   InsertSubtreeInput,

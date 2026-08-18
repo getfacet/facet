@@ -693,7 +693,7 @@ describe("@facet/assets/react barrel — the exact key set (D-12)", () => {
 });
 
 describe("@facet/assets entry boundary — the root is React-free (RISK-PKG-1, D-09)", () => {
-  it("reaches only the seven Node-safe data modules from the root entry", () => {
+  it("reaches only the nine Node-safe data modules from the root entry", () => {
     expect(reachableFrom("index.ts").modules).toEqual([
       "catalog.ts",
       "index.ts",
@@ -703,6 +703,7 @@ describe("@facet/assets entry boundary — the root is React-free (RISK-PKG-1, D
       "specs-layout.ts",
       "specs-surface.ts",
       "theme-default.ts",
+      "ui-patterns.ts",
     ]);
   });
 

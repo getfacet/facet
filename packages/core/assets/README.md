@@ -19,6 +19,8 @@ to Core/runtime surfaces:
 - `DEFAULT_COMPONENT_SPECS` — the component spec list used to build the catalog.
 - `DEFAULT_THEME` — one complete Facet Design Contract v1 theme: required
   foundation and semantic tokens plus recipes for the default catalog.
+- `DEFAULT_UI_PATTERN_SET` — four non-rendering, component-aware authoring
+  UI Patterns associated with the default catalog.
 
 The root entrypoint imports no React and no browser globals. A server can load
 the default catalog and theme without pulling renderer code into its graph.
@@ -91,6 +93,21 @@ becoming default components.
 Use this package unchanged for the built-in component set, or provide your own
 catalog/registry/theme trio when the host has a different trusted component
 system.
+
+## UI Patterns
+
+UI Patterns are design knowledge, not components. A component is a registered,
+renderable tag with a stable prop and child contract. A UI Pattern explains when a
+screen structure fits, the information and region order, candidate component
+combinations, alternative valid Facet trees, and arrangements to avoid. The
+agent chooses and adapts a UI Pattern; the renderer never mounts one.
+
+The default set contains `browse`, `compare`, `diagnose`, and `progress`. Each
+has two alternatives so an agent receives composition examples without one
+canonical template. Hosts should validate a UI Pattern set against its immutable
+catalog with `validateUiPatternSet` before projecting it to an agent. A custom
+design system can later supply its own co-versioned set; loading untrusted
+tenant guidance requires a host-owned provenance and authority policy.
 
 ## Documentation
 

@@ -62,6 +62,7 @@ const BARREL_KEYS: readonly string[] = [
   "DEFAULT_CATALOG",
   "DEFAULT_COMPONENT_SPECS",
   "DEFAULT_THEME",
+  "DEFAULT_UI_PATTERN_SET",
 ];
 
 function sortedTags(specs: readonly ComponentSpec[]): readonly string[] {
@@ -196,7 +197,7 @@ describe("DEFAULT_CATALOG — plain, frozen data", () => {
 });
 
 describe("@facet/assets root barrel — the exact key set (D-12)", () => {
-  it("exports exactly DEFAULT_THEME, DEFAULT_COMPONENT_SPECS and DEFAULT_CATALOG", () => {
+  it("exports exactly the default theme, catalog, component specs and UI patterns", () => {
     expect(Object.keys(barrel).sort()).toEqual([...BARREL_KEYS].sort());
   });
 
@@ -209,11 +210,15 @@ describe("@facet/assets root barrel — the exact key set (D-12)", () => {
     expect(readCode("./index.ts")).not.toMatch(/export\s+\*/u);
   });
 
-  it("names only the two private modules the three public symbols come from", () => {
+  it("names only the three private modules the four public symbols come from", () => {
     const specifiers = [...readCode("./index.ts").matchAll(/from\s+"([^"]+)"/gu)].map(
       (match) => match[1],
     );
-    expect([...new Set(specifiers)].sort()).toEqual(["./catalog.js", "./theme-default.js"]);
+    expect([...new Set(specifiers)].sort()).toEqual([
+      "./catalog.js",
+      "./theme-default.js",
+      "./ui-patterns.js",
+    ]);
   });
 
   it("pulls no React into the root entry: the Node-only surface stays Node-only", () => {

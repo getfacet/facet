@@ -28,6 +28,12 @@ publication, screen/data reads, event forwarding, patch folding, and revisions.
 - `executeFacetTool` — one tool-call executor against a `FacetToolSession`; and
 - `buildTurnObservation` — bounded state summary for the next model step.
 
+The same package also exports read-only UI Pattern helpers. These resources stay
+outside the closed nine-tool roster: the host may project a compact validated
+design-system UI Pattern index during planning and one selected UI Pattern body before
+component discovery, but the agent remains responsible for selection and
+adaptation.
+
 ```ts check-docs
 import {
   FACET_TOOL_SPECS,
@@ -96,3 +102,10 @@ Keep the model prompt focused on the active catalog and current screen. Let the
 model discover component details only when needed. Preserve rejected tool output
 verbatim enough for repair, and never claim completion until the runtime accepts
 the turn.
+
+When a host supplies UI Patterns, associate them with the same immutable catalog
+used for authoring and validate them with `validateUiPatternSet`. A UI Pattern can
+name candidate components and include valid example trees, but it grants no
+tool, backend, mutation, or completion authority. Do not treat an example as a
+fixed template; use the current problem and state to choose among or adapt its
+variants, then read the full active specs for the components actually selected.

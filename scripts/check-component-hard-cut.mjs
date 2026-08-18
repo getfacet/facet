@@ -41,11 +41,10 @@ function exactPathPattern(value) {
 
 function buildRetiredHardCutSymbolsPattern() {
   const joined = (...parts) => parts.join("");
+  const legacyPatternTerms = [joined("Pat", "tern"), joined("Pat", "terns")];
   const symbols = [
     joined("Br", "ick"),
     joined("Br", "icks"),
-    joined("Pat", "tern"),
-    joined("Pat", "terns"),
     joined("Pre", "set"),
     joined("Pre", "sets"),
     ["STAGE", "SPEC"].join("_"),
@@ -59,6 +58,7 @@ function buildRetiredHardCutSymbolsPattern() {
   ];
   return [
     ...symbols.map(exactIdentifierPattern),
+    ...legacyPatternTerms.map((value) => String.raw`(?<!UI )${exactIdentifierPattern(value)}`),
     String.raw`(?<![A-Za-z0-9_-])${["lo", "cal"].join("")}:`,
     String.raw`(?:(?<![A-Za-z0-9_$])kind|["']kind["'])\s*:\s*["'](?:say|reset)["']`,
   ].join("|");

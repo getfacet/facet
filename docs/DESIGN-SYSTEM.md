@@ -144,6 +144,26 @@ When a design module is active, the Quickstart Assets source filter can show
 `Imported` component tags and screen examples separately from `Default` assets,
 or combine both in `All`.
 
+## UI Patterns
+
+A UI Pattern is non-rendering authoring knowledge associated with a design
+system. It describes problem fit, information order, regions, component-choice
+tradeoffs, alternative valid Facet trees, and arrangements to avoid. It is not a
+component tag, theme recipe, protocol frame, or stage tool.
+
+`DEFAULT_UI_PATTERN_SET` ships `browse`, `compare`, `diagnose`, and `progress`
+with the default assets. `validateUiPatternSet` checks every component reference
+and example against the supplied immutable catalog through the existing author
+markup boundary. Agent-tool helpers can project the compact index and one
+selected body without adding another Facet tool.
+
+A rich component may satisfy most of one UI Pattern and remains a component because
+the renderer mounts it through a stable spec. The UI Pattern still carries the
+context-dependent decision about when to use that component, what surrounds it,
+and which alternative composition fits. Repeated composition that must always
+behave identically can be promoted to a trusted component; adaptable
+problem-to-screen knowledge stays a UI Pattern.
+
 ## Data and actions
 
 Declared props may accept `data:` bindings only when the component spec allows

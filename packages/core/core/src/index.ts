@@ -118,6 +118,18 @@ export type { CasOutcome, StageRevision } from "./revision.js";
 
 export type { FacetStage } from "./stage.js";
 
+export { UI_PATTERN_BOUNDS, validateUiPatternSet } from "./ui-pattern.js";
+export type {
+  UiPattern,
+  UiPatternComponentChoice,
+  UiPatternRegion,
+  UiPatternSet,
+  UiPatternValidationIssue,
+  UiPatternValidationIssueCode,
+  UiPatternValidationResult,
+  UiPatternVariant,
+} from "./ui-pattern.js";
+
 export {
   FACET_THEME_CONTRACT,
   facetThemeToKebabCase,

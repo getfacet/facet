@@ -247,6 +247,22 @@ test("detects every locked pattern alternative with the specified casing", async
   assert.equal(count("deleted_app_paths"), deletedApps.length);
 });
 
+test("allows only the qualified UI Pattern term while retaining the generic ban", async (t) => {
+  const cwd = await makeFixture(t);
+  await writeFixture(
+    cwd,
+    "packages/example/src/ui-pattern-language.ts",
+    'export const description = "UI Pattern and UI Patterns";\n',
+  );
+  await writeFixture(
+    cwd,
+    "packages/example/example/README.md",
+    "UI Pattern guidance may contain several UI Patterns.\n",
+  );
+
+  assert.deepEqual(scanHardCut({ cwd }).violations, []);
+});
+
 test("flags retired residue in documentation scope and token-count-limit language", async (t) => {
   const cwd = await makeFixture(t);
   const deletedApp = ["apps", "playground"].join("/");
