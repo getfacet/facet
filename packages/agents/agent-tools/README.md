@@ -38,6 +38,11 @@ prescribing a service or component composition. When a provider supports
 multiple tool calls in one response, the kit directs it to request independent
 `read_component_spec` calls together; the host may still execute those reads
 serially and enforce every per-call admission bound.
+The kit also teaches composition-first authoring: decide spatial relationships,
+use only the layout components that express them, then fill the structure.
+`formatCatalogIndex` renders the compact catalog as Screen root, Layout,
+Surface, Content, Interaction, and Unclassified groups. These groups guide
+discovery only; they do not require a layout wrapper.
 
 ```ts check-docs
 import {
@@ -62,8 +67,9 @@ console.log(FACET_PROMPT_KIT, names.length, specs.length, chunk.ready.length);
 
 `createMarkupBuffer` lets a streaming provider accumulate markup until a full
 parseable document is available. `executeFacetTool` runs one validated tool call
-against a `FacetToolSession`, and `buildTurnObservation` shapes the response
-the model should see next.
+against a `FacetToolSession`, `buildTurnObservation` shapes the response the
+model should see next, and `formatCatalogIndex` turns its component index into
+grouped prompt text.
 
 Strict authoring is atomic. Unknown tags, undeclared props, invalid scalar
 values, disallowed references, unsafe markup syntax, and invalid tree operations

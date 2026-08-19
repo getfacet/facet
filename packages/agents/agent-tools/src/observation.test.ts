@@ -11,13 +11,18 @@ import type {
   PayloadEvaluation,
 } from "@facet/core";
 
-import { buildTurnObservation } from "./observation.js";
+import { buildTurnObservation, formatCatalogIndex } from "./observation.js";
 import type { FacetToolSession } from "./types.js";
 
-function component(tag: string, whenToUse = `Use ${tag} when it fits.`): Record<string, unknown> {
+function component(
+  tag: string,
+  whenToUse = `Use ${tag} when it fits.`,
+  authoringRole?: string,
+): Record<string, unknown> {
   return {
     tag,
     whenToUse,
+    ...(authoringRole === undefined ? {} : { authoringRole }),
     props: {
       value: {
         type: "string",
@@ -32,6 +37,7 @@ function screenSpec(): Record<string, unknown> {
   return {
     tag: "Screen",
     whenToUse: "Root screen container.",
+    authoringRole: "layout",
     props: {
       name: {
         type: "string",
@@ -134,7 +140,7 @@ describe("buildTurnObservation", () => {
       stageRevision: 7,
       screens: ["home", "hidden"],
       components: [
-        { tag: "Screen", whenToUse: "Root screen container." },
+        { tag: "Screen", whenToUse: "Root screen container.", authoringRole: "layout" },
         { tag: "Text", whenToUse: "Use Text when it fits." },
       ],
       data: [{ path: "rows", shape: "array", fields: ["name", "secret"], count: 1 }],
@@ -145,6 +151,19 @@ describe("buildTurnObservation", () => {
     expect(JSON.stringify(observation)).not.toContain("DO_NOT_LEAK_PROP_SCHEMA");
     expect(JSON.stringify(observation)).not.toContain("Ada");
     expect(JSON.stringify(observation)).not.toContain("do-not-include");
+  });
+
+  it("preserves optional authoring roles without adding them to roleless custom components", () => {
+    const observation = buildTurnObservation(
+      session({ catalog: catalog([component("Stack", "Arrange a vertical flow.", "layout")]) }),
+    );
+
+    expect(observation.components).toEqual([
+      { tag: "Screen", whenToUse: "Root screen container.", authoringRole: "layout" },
+      { tag: "Text", whenToUse: "Use Text when it fits." },
+      { tag: "Stack", whenToUse: "Arrange a vertical flow.", authoringRole: "layout" },
+    ]);
+    expect("authoringRole" in observation.components[1]!).toBe(false);
   });
 
   it("measures unused component scaling in characters and includes only tag plus when-to-use", () => {
@@ -194,5 +213,39 @@ describe("buildTurnObservation", () => {
       screens: [],
       issues: ["no_current_screen"],
     });
+  });
+});
+
+describe("formatCatalogIndex", () => {
+  it("groups discovery in a stable authoring order and keeps roleless specs visible", () => {
+    expect(
+      formatCatalogIndex([
+        { tag: "Button", whenToUse: "Trigger an action.", authoringRole: "interaction" },
+        { tag: "Card", whenToUse: "Frame related content.", authoringRole: "surface" },
+        { tag: "Text", whenToUse: "Show copy.", authoringRole: "content" },
+        { tag: "Custom", whenToUse: "Host-specific component." },
+        { tag: "Grid", whenToUse: "Arrange a grid.", authoringRole: "layout" },
+        { tag: "Screen", whenToUse: "Root screen.", authoringRole: "layout" },
+      ]),
+    ).toBe(
+      [
+        "Screen root:",
+        "- Screen: Root screen.",
+        "Layout:",
+        "- Grid: Arrange a grid.",
+        "Surface:",
+        "- Card: Frame related content.",
+        "Content:",
+        "- Text: Show copy.",
+        "Interaction:",
+        "- Button: Trigger an action.",
+        "Unclassified:",
+        "- Custom: Host-specific component.",
+      ].join("\n"),
+    );
+  });
+
+  it("formats an empty catalog explicitly", () => {
+    expect(formatCatalogIndex([])).toBe("- (none)");
   });
 });

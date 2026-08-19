@@ -6,7 +6,21 @@ import type {
   SerializeIssue,
 } from "@facet/core";
 
-import type { DataSummaryEntry, TurnObservation } from "./types.js";
+import type {
+  CatalogIndex,
+  CatalogIndexEntry,
+  DataSummaryEntry,
+  TurnObservation,
+} from "./types.js";
+
+const AUTHORING_GROUPS = [
+  ["Screen root", "screen"],
+  ["Layout", "layout"],
+  ["Surface", "surface"],
+  ["Content", "content"],
+  ["Interaction", "interaction"],
+  ["Unclassified", "unclassified"],
+] as const;
 
 function scalarText(prop: ComponentNode["props"][string] | undefined): string | null {
   return prop?.kind === "scalar" ? prop.value : null;
@@ -57,11 +71,41 @@ export function buildTurnObservation(session: FacetToolSession): TurnObservation
     currentScreen: screen,
     screens: document === null ? Object.freeze([]) : screenNames(document),
     components: Object.freeze(
-      session.catalog.components.map((spec) =>
-        Object.freeze({ tag: spec.tag, whenToUse: spec.whenToUse }),
-      ),
+      session.catalog.components.map((spec) => {
+        const entry: CatalogIndexEntry = {
+          tag: spec.tag,
+          whenToUse: spec.whenToUse,
+          ...(spec.authoringRole === undefined ? {} : { authoringRole: spec.authoringRole }),
+        };
+        return Object.freeze(entry);
+      }),
     ),
     data: dataSummary(session.data),
     issues: screen === null ? Object.freeze(["no_current_screen"]) : screen.issues,
   });
+}
+
+/** Formats the compact catalog index by broad authoring role for prompt discovery. */
+export function formatCatalogIndex(components: CatalogIndex): string {
+  if (components.length === 0) {
+    return "- (none)";
+  }
+
+  const lines: string[] = [];
+  for (const [label, group] of AUTHORING_GROUPS) {
+    const entries = components.filter((component) => componentGroup(component) === group);
+    if (entries.length === 0) {
+      continue;
+    }
+    lines.push(`${label}:`);
+    lines.push(...entries.map((component) => `- ${component.tag}: ${component.whenToUse}`));
+  }
+  return lines.join("\n");
+}
+
+function componentGroup(component: CatalogIndexEntry): (typeof AUTHORING_GROUPS)[number][1] {
+  if (component.tag === "Screen") {
+    return "screen";
+  }
+  return component.authoringRole ?? "unclassified";
 }

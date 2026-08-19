@@ -40,6 +40,7 @@ export type { CatalogValidationResult, FacetCatalog, ModalConformanceResult } fr
 export { validateComponentSpec } from "./component-spec.js";
 export type {
   CollectSpec,
+  ComponentAuthoringRole,
   ComponentSpec,
   ComponentSpecValidationResult,
   PropSchema,

@@ -38,6 +38,7 @@ import type { ComponentSpec } from "@facet/core";
  */
 export const MODAL_SPEC: ComponentSpec = {
   tag: "Modal",
+  authoringRole: "surface",
   whenToUse:
     "Interrupt the screen for one focused decision or a short form. Facet owns the frame; this describes only what goes inside it.",
   props: {
@@ -77,6 +78,7 @@ export const MODAL_SPEC: ComponentSpec = {
 /** A bounded surface that groups related content and separates it from the rest. */
 export const CARD_SPEC: ComponentSpec = {
   tag: "Card",
+  authoringRole: "surface",
   whenToUse:
     "Group related content into one bounded surface with its own edge and padding — a summary, a record, a settings block.",
   props: {
@@ -119,6 +121,7 @@ export const CARD_SPEC: ComponentSpec = {
  */
 export const EMPTY_SPEC: ComponentSpec = {
   tag: "Empty",
+  authoringRole: "surface",
   whenToUse:
     "Stand in for a view with nothing in it yet — a search that matched nothing, a fresh account, a list before its first row.",
   props: {

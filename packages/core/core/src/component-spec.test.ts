@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { BOUNDS } from "./bounds.js";
 import type {
+  ComponentAuthoringRole,
   ComponentSpec,
   ComponentSpecValidationResult,
   PropSchema,
@@ -145,6 +146,34 @@ describe("validateComponentSpec — the accepted spec form", () => {
     const good = minimalSpec();
     expect(validateComponentSpec(good)).toEqual(validateComponentSpec(good));
   });
+});
+
+describe("validateComponentSpec — optional authoring role", () => {
+  const roles: readonly ComponentAuthoringRole[] = ["layout", "surface", "content", "interaction"];
+
+  it("keeps an existing roleless spec valid and does not invent metadata", () => {
+    const spec = accept(minimalSpec());
+
+    expect(spec.authoringRole).toBeUndefined();
+    expect("authoringRole" in spec).toBe(false);
+  });
+
+  it.each(roles)("accepts and preserves the %s authoring role", (authoringRole) => {
+    const spec = accept({ ...minimalSpec(), authoringRole });
+
+    expect(spec.authoringRole).toBe(authoringRole);
+    expect(Object.isFrozen(spec)).toBe(true);
+  });
+
+  it.each(["", "task", undefined, null, 1, false])(
+    "rejects the unknown authoring role %j at the metadata field",
+    (authoringRole) => {
+      const value = { ...minimalSpec(), authoringRole };
+
+      expect(rejectionCode(value)).toBe("invalid_authoring_role");
+      expect(rejectionAt(value)).toBe("authoringRole");
+    },
+  );
 });
 
 describe("validateComponentSpec — a spec missing a required part is rejected", () => {

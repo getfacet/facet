@@ -29,6 +29,7 @@ import type { ComponentSpec } from "@facet/core";
 
 export const BUTTON_SPEC: ComponentSpec = {
   tag: "Button",
+  authoringRole: "interaction",
   whenToUse:
     "Give the visitor one control that moves to another screen or sends an event to the agent.",
   props: {
@@ -81,6 +82,7 @@ export const BUTTON_SPEC: ComponentSpec = {
 
 export const FIELD_SPEC: ComponentSpec = {
   tag: "Field",
+  authoringRole: "interaction",
   whenToUse: "Ask the visitor for one value that a `Button` can name in its `collect` list.",
   props: {
     name: {

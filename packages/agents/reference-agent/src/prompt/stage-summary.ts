@@ -1,4 +1,4 @@
-import { buildTurnObservation } from "@facet/agent-tools";
+import { buildTurnObservation, formatCatalogIndex } from "@facet/agent-tools";
 import type { FacetToolSession, TurnObservation } from "@facet/agent-tools";
 
 export const DEFAULT_STAGE_MARKUP_CHAR_LIMIT = 48_000;
@@ -38,7 +38,7 @@ export function summarizeStageForPrompt(
     `currentScreen=${observation.currentScreen?.name ?? "(none)"}`,
     `screens=${observation.screens.length === 0 ? "(none)" : observation.screens.join(", ")}`,
     "components:",
-    ...components.map((component) => `- ${component.tag}: ${component.whenToUse}`),
+    formatCatalogIndex(components),
   ];
 
   if (omittedComponents > 0) {

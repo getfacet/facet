@@ -76,4 +76,19 @@ describe("FACET_PROMPT_KIT", () => {
     expect(FACET_PROMPT_KIT).toContain("use bounded reads when needed");
     expect(FACET_PROMPT_KIT).toContain("Do not switch to unrelated tools");
   });
+
+  it("teaches composition-first authoring without requiring layout wrappers", () => {
+    expect(FACET_PROMPT_KIT).toContain("decide the spatial relationship");
+    expect(FACET_PROMPT_KIT).toContain("minimum layout components");
+    expect(FACET_PROMPT_KIT).toContain("fill that structure");
+    expect(FACET_PROMPT_KIT).toContain("discovery guidance only");
+    expect(FACET_PROMPT_KIT).toContain("simple screen may contain");
+    expect(FACET_PROMPT_KIT).toContain("Do not add layout wrappers");
+    expect(FACET_PROMPT_KIT.indexOf("identify the screen job")).toBeLessThan(
+      FACET_PROMPT_KIT.indexOf("Choose visible tags first"),
+    );
+    expect(FACET_PROMPT_KIT.indexOf("Choose visible tags first")).toBeLessThan(
+      FACET_PROMPT_KIT.indexOf("call read_component_spec"),
+    );
+  });
 });

@@ -2,6 +2,7 @@ import type { ComponentSpec } from "@facet/core";
 
 export const SECTION_SPEC: ComponentSpec = {
   tag: "Section",
+  authoringRole: "surface",
   whenToUse: "Group one named part of a page, with optional heading text and normal flow content.",
   props: {
     title: {
@@ -42,6 +43,7 @@ export const SECTION_SPEC: ComponentSpec = {
 
 export const DIVIDER_SPEC: ComponentSpec = {
   tag: "Divider",
+  authoringRole: "content",
   whenToUse: "Separate two neighboring sections in the reading flow.",
   props: {
     label: {
@@ -67,6 +69,7 @@ export const DIVIDER_SPEC: ComponentSpec = {
 
 export const HERO_SPEC: ComponentSpec = {
   tag: "Hero",
+  authoringRole: "surface",
   whenToUse: "Create the first impression of a page with a headline, supporting copy and actions.",
   props: {
     title: {
@@ -113,6 +116,7 @@ export const HERO_SPEC: ComponentSpec = {
 
 export const AVATAR_SPEC: ComponentSpec = {
   tag: "Avatar",
+  authoringRole: "content",
   whenToUse:
     "Show a person's or brand's identity with initials, without loading an external image.",
   props: {
@@ -155,6 +159,7 @@ export const AVATAR_SPEC: ComponentSpec = {
 
 export const LINK_LIST_SPEC: ComponentSpec = {
   tag: "LinkList",
+  authoringRole: "surface",
   whenToUse: "Stack a set of navigation or agent-action buttons, such as a link-in-bio list.",
   props: {
     title: {
@@ -183,6 +188,7 @@ export const LINK_LIST_SPEC: ComponentSpec = {
 
 export const FEATURE_LIST_SPEC: ComponentSpec = {
   tag: "FeatureList",
+  authoringRole: "surface",
   whenToUse: "Group feature, service or proof cards in an even marketing/editorial list.",
   props: {
     title: {
@@ -210,6 +216,7 @@ export const FEATURE_LIST_SPEC: ComponentSpec = {
 
 export const TESTIMONIAL_SPEC: ComponentSpec = {
   tag: "Testimonial",
+  authoringRole: "surface",
   whenToUse: "Show one quote or endorsement with its source.",
   props: {
     quote: {
@@ -248,6 +255,7 @@ export const TESTIMONIAL_SPEC: ComponentSpec = {
 
 export const CTA_SPEC: ComponentSpec = {
   tag: "CTA",
+  authoringRole: "surface",
   whenToUse: "End a section or page with a clear call to action and one or more child buttons.",
   props: {
     title: {
@@ -288,6 +296,7 @@ export const CTA_SPEC: ComponentSpec = {
 
 export const ALERT_SPEC: ComponentSpec = {
   tag: "Alert",
+  authoringRole: "surface",
   whenToUse: "Show one important status, warning or informational message in the flow.",
   props: {
     title: {
@@ -321,6 +330,7 @@ export const ALERT_SPEC: ComponentSpec = {
 
 export const PROGRESS_SPEC: ComponentSpec = {
   tag: "Progress",
+  authoringRole: "content",
   whenToUse: "Show bounded completion from zero to one hundred percent.",
   props: {
     label: {
@@ -358,6 +368,7 @@ export const PROGRESS_SPEC: ComponentSpec = {
 
 export const LOGO_MARK_SPEC: ComponentSpec = {
   tag: "LogoMark",
+  authoringRole: "content",
   whenToUse: "Show a compact brand, product or personal mark without loading external media.",
   props: {
     label: {
@@ -404,6 +415,7 @@ export const LOGO_MARK_SPEC: ComponentSpec = {
 
 export const NAV_SPEC: ComponentSpec = {
   tag: "Nav",
+  authoringRole: "surface",
   whenToUse: "Frame a site or product surface with brand text and child navigation actions.",
   props: {
     brand: {
@@ -448,6 +460,7 @@ export const NAV_SPEC: ComponentSpec = {
 
 export const PROFILE_HEADER_SPEC: ComponentSpec = {
   tag: "ProfileHeader",
+  authoringRole: "surface",
   whenToUse: "Open a personal profile, resume or bio surface with identity and primary actions.",
   props: {
     name: {
@@ -494,6 +507,7 @@ export const PROFILE_HEADER_SPEC: ComponentSpec = {
 
 export const PRODUCT_SHOWCASE_SPEC: ComponentSpec = {
   tag: "ProductShowcase",
+  authoringRole: "surface",
   whenToUse: "Present one product, offer or service with a strong title and supporting actions.",
   props: {
     title: {
@@ -538,6 +552,7 @@ export const PRODUCT_SHOWCASE_SPEC: ComponentSpec = {
 
 export const VISUAL_PANEL_SPEC: ComponentSpec = {
   tag: "VisualPanel",
+  authoringRole: "surface",
   whenToUse:
     "Create a graphic color panel with large text, numbers or proof without external media.",
   props: {
@@ -585,6 +600,7 @@ export const VISUAL_PANEL_SPEC: ComponentSpec = {
 
 export const MEDIA_CARD_SPEC: ComponentSpec = {
   tag: "MediaCard",
+  authoringRole: "surface",
   whenToUse:
     "Show a visual product, work, article or media item with image-like structure but no external URL.",
   props: {
@@ -636,6 +652,7 @@ export const MEDIA_CARD_SPEC: ComponentSpec = {
 
 export const STAT_STRIP_SPEC: ComponentSpec = {
   tag: "StatStrip",
+  authoringRole: "surface",
   whenToUse:
     "Show a horizontal strip of metrics or compact proof points outside card-heavy layouts.",
   props: {
@@ -673,6 +690,7 @@ export const STAT_STRIP_SPEC: ComponentSpec = {
 
 export const GALLERY_SPEC: ComponentSpec = {
   tag: "Gallery",
+  authoringRole: "surface",
   whenToUse:
     "Arrange selected work, products or media-like cards in a portfolio grid without URLs.",
   props: {
@@ -710,6 +728,7 @@ export const GALLERY_SPEC: ComponentSpec = {
 
 export const SOCIAL_LINKS_SPEC: ComponentSpec = {
   tag: "SocialLinks",
+  authoringRole: "surface",
   whenToUse: "Group social, profile, portfolio or contact actions in a compact link row or stack.",
   props: {
     title: {
@@ -751,6 +770,7 @@ export const SOCIAL_LINKS_SPEC: ComponentSpec = {
 
 export const TIMELINE_SPEC: ComponentSpec = {
   tag: "Timeline",
+  authoringRole: "surface",
   whenToUse: "Show resume history, process steps or milestones in a clear vertical sequence.",
   props: {
     title: {
@@ -780,6 +800,7 @@ export const TIMELINE_SPEC: ComponentSpec = {
 
 export const SIDE_NAV_SPEC: ComponentSpec = {
   tag: "SideNav",
+  authoringRole: "surface",
   whenToUse: "Frame workspace, admin or app screens with a vertical navigation rail.",
   props: {
     title: {
@@ -815,6 +836,7 @@ export const SIDE_NAV_SPEC: ComponentSpec = {
 
 export const SIDE_NAV_ITEM_SPEC: ComponentSpec = {
   tag: "SideNavItem",
+  authoringRole: "interaction",
   whenToUse:
     "Add one row-style destination or command inside a SideNav. Use Button for standalone CTAs.",
   props: {
@@ -870,6 +892,7 @@ export const SIDE_NAV_ITEM_SPEC: ComponentSpec = {
 
 export const FOOTER_SPEC: ComponentSpec = {
   tag: "Footer",
+  authoringRole: "surface",
   whenToUse: "Close a website or app surface with compact identity text and child actions.",
   props: {
     title: {

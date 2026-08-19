@@ -65,6 +65,11 @@ The default catalog has 38 registered tags:
 `Alert`, `Progress`, `Footer`, `Text`, `Metric`, `Badge`, `Table`, `Button`,
 and `Field`.
 
+The default specs classify those tags for agent discovery as `layout`,
+`surface`, `content`, or `interaction`. This optional metadata helps an agent
+plan composition before detail; it does not affect rendering or require every
+custom component to declare a role.
+
 The default theme is a coherent baseline for demos, examples, and hosts that do
 not need a custom visual system yet. Foundation and semantic token names remain
 closed by Core, component recipes are declared by the active catalog, extension

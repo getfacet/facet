@@ -17,6 +17,12 @@ The default assets package registers 38 components:
 `Alert`, `Progress`, `Footer`, `Text`, `Metric`, `Badge`, `Table`, `Button`,
 and `Field`.
 
+Every default spec also declares one broad authoring role: `layout`, `surface`,
+`content`, or `interaction`. Agent integrations use these roles to scan the
+catalog in composition order. They do not change markup validity, placement,
+rendering, theme behavior, or actions. A host's custom component may omit the
+role and remains valid.
+
 ```ts check-docs
 import { DEFAULT_CATALOG } from "@facet/assets";
 
@@ -128,6 +134,9 @@ A custom component set has three required parts:
 1. a Core component spec declaring the tag and prop schema;
 2. a catalog containing that spec; and
 3. a trusted React registry entry for the same tag.
+
+A spec may additionally set `authoringRole` to help agents discover it with
+similar components. This metadata is optional and has no runtime authority.
 
 Renderer bootstrap rejects mismatched tag sets. Unknown authored tags and
 undeclared props reject at author validation before any React component can

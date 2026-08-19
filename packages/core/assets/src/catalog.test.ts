@@ -57,6 +57,35 @@ const DEFAULT_TAGS: readonly string[] = [
   "Field",
 ];
 
+const DEFAULT_AUTHORING_ROLES: Readonly<Record<string, readonly string[]>> = {
+  layout: ["Screen", "AppShell", "Stack", "Row", "Split", "Grid"],
+  surface: [
+    "Modal",
+    "Card",
+    "Empty",
+    "Nav",
+    "SideNav",
+    "Section",
+    "Hero",
+    "ProfileHeader",
+    "ProductShowcase",
+    "VisualPanel",
+    "MediaCard",
+    "LinkList",
+    "SocialLinks",
+    "FeatureList",
+    "StatStrip",
+    "Gallery",
+    "Testimonial",
+    "Timeline",
+    "CTA",
+    "Alert",
+    "Footer",
+  ],
+  content: ["LogoMark", "Divider", "Avatar", "Progress", "Text", "Metric", "Badge", "Table"],
+  interaction: ["SideNavItem", "Button", "Field"],
+};
+
 /** The exact `@facet/assets` root key set — Barrel Export Contract list 2 (D-12). */
 const BARREL_KEYS: readonly string[] = [
   "DEFAULT_CATALOG",
@@ -131,6 +160,20 @@ describe("DEFAULT_CATALOG — exact default service-surface roster (DC-016)", ()
 
   it("resolves one tag to one spec: every default member has a distinct tag", () => {
     expect(new Set(DEFAULT_COMPONENT_SPECS.map((spec) => spec.tag)).size).toBe(38);
+  });
+
+  it("assigns every default component exactly one authoring role", () => {
+    const actual = Object.fromEntries(
+      Object.keys(DEFAULT_AUTHORING_ROLES).map((role) => [
+        role,
+        DEFAULT_COMPONENT_SPECS.filter((spec) => spec.authoringRole === role).map(
+          (spec) => spec.tag,
+        ),
+      ]),
+    );
+
+    expect(actual).toEqual(DEFAULT_AUTHORING_ROLES);
+    expect(DEFAULT_COMPONENT_SPECS.every((spec) => spec.authoringRole !== undefined)).toBe(true);
   });
 
   it("registers a Modal the framework frame can project", () => {
