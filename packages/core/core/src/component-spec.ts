@@ -61,9 +61,9 @@
  * whole point of its own forbidden-key set, and its rejections carry their own
  * code, `nonconforming_event_arg`.
  *
- * There is deliberately **no `category` field**. Grouping is presentation, it
- * drifts from whatever the agent actually needs, and a closed form is easier to
- * trust than an extensible one.
+ * `authoringRole` is optional discovery metadata. It lets an agent scan a large
+ * catalog by broad composition role without changing what a component may
+ * render or where it may appear. Existing host components may omit it.
  *
  * `validateComponentSpec` is **total**: it never throws, for any input of any
  * type, including a host object with a throwing getter. It returns the first
@@ -143,11 +143,16 @@ export interface ThemeRecipeSpec {
   readonly tokens: Readonly<Record<string, FacetThemeTokenValueKind>>;
 }
 
+/** A broad authoring role used only to organize component discovery. */
+export type ComponentAuthoringRole = "layout" | "surface" | "content" | "interaction";
+
 /** The serializable description of one component in the active catalog. */
 export interface ComponentSpec {
   readonly tag: string;
   /** One line, at most B-12 characters: when an agent should reach for this. */
   readonly whenToUse: string;
+  /** Optional discovery grouping; it does not affect validation or rendering behavior. */
+  readonly authoringRole?: ComponentAuthoringRole;
   readonly props: Readonly<Record<string, PropSchema>>;
   readonly acceptsChildren: boolean;
   readonly collect?: CollectSpec;
@@ -182,10 +187,18 @@ type SpecRejection = Extract<ComponentSpecValidationResult, { readonly ok: false
 const SPEC_KEYS: readonly string[] = [
   "tag",
   "whenToUse",
+  "authoringRole",
   "props",
   "acceptsChildren",
   "collect",
   "themeRecipe",
+];
+
+const COMPONENT_AUTHORING_ROLES: readonly ComponentAuthoringRole[] = [
+  "layout",
+  "surface",
+  "content",
+  "interaction",
 ];
 
 const COLLECT_KEYS: readonly string[] = ["collectable", "valueProp", "sensitiveProp"];
@@ -312,6 +325,19 @@ function validateSpec(value: unknown): ComponentSpecValidationResult {
     return reject("when_to_use_too_long", "whenToUse", "When-to-use text exceeds B-12.");
   }
 
+  const authoringRole = value["authoringRole"];
+  if (
+    "authoringRole" in value &&
+    (typeof authoringRole !== "string" ||
+      !COMPONENT_AUTHORING_ROLES.includes(authoringRole as ComponentAuthoringRole))
+  ) {
+    return reject(
+      "invalid_authoring_role",
+      "authoringRole",
+      "authoringRole must be layout, surface, content, or interaction.",
+    );
+  }
+
   const acceptsChildren = value["acceptsChildren"];
   if (typeof acceptsChildren !== "boolean") {
     return reject(
@@ -342,6 +368,9 @@ function validateSpec(value: unknown): ComponentSpecValidationResult {
   const base: ComponentSpec = {
     tag,
     whenToUse,
+    ...(authoringRole === undefined
+      ? {}
+      : { authoringRole: authoringRole as ComponentAuthoringRole }),
     props: props.props,
     acceptsChildren,
   };

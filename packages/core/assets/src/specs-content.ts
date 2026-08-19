@@ -39,6 +39,7 @@ import type { ComponentSpec } from "@facet/core";
 
 export const TEXT_SPEC: ComponentSpec = {
   tag: "Text",
+  authoringRole: "content",
   whenToUse: "Show a line or a paragraph of prose — a title, a heading, body copy, or a caption.",
   props: {
     value: {
@@ -79,6 +80,7 @@ export const TEXT_SPEC: ComponentSpec = {
 
 export const METRIC_SPEC: ComponentSpec = {
   tag: "Metric",
+  authoringRole: "content",
   whenToUse: "Show one headline number together with the label that says what it measures.",
   props: {
     label: {
@@ -112,6 +114,7 @@ export const METRIC_SPEC: ComponentSpec = {
 
 export const BADGE_SPEC: ComponentSpec = {
   tag: "Badge",
+  authoringRole: "content",
   whenToUse: "Mark a short status beside the thing it describes.",
   props: {
     label: {
@@ -144,6 +147,7 @@ export const BADGE_SPEC: ComponentSpec = {
 
 export const TABLE_SPEC: ComponentSpec = {
   tag: "Table",
+  authoringRole: "content",
   whenToUse: "Show a published collection of records as rows and columns.",
   props: {
     rows: {

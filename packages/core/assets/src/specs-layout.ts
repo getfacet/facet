@@ -55,6 +55,7 @@ import type { ComponentSpec } from "@facet/core";
  */
 export const SCREEN_SPEC: ComponentSpec = {
   tag: "Screen",
+  authoringRole: "layout",
   whenToUse:
     "The root of one named screen: it frames the screen's content, its reading width, and the space around it.",
   props: {
@@ -100,6 +101,7 @@ export const SCREEN_SPEC: ComponentSpec = {
 /** Children in vertical reading order — the default container for anything. */
 export const STACK_SPEC: ComponentSpec = {
   tag: "Stack",
+  authoringRole: "layout",
   whenToUse:
     "Stack children vertically in reading order. The default container for a section, a form, or a list of cards.",
   props: {
@@ -150,6 +152,7 @@ export const STACK_SPEC: ComponentSpec = {
 /** A stable app frame: one rail child and the remaining children as main content. */
 export const APP_SHELL_SPEC: ComponentSpec = {
   tag: "AppShell",
+  authoringRole: "layout",
   whenToUse:
     "Frame an app-like screen with a side rail and main content, without hand-building the stretch and responsive behavior.",
   props: {
@@ -186,6 +189,7 @@ export const APP_SHELL_SPEC: ComponentSpec = {
 /** Children side by side on one line, wrapping when the line runs out. */
 export const ROW_SPEC: ComponentSpec = {
   tag: "Row",
+  authoringRole: "layout",
   whenToUse:
     "Lay children out side by side on one line — a toolbar, a label and its value, a pair of buttons.",
   props: {
@@ -228,6 +232,7 @@ export const ROW_SPEC: ComponentSpec = {
 /** A two-column split for asymmetric pages, hero/form pairs and editorial layouts. */
 export const SPLIT_SPEC: ComponentSpec = {
   tag: "Split",
+  authoringRole: "layout",
   whenToUse:
     "Divide content into two asymmetric columns, such as hero plus form, product story plus proof, or profile plus links.",
   props: {
@@ -275,6 +280,7 @@ export const SPLIT_SPEC: ComponentSpec = {
 /** An even grid of equal columns, for repeated content of one kind. */
 export const GRID_SPEC: ComponentSpec = {
   tag: "Grid",
+  authoringRole: "layout",
   whenToUse:
     "Arrange children in an even grid of equal columns — metric tiles, a card gallery, a summary row.",
   props: {

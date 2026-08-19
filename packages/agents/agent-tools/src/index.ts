@@ -1,6 +1,6 @@
 export { createMarkupBuffer } from "./buffer.js";
 export { executeFacetTool } from "./executor.js";
-export { buildTurnObservation } from "./observation.js";
+export { buildTurnObservation, formatCatalogIndex } from "./observation.js";
 export { FACET_PROMPT_KIT } from "./prompt-kit.js";
 export { FACET_TOOL_NAMES, FACET_TOOL_SPECS } from "./specs.js";
 export type { MarkupBuffer } from "./buffer.js";

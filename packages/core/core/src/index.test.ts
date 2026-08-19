@@ -65,6 +65,7 @@ const PUBLIC_SURFACE: readonly string[] = Object.freeze([
   "ModalConformanceResult",
   "validateComponentSpec",
   "CollectSpec",
+  "ComponentAuthoringRole",
   "ComponentSpec",
   "ComponentSpecValidationResult",
   "PropSchema",
@@ -173,7 +174,7 @@ const PUBLIC_SURFACE: readonly string[] = Object.freeze([
 ]);
 
 /** The contract's own count, pinned so a silent list edit is a failure. */
-const PUBLIC_SURFACE_SIZE = 120;
+const PUBLIC_SURFACE_SIZE = 121;
 
 /**
  * The exact off-barrel set named by the contract. `markup-lexer.ts` is private

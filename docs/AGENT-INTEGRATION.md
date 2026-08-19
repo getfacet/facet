@@ -26,7 +26,8 @@ publication, screen/data reads, event forwarding, patch folding, and revisions.
 - `FACET_TOOL_SPECS` — the closed nine-tool schema list;
 - `createMarkupBuffer` — streaming markup accumulation;
 - `executeFacetTool` — one tool-call executor against a `FacetToolSession`; and
-- `buildTurnObservation` — bounded state summary for the next model step.
+- `buildTurnObservation` — bounded state summary for the next model step; and
+- `formatCatalogIndex` — compact component discovery grouped by authoring role.
 
 ```ts check-docs
 import {
@@ -50,6 +51,13 @@ Before first-page rendering, choose the intended visible component set and read
 each unknown contract. A provider that supports multiple tool calls can return
 those independent `read_component_spec` requests in one tool-only response;
 the host remains responsible for bounded admission and execution of each call.
+
+Plan composition before component detail: identify the screen's job, decide the
+spatial relationship and reading order, choose the minimum layout components
+that express it, then fill that structure with surface, content, and interaction
+components. The role grouping is discovery guidance, not a validation rule. A
+simple screen may place visible components directly under `Screen`, and custom
+components without a role remain valid and appear as unclassified.
 
 ## Rendering a page
 

@@ -13,8 +13,9 @@ describe("summarizeStageForPrompt", () => {
       },
       screens: ["home", "settings"],
       components: [
-        { tag: "Screen", whenToUse: "Root screen container." },
-        { tag: "Text", whenToUse: "Short copy." },
+        { tag: "Screen", whenToUse: "Root screen container.", authoringRole: "layout" },
+        { tag: "Text", whenToUse: "Short copy.", authoringRole: "content" },
+        { tag: "Custom", whenToUse: "Host-specific component." },
       ],
       data: [{ path: "rows", shape: "array", fields: ["name", "secret"], count: 1 }],
       issues: [],
@@ -23,7 +24,9 @@ describe("summarizeStageForPrompt", () => {
     expect(summary).toContain("stageRevision=3");
     expect(summary).toContain("currentScreen=home");
     expect(summary).toContain("screens=home, settings");
-    expect(summary).toContain("- Text: Short copy.");
+    expect(summary).toContain("Screen root:\n- Screen: Root screen container.");
+    expect(summary).toContain("Content:\n- Text: Short copy.");
+    expect(summary).toContain("Unclassified:\n- Custom: Host-specific component.");
     expect(summary).toContain("- rows: shape=array fields=name, secret count=1");
     expect(summary).toContain('<Text value="Visible" id="n1" />');
     expect(summary).not.toContain("Ada");

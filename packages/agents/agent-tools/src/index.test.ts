@@ -12,6 +12,7 @@ const BARREL_EXPORT_CONTRACT = [
   "executeFacetTool",
   "FacetToolResult",
   "buildTurnObservation",
+  "formatCatalogIndex",
   "TurnObservation",
   "FACET_PROMPT_KIT",
   "createMarkupBuffer",
@@ -36,6 +37,7 @@ const VALUE_EXPORTS = [
   "buildTurnObservation",
   "createMarkupBuffer",
   "executeFacetTool",
+  "formatCatalogIndex",
 ] as const;
 
 function source(path: string): string {
