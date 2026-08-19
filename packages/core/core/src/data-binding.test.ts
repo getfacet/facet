@@ -470,6 +470,70 @@ describe("resolveBinding — the structured prop branches", () => {
     const model: DataModel = { mixed: [1, "two", true, null, { nested: [] }] };
     expect(valueOf("data:mixed", ROWS_PROP, model)).toEqual([1, "two", true, null, { nested: [] }]);
   });
+
+  it("validates every array item when the prop declares a closed shape", () => {
+    const options: PropSchema = {
+      type: "array",
+      guidance: "Selectable options.",
+      bindable: true,
+      shape: {
+        fields: {
+          label: { type: "string", guidance: "Visible option label.", required: true },
+          value: { type: "string", guidance: "Stable option value.", required: true },
+          disabled: { type: "boolean", guidance: "Whether selection is disabled." },
+        },
+      },
+    };
+    expect(
+      valueOf("data:options", options, {
+        options: [
+          { label: "Recent", value: "recent" },
+          { label: "Popular", value: "popular", disabled: true },
+        ],
+      }),
+    ).toEqual([
+      { label: "Recent", value: "recent" },
+      { label: "Popular", value: "popular", disabled: true },
+    ]);
+    expect(rejectionFor("data:options", { options: [{ label: "Missing value" }] }, options)).toBe(
+      "schema_mismatch",
+    );
+    expect(
+      rejectionFor(
+        "data:options",
+        { options: [{ label: "Extra", value: "extra", href: "https://example.com" }] },
+        options,
+      ),
+    ).toBe("schema_mismatch");
+  });
+
+  it("validates a shaped object and rejects an unreadable shape declaration", () => {
+    const summary: PropSchema = {
+      type: "object",
+      guidance: "A compact status summary.",
+      bindable: true,
+      shape: {
+        fields: {
+          title: { type: "string", guidance: "Summary title.", required: true },
+          healthy: { type: "boolean", guidance: "Health status.", required: true },
+        },
+      },
+    };
+    expect(valueOf("data:summary", summary, { summary: { title: "API", healthy: true } })).toEqual({
+      title: "API",
+      healthy: true,
+    });
+    expect(
+      rejectionFor("data:summary", { summary: { title: "API", healthy: "yes" } }, summary),
+    ).toBe("schema_mismatch");
+    expect(
+      rejectionFor(
+        "data:summary",
+        { summary: { title: "API", healthy: true } },
+        { ...summary, shape: { fields: { title: { type: "object" } } } },
+      ),
+    ).toBe("invalid_prop_schema");
+  });
 });
 
 describe("resolveBinding — the numeric domain, identical to the author path's", () => {

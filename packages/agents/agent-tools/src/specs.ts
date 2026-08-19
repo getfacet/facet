@@ -1,3 +1,8 @@
+import { deriveComponentContentClass } from "@facet/core";
+import type { ComponentSpec } from "@facet/core";
+
+import type { ComponentSpecDetail } from "./types.js";
+
 export type FacetToolName = (typeof FACET_TOOL_NAMES)[number];
 
 type StringSchema = Readonly<{
@@ -35,6 +40,14 @@ export const FACET_TOOL_NAMES = Object.freeze([
   "read_data",
   "publish_data",
 ] as const);
+
+/** Adds the agent-facing class derived from the validated content contract. */
+export function componentSpecDetail(spec: ComponentSpec): ComponentSpecDetail {
+  return Object.freeze({
+    ...spec,
+    contentClass: deriveComponentContentClass(spec.content),
+  });
+}
 
 function stringSchema(description: string): StringSchema {
   return Object.freeze({ type: "string" as const, description });

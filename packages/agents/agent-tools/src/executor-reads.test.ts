@@ -28,13 +28,13 @@ function catalog(): FacetCatalog {
         props: {
           name: { type: "string", required: true, guidance: "Screen name." },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
       {
         tag: "Text",
         whenToUse: "Short text.",
         props: { value: { type: "string", guidance: "Visible text." } },
-        acceptsChildren: false,
+        content: { mode: "none" },
       },
     ],
   });
@@ -126,7 +126,12 @@ describe("read executors", () => {
 
     await expect(executeReadComponentSpec({ tag: "Text" }, session)).resolves.toMatchObject({
       ok: true,
-      spec: { tag: "Text", props: { value: { guidance: "Visible text." } } },
+      spec: {
+        tag: "Text",
+        contentClass: "Leaf",
+        content: { mode: "none" },
+        props: { value: { guidance: "Visible text." } },
+      },
       stageRevision: 3,
     });
     await expect(executeReadComponentSpec({ tag: "Missing" }, session)).resolves.toEqual({

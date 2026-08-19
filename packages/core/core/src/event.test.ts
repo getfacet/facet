@@ -297,6 +297,28 @@ describe("collect entries (D-08)", () => {
     expect(accepted.collect["amount"]).toEqual({ kind: "value", value: "12" });
   });
 
+  it("accepts boolean and string-array collected values", () => {
+    const accepted = accept(
+      event({
+        collect: {
+          enabled: { kind: "value", value: true },
+          interests: { kind: "value", value: ["analytics", "commerce"] },
+        },
+      }),
+    );
+
+    expect(accepted.collect["enabled"]).toEqual({ kind: "value", value: true });
+    expect(accepted.collect["interests"]).toEqual({
+      kind: "value",
+      value: ["analytics", "commerce"],
+    });
+    const interests = accepted.collect["interests"];
+    expect(interests?.kind === "value" && Array.isArray(interests.value)).toBe(true);
+    if (interests?.kind === "value" && Array.isArray(interests.value)) {
+      expect(Object.isFrozen(interests.value)).toBe(true);
+    }
+  });
+
   it("preserves a collect_source_unavailable entry rather than dropping it", () => {
     // D-08: a collectable node that never registers yields a structured error,
     // never a silent `{}` — the agent must be able to see that the value is
@@ -324,7 +346,9 @@ describe("collect entries (D-08)", () => {
   it.each([
     { label: "an unknown entry kind", entry: { kind: "raw", value: "x" } },
     { label: "a missing kind", entry: { value: "x" } },
-    { label: "a non-string collected value", entry: { kind: "value", value: 12 } },
+    { label: "a numeric collected value", entry: { kind: "value", value: 12 } },
+    { label: "an object collected value", entry: { kind: "value", value: {} } },
+    { label: "a mixed collected array", entry: { kind: "value", value: ["valid", false] } },
     { label: "a value entry with no value", entry: { kind: "value" } },
     { label: "a non-object entry", entry: "x" },
     { label: "a null entry", entry: null },
@@ -403,6 +427,36 @@ describe("B-23 — collected value and arg length (DC-026, browser half)", () =>
     const value = event({ collect: { note: { kind: "value", value: pastLimit } } });
     expect(rejection(value)).toBe("collected_value_too_long");
     expect(rejectionAt(value)).toBe("collect.note.value");
+  });
+
+  it("applies B-23 to every collected string-array item", () => {
+    const atLimit = textOf(BOUNDS.collectedValueChars);
+    const accepted = accept(
+      event({ collect: { tags: { kind: "value", value: [atLimit, "short"] } } }),
+    );
+    expect(accepted.collect["tags"]).toEqual({
+      kind: "value",
+      value: [atLimit, "short"],
+    });
+
+    const pastLimit = textOf(BOUNDS.collectedValueChars + 1);
+    const rejected = event({
+      collect: { tags: { kind: "value", value: ["short", pastLimit] } },
+    });
+    expect(rejection(rejected)).toBe("collected_value_too_long");
+    expect(rejectionAt(rejected)).toBe("collect.tags.value[1]");
+  });
+
+  it("bounds collected string-array item count with the existing array bound", () => {
+    const atLimit = new Array(BOUNDS.dataModelArrayLength).fill("value");
+    expect(
+      accept(event({ collect: { tags: { kind: "value", value: atLimit } } })).collect["tags"],
+    ).toEqual({ kind: "value", value: atLimit });
+
+    const pastLimit = [...atLimit, "one-more"];
+    const rejected = event({ collect: { tags: { kind: "value", value: pastLimit } } });
+    expect(rejection(rejected)).toBe("too_many_collected_values");
+    expect(rejectionAt(rejected)).toBe("collect.tags.value");
   });
 
   it("accepts an arg of exactly B-23 characters", () => {

@@ -34,45 +34,65 @@
 import type { MountedComponent } from "@facet/core";
 import type { ReactNode } from "react";
 
-import { Badge, Metric, Table, Text } from "./react/content.js";
+import {
+  Avatar,
+  Badge,
+  Chart,
+  Icon,
+  Image,
+  List,
+  Metric,
+  MetricGroup,
+  Progress,
+  Table,
+  Text,
+  Timeline,
+} from "./react/content.js";
+import { ActionBar, ActionGroup, Button, Navigation, NavigationItem } from "./react/expression.js";
+import {
+  Accordion,
+  AccordionItem,
+  ChoiceGroup,
+  Field,
+  Form,
+  MessageThread,
+  Select,
+  Toggle,
+} from "./react/interactive.js";
+import {
+  AppShell,
+  Card,
+  Divider,
+  Grid,
+  Modal,
+  Row,
+  Screen,
+  Section,
+  Split,
+  Stack,
+} from "./react/layout.js";
 import {
   Alert,
-  Avatar,
-  CTA,
-  Divider,
-  FeatureList,
-  Footer,
-  Gallery,
-  Hero,
-  LinkList,
-  LogoMark,
-  MediaCard,
-  Nav,
-  ProductShowcase,
-  ProfileHeader,
-  Progress,
-  Section,
-  SideNav,
-  SideNavItem,
-  SocialLinks,
-  StatStrip,
-  Testimonial,
-  Timeline,
-  VisualPanel,
-} from "./react/expression.js";
-import { Button, Field } from "./react/interactive.js";
-import { AppShell, Grid, Row, Screen, Split, Stack } from "./react/layout.js";
-import { Card, Empty, Modal } from "./react/surface.js";
+  Board,
+  BoardColumn,
+  Calendar,
+  Collection,
+  Detail,
+  Empty,
+  Header,
+  ItemCard,
+  Property,
+  PropertyList,
+  Result,
+} from "./react/surface.js";
 
 /**
  * The default registry: every tag in `DEFAULT_CATALOG` mapped to the trusted
  * React component that renders it.
  *
- * Grouped in the order the catalog registers them — layout first (`Screen`,
- * `Stack`, `Row`, `Grid`), then the surfaces that frame content (`Modal`,
- * `Card`, `Empty`), then expressive service-surface primitives, then what a
- * page says (`Text`, `Metric`, `Badge`, `Table`), then what a visitor touches
- * (`Button`, `Field`).
+ * Grouped in the catalog's structure, navigation, content, task-surface, and
+ * input/disclosure order. The explicit roster is intentional: retired private
+ * exports cannot enter the public trust boundary by accident.
  *
  * Each value is an ordinary React component that already satisfies
  * `MountedComponent<ReactNode, ReactNode>` as written, so nothing is wrapped or
@@ -87,41 +107,50 @@ import { Card, Empty, Modal } from "./react/surface.js";
 export const DEFAULT_REGISTRY: Readonly<Record<string, MountedComponent<ReactNode, ReactNode>>> =
   Object.freeze({
     Screen,
-    AppShell,
     Stack,
     Row,
-    Split,
     Grid,
-    Modal,
-    Card,
-    Empty,
-    LogoMark,
-    Nav,
-    SideNav,
-    SideNavItem,
+    Split,
+    AppShell,
     Section,
+    Card,
+    Modal,
     Divider,
-    Hero,
-    Avatar,
-    ProfileHeader,
-    ProductShowcase,
-    VisualPanel,
-    MediaCard,
-    LinkList,
-    SocialLinks,
-    FeatureList,
-    StatStrip,
-    Gallery,
-    Testimonial,
-    Timeline,
-    CTA,
-    Alert,
-    Progress,
-    Footer,
-    Text,
-    Metric,
-    Badge,
-    Table,
+    Navigation,
+    NavigationItem,
     Button,
+    ActionGroup,
+    ActionBar,
+    Text,
+    Avatar,
+    Icon,
+    Image,
+    Badge,
+    Metric,
+    MetricGroup,
+    Table,
+    Chart,
+    Progress,
+    Timeline,
+    List,
+    Header,
+    Collection,
+    ItemCard,
+    Detail,
+    PropertyList,
+    Property,
+    Board,
+    BoardColumn,
+    Calendar,
+    Result,
+    Empty,
+    Alert,
+    Form,
     Field,
+    Select,
+    ChoiceGroup,
+    Toggle,
+    MessageThread,
+    Accordion,
+    AccordionItem,
   });

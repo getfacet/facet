@@ -9,22 +9,31 @@ import {
 } from "./service-surfaces.js";
 
 describe("service surface taxonomy", () => {
-  it("locks the seven target service groups", () => {
+  it("locks the twelve target service families", () => {
     expect(SERVICE_SURFACE_GROUPS.map((group) => group.id)).toEqual([
-      "personal-presence",
-      "marketing-landing",
-      "commerce-booking",
-      "saas-workspace",
-      "content-editorial",
-      "data-report",
-      "support-form-flow",
+      "landing",
+      "personal-profile-resume",
+      "commerce",
+      "saas",
+      "analytics",
+      "booking-consultation",
+      "support",
+      "onboarding",
+      "operations-board",
+      "calendar-scheduling",
+      "messaging",
+      "form-result",
     ]);
   });
 
-  it("treats dashboard/workspace as one service group, not the default identity", () => {
+  it("marks only work-oriented families as dashboard-like", () => {
     const dashboardGroups = SERVICE_SURFACE_GROUPS.filter((group) => group.dashboardLike);
 
-    expect(dashboardGroups.map((group) => group.id)).toEqual(["saas-workspace"]);
+    expect(dashboardGroups.map((group) => group.id)).toEqual([
+      "saas",
+      "analytics",
+      "operations-board",
+    ]);
   });
 
   it("maps every group to safe shipped components", () => {
@@ -40,24 +49,17 @@ describe("service surface taxonomy", () => {
   });
 
   it("keeps the shipped service-surface vocabulary in lockstep with the default catalog", () => {
-    const catalogTags = DEFAULT_CATALOG.components.map((component) => component.tag).sort();
+    const catalogTags = DEFAULT_CATALOG.components.map((component) => component.tag);
 
-    expect([...SHIPPED_SERVICE_SURFACE_COMPONENTS].sort()).toEqual(catalogTags);
+    expect(SHIPPED_SERVICE_SURFACE_COMPONENTS).toEqual(catalogTags);
   });
 
-  it("does not force work/data components into every surface", () => {
-    const workTags = new Set(["Metric"]);
-    const groupsUsingWorkTags = SERVICE_SURFACE_GROUPS.filter((group) =>
-      group.shippedComponents.some((tag) => workTags.has(tag)),
-    );
-
-    expect(groupsUsingWorkTags.map((group) => group.id).sort()).toEqual([
-      "data-report",
-      "saas-workspace",
-    ]);
+  it("covers every shipped component across the twelve families", () => {
+    const used = new Set(SERVICE_SURFACE_GROUPS.flatMap((group) => group.shippedComponents));
+    expect([...used].sort()).toEqual([...SHIPPED_SERVICE_SURFACE_COMPONENTS].sort());
   });
 
-  it("defers unsafe or overly-specific candidates instead of half-opening them", () => {
-    expect(DEFERRED_SERVICE_SURFACE_COMPONENTS).toEqual(["Image", "Logo", "Pricing", "Form"]);
+  it("has no deferred components outside the approved catalog", () => {
+    expect(DEFERRED_SERVICE_SURFACE_COMPONENTS).toEqual([]);
   });
 });

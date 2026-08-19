@@ -37,7 +37,7 @@ function catalogRecord(): Record<string, unknown> {
             guidance: "The route name selected by the Facet entry.",
           },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
       {
         tag: "Text",
@@ -45,7 +45,7 @@ function catalogRecord(): Record<string, unknown> {
         props: {
           value: { type: "string", bindable: true, guidance: "Text to show." },
         },
-        acceptsChildren: false,
+        content: { mode: "none" },
       },
     ],
   };

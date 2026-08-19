@@ -263,6 +263,40 @@ function fieldImpl({ props, onValueChange }: ComponentMountProps<ReactNode>): Re
   );
 }
 
+function toggleImpl({ props, onValueChange }: ComponentMountProps<ReactNode>): ReactNode {
+  const value = props["value"] === true;
+  return (
+    <button type="button" data-testid="toggle" onClick={() => onValueChange?.(!value)}>
+      {String(value)}
+    </button>
+  );
+}
+
+function choiceGroupImpl({ props, onValueChange }: ComponentMountProps<ReactNode>): ReactNode {
+  const value = Array.isArray(props["value"]) ? props["value"] : [];
+  return (
+    <button
+      type="button"
+      data-testid="choice-group"
+      onClick={() => onValueChange?.(["north", "west"])}
+    >
+      {JSON.stringify(value)}
+    </button>
+  );
+}
+
+function imageImpl({ props }: ComponentMountProps<ReactNode>): ReactNode {
+  const asset = props["asset"] as { readonly src?: unknown; readonly width?: unknown } | undefined;
+  return (
+    <img
+      data-testid="image"
+      src={typeof asset?.src === "string" ? asset.src : ""}
+      width={typeof asset?.width === "number" ? asset.width : undefined}
+      alt="fixture"
+    />
+  );
+}
+
 /**
  * Flow content, and a render counter.
  *
@@ -270,9 +304,14 @@ function fieldImpl({ props, onValueChange }: ComponentMountProps<ReactNode>): Re
  * rather than a hope: a DOM read after the dust settles cannot tell a frame that
  * rendered nothing from a frame that never opened.
  */
-function modalImpl({ props, children }: ComponentMountProps<ReactNode>): ReactNode {
+function modalImpl({ props, slots }: ComponentMountProps<ReactNode>): ReactNode {
   modalContentRenders.push(String(props["title"] ?? ""));
-  return <div data-testid="modal-content">{children}</div>;
+  return (
+    <div data-testid="modal-content">
+      {slots["body"]}
+      {slots["actions"]}
+    </div>
+  );
 }
 
 /** A registered component that paints itself above everything it can reach. */
@@ -288,7 +327,7 @@ const SCREEN_SPEC: ComponentSpec = {
   props: {
     name: { type: "string", required: true, guidance: "This screen's name, as `nav:` reaches it." },
   },
-  acceptsChildren: true,
+  content: { mode: "children" },
 };
 
 const STACK_SPEC: ComponentSpec = {
@@ -302,7 +341,7 @@ const STACK_SPEC: ComponentSpec = {
       guidance: "Space between children, named in theme space tokens.",
     },
   },
-  acceptsChildren: true,
+  content: { mode: "children" },
 };
 
 const TEXT_SPEC: ComponentSpec = {
@@ -311,7 +350,7 @@ const TEXT_SPEC: ComponentSpec = {
   props: {
     value: { type: "string", required: true, bindable: true, guidance: "The words to show." },
   },
-  acceptsChildren: false,
+  content: { mode: "none" },
 };
 
 const METRIC_SPEC: ComponentSpec = {
@@ -321,7 +360,7 @@ const METRIC_SPEC: ComponentSpec = {
     label: { type: "string", required: true, guidance: "What the number measures." },
     value: { type: "number", required: true, bindable: true, guidance: "The number itself." },
   },
-  acceptsChildren: false,
+  content: { mode: "none" },
 };
 
 const BUTTON_SPEC: ComponentSpec = {
@@ -343,7 +382,7 @@ const BUTTON_SPEC: ComponentSpec = {
       guidance: "The `Field` names this `agent:` event carries, separated by spaces.",
     },
   },
-  acceptsChildren: false,
+  content: { mode: "none" },
 };
 
 const FIELD_SPEC: ComponentSpec = {
@@ -359,8 +398,13 @@ const FIELD_SPEC: ComponentSpec = {
     value: { type: "string", default: "", guidance: "The value shown; Facet owns it." },
     secret: { type: "boolean", default: false, guidance: "Keeps the value out of every event." },
   },
-  acceptsChildren: false,
-  collect: { collectable: true, valueProp: "value", sensitiveProp: "secret" },
+  content: { mode: "none" },
+  collect: {
+    collectable: true,
+    valueProp: "value",
+    valueKind: "string",
+    sensitiveProp: "secret",
+  },
 };
 
 const TABLE_SPEC: ComponentSpec = {
@@ -369,7 +413,43 @@ const TABLE_SPEC: ComponentSpec = {
   props: {
     rows: { type: "array", required: true, bindable: true, guidance: "The rows, bound from data." },
   },
-  acceptsChildren: false,
+  content: { mode: "none" },
+};
+
+const TOGGLE_SPEC: ComponentSpec = {
+  tag: "Toggle",
+  whenToUse: "Collect one boolean choice.",
+  props: {
+    name: { type: "string", required: true, guidance: "The collection address." },
+    value: { type: "boolean", default: false, guidance: "Whether it is enabled." },
+  },
+  content: { mode: "none" },
+  collect: { collectable: true, valueProp: "value", valueKind: "boolean" },
+};
+
+const CHOICE_GROUP_SPEC: ComponentSpec = {
+  tag: "ChoiceGroup",
+  whenToUse: "Collect several string choices.",
+  props: {
+    name: { type: "string", required: true, guidance: "The collection address." },
+    value: { type: "array", required: true, bindable: true, guidance: "Selected choices." },
+  },
+  content: { mode: "none" },
+  collect: { collectable: true, valueProp: "value", valueKind: "string[]" },
+};
+
+const IMAGE_SPEC: ComponentSpec = {
+  tag: "Image",
+  whenToUse: "Show one host-pinned image.",
+  props: {
+    asset: {
+      type: "string",
+      required: true,
+      assetKind: "image",
+      guidance: "The pinned image asset.",
+    },
+  },
+  content: { mode: "none" },
 };
 
 const MODAL_SPEC: ComponentSpec = {
@@ -383,7 +463,13 @@ const MODAL_SPEC: ComponentSpec = {
     },
     title: { type: "string", required: true, guidance: "The dialog's heading." },
   },
-  acceptsChildren: true,
+  content: {
+    mode: "slots",
+    slots: {
+      body: { guidance: "Content shown in the frame.", minChildren: 1, maxChildren: 16 },
+      actions: { guidance: "Actions shown in the footer.", minChildren: 0, maxChildren: 4 },
+    },
+  },
 };
 
 const EXAMPLE_SPECS: readonly ComponentSpec[] = [
@@ -414,21 +500,21 @@ const GRID_SPEC: ComponentSpec = {
   tag: "Grid",
   whenToUse: "A layout container.",
   props: {},
-  acceptsChildren: true,
+  content: { mode: "children" },
 };
 
 const CARD_SPEC: ComponentSpec = {
   tag: "Card",
   whenToUse: "A bounded surface.",
   props: {},
-  acceptsChildren: true,
+  content: { mode: "children" },
 };
 
 const ROGUE_SPEC: ComponentSpec = {
   tag: "Rogue",
   whenToUse: "A registered component that tries to escape its stacking context.",
   props: {},
-  acceptsChildren: false,
+  content: { mode: "none" },
 };
 
 const NESTING_SPECS: readonly ComponentSpec[] = [
@@ -458,8 +544,14 @@ function bootstrapOrThrow(
   specs: readonly ComponentSpec[],
   registry: ComponentRegistry,
   theme: FacetTheme = THEME,
+  assetRegistry?: Parameters<typeof bootstrapRenderer>[0]["assetRegistry"],
 ): AcceptedBootstrap {
-  const result = bootstrapRenderer({ catalog: { components: specs }, registry, theme });
+  const result = bootstrapRenderer({
+    catalog: { components: specs },
+    registry,
+    theme,
+    ...(assetRegistry === undefined ? {} : { assetRegistry }),
+  });
   if (!result.ok) {
     throw new Error(`bootstrap refused the fixture: ${result.code} at ${result.at}`);
   }
@@ -493,8 +585,8 @@ const EXAMPLE_MARKUP = `<Facet entry="home">
   <Screen name="details">
     <Table rows="data:sales.rows" />
     <Modal triggerLabel="Filter" title="Revenue filter">
-      <Field name="region" label="Region" />
-      <Button label="Refresh" action="agent:refresh" collect="region" />
+      <Field slot="body" name="region" label="Region" />
+      <Button slot="actions" label="Refresh" action="agent:refresh" collect="region" />
     </Modal>
   </Screen>
 </Facet>`;
@@ -615,8 +707,9 @@ const NESTING_DOCUMENT: ComponentDocument = Object.freeze({
     m1: {
       tag: "Modal",
       props: { triggerLabel: scalar("Filter"), title: scalar("Revenue filter") },
-      children: [],
+      children: ["mb1"],
     },
+    mb1: { tag: "Text", slot: "body", props: { value: scalar("Modal body") }, children: [] },
     // The later sibling: a whole subtree that paints itself as high as it can.
     r1: { tag: "Rogue", props: {}, children: [] },
   },
@@ -634,13 +727,15 @@ const TWO_MODALS: ComponentDocument = Object.freeze({
     alpha: {
       tag: "Modal",
       props: { triggerLabel: scalar("Alpha"), title: scalar("The alpha") },
-      children: [],
+      children: ["alphaBody"],
     },
+    alphaBody: { tag: "Text", slot: "body", props: { value: scalar("Alpha body") }, children: [] },
     zeta: {
       tag: "Modal",
       props: { triggerLabel: scalar("Zeta"), title: scalar("The zeta") },
-      children: [],
+      children: ["zetaBody"],
     },
+    zetaBody: { tag: "Text", slot: "body", props: { value: scalar("Zeta body") }, children: [] },
   },
 });
 
@@ -922,6 +1017,105 @@ describe("Example 1, end to end through registered implementations", () => {
     expect(events[0]?.["collect"]).toEqual({ region: { kind: "value", value: "" } });
     fireEvent.click(requirePart("dismiss"));
     expect(testIds("modal-content")).toEqual([]);
+  });
+});
+
+describe("typed collected values flow through the store and event payload", () => {
+  it("forwards boolean and string-array values unchanged", () => {
+    const bootstrap = bootstrapOrThrow(
+      [...EXAMPLE_SPECS, TOGGLE_SPEC, CHOICE_GROUP_SPEC],
+      Object.freeze({
+        ...EXAMPLE_REGISTRY,
+        Toggle: toggleImpl,
+        ChoiceGroup: choiceGroupImpl,
+      }),
+    );
+    const typedDocument: ComponentDocument = {
+      entry: "home",
+      screens: ["s1"],
+      nodes: {
+        s1: {
+          tag: "Screen",
+          props: { name: scalar("home") },
+          children: ["toggle", "choices", "submit"],
+        },
+        toggle: {
+          tag: "Toggle",
+          props: { name: scalar("enabled") },
+          children: [],
+        },
+        choices: {
+          tag: "ChoiceGroup",
+          props: {
+            name: scalar("regions"),
+            value: { kind: "reference", scheme: "data", target: "selected" },
+          },
+          children: [],
+        },
+        submit: {
+          tag: "Button",
+          props: {
+            label: scalar("Submit typed"),
+            action: { kind: "reference", scheme: "agent", target: "submit_typed" },
+            collect: scalar("enabled regions"),
+          },
+          children: [],
+        },
+      },
+    };
+
+    render(stage({ bootstrap, document: typedDocument, data: { selected: ["north"] } }));
+    fireEvent.click(one('[data-testid="toggle"]'));
+    fireEvent.click(one('[data-testid="choice-group"]'));
+    clickButton("Submit typed");
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.["collect"]).toEqual({
+      enabled: { kind: "value", value: true },
+      regions: { kind: "value", value: ["north", "west"] },
+    });
+    const regions = (events[0]?.["collect"] as Record<string, { kind: "value"; value: unknown }>)[
+      "regions"
+    ]?.value;
+    expect(Object.isFrozen(regions)).toBe(true);
+  });
+});
+
+describe("host-pinned image assets flow through the accepted bootstrap", () => {
+  it("resolves an asset reference before the trusted component mounts", () => {
+    const source = {
+      hero: { kind: "image" as const, src: "https://cdn.example.com/hero.png", width: 1200 },
+    };
+    const bootstrap = bootstrapOrThrow(
+      [...EXAMPLE_SPECS, IMAGE_SPEC],
+      Object.freeze({ ...EXAMPLE_REGISTRY, Image: imageImpl }),
+      THEME,
+      source,
+    );
+    const assetDocument: ComponentDocument = {
+      entry: "home",
+      screens: ["s1"],
+      nodes: {
+        s1: { tag: "Screen", props: { name: scalar("home") }, children: ["image"] },
+        image: {
+          tag: "Image",
+          props: { asset: { kind: "reference", scheme: "asset", target: "hero" } },
+          children: [],
+        },
+      },
+    };
+    source.hero = {
+      kind: "image",
+      src: "https://attacker.example/changed.png",
+      width: 1,
+    };
+
+    render(stage({ bootstrap, document: assetDocument }));
+
+    expect(one('[data-testid="image"]').getAttribute("src")).toBe(
+      "https://cdn.example.com/hero.png",
+    );
+    expect(one('[data-testid="image"]').getAttribute("width")).toBe("1200");
   });
 });
 

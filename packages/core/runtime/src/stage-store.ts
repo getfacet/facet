@@ -4,6 +4,7 @@ import {
   evaluateCandidateModel,
   FACET_THEME_CONTRACT,
   facetThemeToKebabCase,
+  isFacetIdentifier,
   NEUTRAL_COPY_DEFAULTS,
   resolveNeutralCopy,
   validateCatalog,
@@ -83,7 +84,7 @@ const FALLBACK_CATALOG_INPUT = Object.freeze({
           guidance: "The screen name the document entry selects.",
         }),
       }),
-      acceptsChildren: true,
+      content: Object.freeze({ mode: "children" }),
     }),
   ]),
 });
@@ -458,6 +459,24 @@ function normalizeNode(
     return null;
   }
 
+  const slot = readOwn(rawNode, "slot", context.issues, `document.nodes.${id}.slot`);
+  if (slot !== undefined && (typeof slot !== "string" || !isFacetIdentifier(slot))) {
+    context.issues.push(
+      issue("invalid_slot", `document.nodes.${id}.slot`, "A restored node slot is invalid."),
+    );
+    return null;
+  }
+  if (isScreenRoot && slot !== undefined) {
+    context.issues.push(
+      issue(
+        "invalid_screen_slot",
+        `document.nodes.${id}.slot`,
+        "A screen root cannot fill a slot.",
+      ),
+    );
+    return null;
+  }
+
   const props = normalizeProps(
     readOwn(rawNode, "props", context.issues, `document.nodes.${id}.props`),
     spec,
@@ -475,7 +494,7 @@ function normalizeNode(
     );
     return null;
   }
-  if (!spec.acceptsChildren && rawChildren.length > 0) {
+  if (spec.content.mode === "none" && rawChildren.length > 0) {
     context.issues.push(
       issue(
         "children_not_allowed",
@@ -511,6 +530,7 @@ function normalizeNode(
 
   context.outputNodes[id] = Object.freeze({
     tag,
+    ...(typeof slot === "string" ? { slot } : {}),
     props,
     children: Object.freeze(children),
   });

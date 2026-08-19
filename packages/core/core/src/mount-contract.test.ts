@@ -8,7 +8,12 @@ import { describe, expect, it } from "vitest";
 
 import type { BindingResolution } from "./data-binding.js";
 import * as mountContract from "./mount-contract.js";
-import type { CollectableMount, ComponentMountProps, MountedComponent } from "./mount-contract.js";
+import type {
+  CollectableMount,
+  CollectedValue,
+  ComponentMountProps,
+  MountedComponent,
+} from "./mount-contract.js";
 
 /**
  * The mount contract is types only, so **vitest alone cannot check it**: every
@@ -139,9 +144,13 @@ const Card: MountedComponent<readonly FakeElement[], FakeElement> = (props) => {
   return { rendered: `${String(title)}|${tone}|${props.children.length}` };
 };
 
+const Structured: MountedComponent<readonly FakeElement[], FakeElement> = (props) => ({
+  rendered: Object.keys(props.slots).sort().join("|"),
+});
+
 /** A collectable component: Facet owns the value and hands back a way to change it. */
 const Field = (props: CollectableMount<readonly FakeElement[]>): FakeElement => {
-  props.onValueChange(String(props.props["value"] ?? ""));
+  props.onValueChange(props.props["value"] as CollectedValue);
   return { rendered: `field:${String(props.props["value"])}` };
 };
 
@@ -158,6 +167,7 @@ function mountProps(
   return {
     props: { title: "Revenue", label: "Refresh", value: "north" },
     children: [],
+    slots: {},
     themeVars: { "--facet-semantic-surface-default": "#fff" },
     onAction: () => undefined,
     ...overrides,
@@ -176,18 +186,25 @@ describe("the mount contract is a types-only module", () => {
     expectNoDependency("emitted declaration", emitDeclaration());
   }, 60_000);
 
-  it("emits declarations for exactly the three public names", () => {
+  it("emits declarations for exactly the five public names", () => {
     const declaration = emitDeclaration();
     expect(declaration).toMatch(/export\s+interface\s+ComponentMountProps\b/);
     expect(declaration).toMatch(/export\s+type\s+CollectableMount\b/);
     expect(declaration).toMatch(/export\s+type\s+MountedComponent\b/);
-    // Nothing else is public: the only exported names are those three.
+    expect(declaration).toMatch(/export\s+type\s+CollectedValue\b/);
+    expect(declaration).toMatch(/export\s+type\s+CollectedValueKind\b/);
     const exported = [
       ...declaration.matchAll(/export\s+(?:declare\s+)?(?:interface|type)\s+(\w+)/g),
     ]
       .map((match) => match[1])
       .sort();
-    expect(exported).toEqual(["CollectableMount", "ComponentMountProps", "MountedComponent"]);
+    expect(exported).toEqual([
+      "CollectableMount",
+      "CollectedValue",
+      "CollectedValueKind",
+      "ComponentMountProps",
+      "MountedComponent",
+    ]);
   });
 
   it("contributes no runtime code, so no value can be mounted from it", () => {
@@ -233,6 +250,20 @@ describe("a trusted component mounted through the contract", () => {
     expect(Card(mountProps({ children })).rendered).toBe("Revenue|#fff|2");
   });
 
+  it("receives named slots separately from ordinary children", () => {
+    expect(
+      Structured(
+        mountProps({
+          children: [],
+          slots: {
+            actions: [{ rendered: "save" }],
+            body: [{ rendered: "content" }],
+          },
+        }),
+      ).rendered,
+    ).toBe("actions|body");
+  });
+
   it("reports an interaction through the injected callback, naming the prop", () => {
     const fired: string[] = [];
     expect(Button(mountProps({ onAction: (prop) => fired.push(prop) })).rendered).toBe(
@@ -244,13 +275,25 @@ describe("a trusted component mounted through the contract", () => {
 
 describe("a collectable component", () => {
   it("receives a guaranteed onValueChange, and its value through the declared prop", () => {
-    const seen: string[] = [];
+    const seen: CollectedValue[] = [];
     const mount: CollectableMount<readonly FakeElement[]> = {
       ...mountProps(),
       onValueChange: (value) => seen.push(value),
     };
     expect(Field(mount).rendered).toBe("field:north");
     expect(seen).toEqual(["north"]);
+  });
+
+  it("accepts exactly strings, booleans, and immutable string arrays", () => {
+    const seen: CollectedValue[] = [];
+    const mount: CollectableMount<readonly FakeElement[]> = {
+      ...mountProps(),
+      onValueChange: (value) => seen.push(value),
+    };
+    mount.onValueChange("north");
+    mount.onValueChange(true);
+    mount.onValueChange(Object.freeze(["north", "south"]));
+    expect(seen).toEqual(["north", true, ["north", "south"]]);
   });
 
   it("is a narrowing of the ordinary mount payload, not a separate shape", () => {

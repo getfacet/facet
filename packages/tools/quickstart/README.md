@@ -126,7 +126,7 @@ export default {
       tag: "PromoBanner",
       whenToUse: "Use for a branded promotional banner.",
       props: {},
-      acceptsChildren: false,
+      content: { mode: "none" },
     },
   ],
   registry: { PromoBanner },
@@ -220,7 +220,7 @@ runtime authority window, 125.25 seconds by default, and a browser POST timeout
 five seconds longer so first-run LLM calls do not fail just after the default
 server/client turn windows.
 The same bundle exposes a local Assets view for the active catalog: service
-groups, component role groups, and full-screen examples rendered through the
+groups, derived component content classes, and full-screen examples rendered through the
 active catalog, registry, and theme. Selecting an Assets example is local UI
 state and does not call the live transport.
 Custom components, credentials, tenant routing, and domain data fetches belong

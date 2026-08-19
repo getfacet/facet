@@ -29,7 +29,7 @@ const PROMO_BANNER_SPEC: ComponentSpec = Object.freeze({
       required: true,
     }),
   }),
-  acceptsChildren: false,
+  content: { mode: "none" as const },
 });
 
 const PROMO_MARKUP = `<Facet entry="home">

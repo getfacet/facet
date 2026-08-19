@@ -46,11 +46,10 @@ import { LAYOUT_SPECS } from "./specs-layout.js";
 import { SURFACE_SPECS } from "./specs-surface.js";
 
 /**
- * The default specs, grouped in registration order: layout first
- * (`Screen`, `AppShell`, `Stack`, `Row`, `Split`, `Grid`), then the surfaces that frame content
- * (`Modal`, `Card`, `Empty`), then service-surface expression components,
- * then what a page says (`Text`, `Metric`, `Badge`, `Table`), then what a
- * visitor touches (`Button`, `Field`).
+ * The default specs, grouped in registration order: structure, navigation and
+ * actions, content and data display, task surfaces, then input and disclosure.
+ * The modules own their members; this assembler deliberately carries no second
+ * copy of the 47-tag roster.
  *
  * Frozen, because a host reads this array to build its registry: an array a
  * consumer could push onto would let the two halves of the trust boundary drift
@@ -59,8 +58,8 @@ import { SURFACE_SPECS } from "./specs-surface.js";
 export const DEFAULT_COMPONENT_SPECS: readonly ComponentSpec[] = Object.freeze([
   ...LAYOUT_SPECS,
   ...SURFACE_SPECS,
-  ...EXPRESSION_SPECS,
   ...CONTENT_SPECS,
+  ...EXPRESSION_SPECS,
   ...INTERACTIVE_SPECS,
 ]);
 

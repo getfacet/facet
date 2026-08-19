@@ -10,6 +10,7 @@ import {
   type QuickstartDesignOverlay,
   type QuickstartResolvedDesignExample,
 } from "../design-overlay.js";
+import { QUICKSTART_PREVIEW_ASSET_REGISTRY } from "./component-preview-fixtures.js";
 
 export type QuickstartActiveDesignMode = "default" | "overlay";
 
@@ -75,6 +76,7 @@ export function resolveQuickstartPageActiveDesign(
     registry,
     theme: resolved.design.theme,
     themeExtensions: resolved.design.themeExtensions,
+    assetRegistry: QUICKSTART_PREVIEW_ASSET_REGISTRY,
   });
   if (!bootstrap.ok) {
     return bootstrapFailure(bootstrap);
@@ -102,6 +104,7 @@ function fromDefaults(
     catalog: DEFAULT_CATALOG,
     registry: defaultRegistry,
     theme,
+    assetRegistry: QUICKSTART_PREVIEW_ASSET_REGISTRY,
   });
   if (!bootstrap.ok) {
     return bootstrapFailure(bootstrap);

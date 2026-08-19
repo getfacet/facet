@@ -26,7 +26,7 @@ export function testCatalog(): FacetCatalog {
             guidance: "Screen name.",
           },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
       {
         tag: "Text",
@@ -35,7 +35,7 @@ export function testCatalog(): FacetCatalog {
           value: { type: "string", guidance: "Text value.", bindable: true },
           arg: { type: "string", guidance: "Event argument." },
         },
-        acceptsChildren: false,
+        content: { mode: "none" },
       },
     ],
   });

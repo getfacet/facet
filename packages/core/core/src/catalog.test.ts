@@ -9,14 +9,14 @@ function spec(tag: string, overrides: Record<string, unknown> = {}): Record<stri
     tag,
     whenToUse: `Use ${tag} when the content calls for it.`,
     props: {},
-    acceptsChildren: false,
+    content: { mode: "none" },
     ...overrides,
   };
 }
 
 /**
  * The `Modal` the framework frame projects: a trigger label, a title, and flow
- * content as children. Everything else — scrim, placement, z band, focus trap,
+ * content in named body/actions slots. Everything else — scrim, placement, z band, focus trap,
  * escape — belongs to the frame, so it never appears in the registered schema.
  */
 function conformingModal(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -27,7 +27,13 @@ function conformingModal(overrides: Record<string, unknown> = {}): Record<string
       triggerLabel: { type: "string", required: true, guidance: "Label of the opening control." },
       title: { type: "string", required: true, guidance: "Title shown in the frame header." },
     },
-    acceptsChildren: true,
+    content: {
+      mode: "slots",
+      slots: {
+        body: { guidance: "Content shown in the frame.", minChildren: 1, maxChildren: 16 },
+        actions: { guidance: "Actions shown in the footer.", minChildren: 0, maxChildren: 4 },
+      },
+    },
     ...overrides,
   };
 }
@@ -56,12 +62,12 @@ function screenNameProp(overrides: Record<string, unknown> = {}): Record<string,
  * Presence alone is not enough: the renderer mounts a stored `Screen` root, so
  * the registered spec has to be one the grammar and renderer can actually use.
  * Every downstream fixture copies this exact shape — a bare
- * `{ tag: "Screen", acceptsChildren: true }` is **not** conforming.
+ * `{ tag: "Screen", content: { mode: "children" } }` is **not** conforming.
  */
 function screenSpec(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return spec("Screen", {
     props: { name: screenNameProp() },
-    acceptsChildren: true,
+    content: { mode: "children" },
     ...overrides,
   });
 }
@@ -85,7 +91,7 @@ function collectNameProp(overrides: Record<string, unknown> = {}): Record<string
 function collectableSpec(props: Record<string, unknown>): Record<string, unknown> {
   return spec("Field", {
     props: { value: { type: "string", guidance: "The current value." }, ...props },
-    collect: { collectable: true, valueProp: "value" },
+    collect: { collectable: true, valueProp: "value", valueKind: "string" },
   });
 }
 
@@ -166,6 +172,34 @@ describe("validateCatalog — duplicate tags are rejected (one tag, one componen
 
   it("treats tags differing only in case as distinct — the registry match is exact", () => {
     expect(validateCatalog(catalogWithScreen(spec("Card"), spec("card"))).ok).toBe(true);
+  });
+});
+
+describe("validateCatalog — slot tag restrictions resolve inside the same catalog", () => {
+  function structured(allowedTags: readonly string[]): Record<string, unknown> {
+    return spec("Structured", {
+      content: {
+        mode: "slots",
+        slots: {
+          items: {
+            guidance: "Components admitted to this region.",
+            minChildren: 0,
+            maxChildren: 4,
+            allowedTags,
+          },
+        },
+      },
+    });
+  }
+
+  it("accepts a forward reference to a component registered later", () => {
+    expect(validateCatalog(catalogWithScreen(structured(["Card"]), spec("Card"))).ok).toBe(true);
+  });
+
+  it("rejects an allowed tag no component in the catalog registers", () => {
+    const value = catalogWithScreen(structured(["Missing"]), spec("Card"));
+    expect(catalogRejection(value)).toBe("unknown_allowed_tag");
+    expect(catalogRejectionAt(value)).toBe("components[0].content.slots.items.allowedTags.0");
   });
 });
 
@@ -376,9 +410,9 @@ describe("validateCatalog — the registered `Screen` must conform, not merely e
   });
 
   it("rejects a Screen that accepts no children — a screen root holds content", () => {
-    const childless = { acceptsChildren: false };
+    const childless = { content: { mode: "none" } };
     expect(catalogRejection(screenCatalog(childless))).toBe("nonconforming_screen_spec");
-    expect(catalogRejectionAt(screenCatalog(childless))).toBe("components[1].acceptsChildren");
+    expect(catalogRejectionAt(screenCatalog(childless))).toBe("components[1].content");
   });
 
   /**
@@ -389,7 +423,7 @@ describe("validateCatalog — the registered `Screen` must conform, not merely e
    */
   const collectingScreen: Record<string, unknown> = {
     props: { name: screenNameProp(), value: { type: "string", guidance: "The current value." } },
-    collect: { collectable: true, valueProp: "value" },
+    collect: { collectable: true, valueProp: "value", valueKind: "string" },
   };
 
   it("rejects a Screen declaring collect — a screen root is not a collected value", () => {
@@ -407,7 +441,7 @@ describe("validateCatalog — the registered `Screen` must conform, not merely e
       nameProp({ enum: ["home"] }),
       nameProp({ bindable: true }),
       nameProp({ bindable: false }),
-      { acceptsChildren: false },
+      { content: { mode: "none" } },
       collectingScreen,
     ];
     const codes = nonconforming.map((overrides) => catalogRejection(screenCatalog(overrides)));
@@ -426,7 +460,7 @@ describe("validateCatalog — the registered `Screen` must conform, not merely e
 
   it("lets a sibling member's own rejection come first", () => {
     const broken = { ...spec("Card"), category: "surface" };
-    expect(catalogRejection(catalogOf(broken, screenSpec({ acceptsChildren: false })))).toBe(
+    expect(catalogRejection(catalogOf(broken, screenSpec({ content: { mode: "none" } })))).toBe(
       "unknown_spec_key",
     );
   });
@@ -435,7 +469,7 @@ describe("validateCatalog — the registered `Screen` must conform, not merely e
     const duplicated = catalogOf(
       spec("Card"),
       spec("Card"),
-      screenSpec({ acceptsChildren: false }),
+      screenSpec({ content: { mode: "none" } }),
     );
     expect(catalogRejection(duplicated)).toBe("duplicate_tag");
   });
@@ -445,7 +479,7 @@ describe("validateCatalog — the registered `Screen` must conform, not merely e
   });
 
   it("is deterministic — the same input yields an equal result on repeat calls", () => {
-    const nonconforming = screenCatalog({ acceptsChildren: false });
+    const nonconforming = screenCatalog({ content: { mode: "none" } });
     expect(validateCatalog(nonconforming)).toEqual(validateCatalog(nonconforming));
   });
 });
@@ -497,7 +531,7 @@ describe("validateCatalog — a collectable member must declare its collection a
     const collided = catalogWithScreen(
       spec("Field", {
         props: { name: collectNameProp() },
-        collect: { collectable: true, valueProp: "name" },
+        collect: { collectable: true, valueProp: "name", valueKind: "string" },
       }),
     );
     expect(catalogRejection(collided)).toBe("nonconforming_collect_name");
@@ -514,11 +548,11 @@ describe("validateCatalog — a collectable member must declare its collection a
   });
 
   it("comes before the screen refinement, which is a separate rule with its own code", () => {
-    const both = catalogOf(collectableSpec({}), screenSpec({ acceptsChildren: false }));
+    const both = catalogOf(collectableSpec({}), screenSpec({ content: { mode: "none" } }));
     expect(catalogRejection(both)).toBe("nonconforming_collect_name");
-    expect(catalogRejection(catalogOf(spec("Card"), screenSpec({ acceptsChildren: false })))).toBe(
-      "nonconforming_screen_spec",
-    );
+    expect(
+      catalogRejection(catalogOf(spec("Card"), screenSpec({ content: { mode: "none" } }))),
+    ).toBe("nonconforming_screen_spec");
   });
 
   it("applies to a collectable Screen too — the address rule is not tag-specific", () => {
@@ -527,7 +561,7 @@ describe("validateCatalog — a collectable member must declare its collection a
         name: collectNameProp({ bindable: true }),
         value: { type: "string", guidance: "The current value." },
       },
-      collect: { collectable: true, valueProp: "value" },
+      collect: { collectable: true, valueProp: "value", valueKind: "string" },
     });
     const catalog = catalogOf(spec("Card"), collectingScreen);
     expect(catalogRejection(catalog)).toBe("nonconforming_collect_name");
@@ -628,7 +662,7 @@ describe("validateCatalog — a declared `collect` prop must be the framework re
   it("applies to the `Screen` member too, ahead of the screen refinement", () => {
     const nonconforming = screenSpec({
       props: { name: screenNameProp(), collect: collectRequestProp({ enum: ["home"] }) },
-      acceptsChildren: false,
+      content: { mode: "none" },
     });
     const catalog = catalogOf(spec("Card"), nonconforming);
     expect(catalogRejection(catalog)).toBe("nonconforming_collect_request");
@@ -637,7 +671,7 @@ describe("validateCatalog — a declared `collect` prop must be the framework re
     // so the row above is not rejecting through the refinement's own code.
     const conforming = screenSpec({
       props: { name: screenNameProp(), collect: collectRequestProp() },
-      acceptsChildren: false,
+      content: { mode: "none" },
     });
     expect(catalogRejection(catalogOf(spec("Card"), conforming))).toBe("nonconforming_screen_spec");
   });
@@ -648,7 +682,7 @@ describe("validateCatalog — a declared `collect` prop must be the framework re
         value: { type: "string", guidance: "The current value." },
         collect: collectRequestProp({ bindable: true }),
       },
-      collect: { collectable: true, valueProp: "value" },
+      collect: { collectable: true, valueProp: "value", valueKind: "string" },
     });
     expect(catalogRejection(catalogWithScreen(both))).toBe("nonconforming_collect_request");
     expect(catalogRejectionAt(catalogWithScreen(both))).toBe(
@@ -661,7 +695,7 @@ describe("validateCatalog — a declared `collect` prop must be the framework re
         value: { type: "string", guidance: "The current value." },
         collect: collectRequestProp(),
       },
-      collect: { collectable: true, valueProp: "value" },
+      collect: { collectable: true, valueProp: "value", valueKind: "string" },
     });
     expect(catalogRejection(catalogWithScreen(addressOnly))).toBe("nonconforming_collect_name");
     expect(catalogRejectionAt(catalogWithScreen(addressOnly))).toBe("components[0].props.name");
@@ -786,7 +820,7 @@ describe("validateCatalog — a declared `arg` prop must be the framework event 
   it("applies to the `Screen` member too, ahead of the screen refinement", () => {
     const nonconforming = screenSpec({
       props: { name: screenNameProp(), arg: eventArgProp({ default: "home" }) },
-      acceptsChildren: false,
+      content: { mode: "none" },
     });
     const catalog = catalogOf(spec("Card"), nonconforming);
     expect(catalogRejection(catalog)).toBe("nonconforming_event_arg");
@@ -795,7 +829,7 @@ describe("validateCatalog — a declared `arg` prop must be the framework event 
     // refinement, so the row above is not rejecting through the other code.
     const conforming = screenSpec({
       props: { name: screenNameProp(), arg: eventArgProp() },
-      acceptsChildren: false,
+      content: { mode: "none" },
     });
     expect(catalogRejection(catalogOf(spec("Card"), conforming))).toBe("nonconforming_screen_spec");
   });
@@ -936,7 +970,7 @@ describe("buildCatalogIndex", () => {
   it("resolves the Screen root like any other registered tag", () => {
     const index = buildCatalogIndex(acceptCatalog(catalogWithScreen(spec("Card"))));
     expect(index.get("Screen")?.tag).toBe("Screen");
-    expect(index.get("Screen")?.acceptsChildren).toBe(true);
+    expect(index.get("Screen")?.content.mode).toBe("children");
   });
 
   it("returns undefined for an unregistered tag rather than inventing one", () => {
@@ -1012,9 +1046,9 @@ describe("validateModalConformance — Modal is the one dedicated overlap contra
     expect(modalRejection(contradicting)).toBe("modal_prop_default_conflict");
   });
 
-  it("rejects a Modal that accepts no children — the frame projects flow content", () => {
-    expect(modalRejection(conformingModal({ acceptsChildren: false }))).toBe(
-      "modal_must_accept_children",
+  it("rejects a Modal without named slots — the frame projects body and actions", () => {
+    expect(modalRejection(conformingModal({ content: { mode: "none" } }))).toBe(
+      "modal_must_use_slots",
     );
   });
 
@@ -1028,7 +1062,7 @@ describe("validateModalConformance — Modal is the one dedicated overlap contra
         name: collectNameProp(),
         value: { type: "string", guidance: "The current value." },
       },
-      collect: { collectable: true, valueProp: "value" },
+      collect: { collectable: true, valueProp: "value", valueKind: "string" },
     };
     expect(modalRejection(collecting)).toBe("modal_must_not_collect");
   });
@@ -1053,7 +1087,7 @@ describe("validateModalConformance — Modal is the one dedicated overlap contra
   });
 
   it("is deterministic — the same input yields an equal result on repeat calls", () => {
-    const contradicting = conformingModal({ acceptsChildren: false });
+    const contradicting = conformingModal({ content: { mode: "none" } });
     expect(validateModalConformance(contradicting)).toEqual(
       validateModalConformance(contradicting),
     );

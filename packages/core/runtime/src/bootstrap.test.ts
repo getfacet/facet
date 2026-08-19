@@ -16,7 +16,7 @@ function spec(tag: string, overrides: Record<string, unknown> = {}): Record<stri
     tag,
     whenToUse: `Use ${tag} when this component fits the page.`,
     props: {},
-    acceptsChildren: false,
+    content: { mode: "none" },
     ...overrides,
   };
 }
@@ -30,7 +30,7 @@ function screenSpec(): Record<string, unknown> {
         guidance: "The screen name the document entry can target.",
       },
     },
-    acceptsChildren: true,
+    content: { mode: "children" },
   });
 }
 
@@ -47,7 +47,21 @@ function modalSpec(overrides: Record<string, unknown> = {}): Record<string, unkn
       triggerLabel: { type: "string", required: true, guidance: "Label of the opening control." },
       title: { type: "string", required: true, guidance: "Title shown in the frame header." },
     },
-    acceptsChildren: true,
+    content: {
+      mode: "slots",
+      slots: {
+        body: {
+          guidance: "The modal's main content.",
+          minChildren: 1,
+          maxChildren: 16,
+        },
+        actions: {
+          guidance: "Controls that act on the modal.",
+          minChildren: 0,
+          maxChildren: 4,
+        },
+      },
+    },
     ...overrides,
   });
 }
@@ -107,7 +121,7 @@ describe("bootstrapSession", () => {
   });
 
   it("validates a present Modal and relays the Modal conformance rejection verbatim", () => {
-    const badModal = modalSpec({ acceptsChildren: false });
+    const badModal = modalSpec({ content: { mode: "children" } });
     const expected = validateModalConformance(badModal);
     const result = bootstrapSession({
       catalog: catalogWithScreen(textSpec(), badModal) as unknown as FacetCatalog,

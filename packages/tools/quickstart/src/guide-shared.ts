@@ -15,12 +15,14 @@ function attr(value: string): string {
 
 /** Builds one markup navigation row for the quickstart's four seeded screens. */
 export function quickstartNavigationMarkup(): string {
-  const buttons = QUICKSTART_NAV_ITEMS.map(
-    (item) => `<Button label="${attr(item.label)}" action="nav:${attr(item.to)}" tone="quiet" />`,
+  const items = QUICKSTART_NAV_ITEMS.map(
+    (item) =>
+      `<NavigationItem slot="items" label="${attr(item.label)}" action="nav:${attr(item.to)}" />`,
   ).join("\n      ");
-  return `<Nav brand="Facet" mark="F" label="Quickstart">
-      ${buttons}
-    </Nav>`;
+  return `<Navigation label="Quickstart" orientation="horizontal">
+      <Text slot="brand" value="Facet" variant="heading" />
+      ${items}
+    </Navigation>`;
 }
 
 /** Builds a small explanatory card without reintroducing the retired seed model. */

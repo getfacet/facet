@@ -42,6 +42,11 @@
  * the component — owns what happens next. Neither returns anything: a component
  * cannot navigate, mutate the document, or decide whether an event is sent.
  */
+export type CollectedValue = string | boolean | readonly string[];
+
+/** The catalog spelling of each collected value branch. */
+export type CollectedValueKind = "string" | "boolean" | "string[]";
+
 export interface ComponentMountProps<Children = unknown> {
   /**
    * The node's resolved props, keyed by the declared prop name. Every value has
@@ -55,6 +60,8 @@ export interface ComponentMountProps<Children = unknown> {
   >;
   /** The already-mounted children, in document order. */
   readonly children: Children;
+  /** Named regions for a structured component, already mounted and frozen. */
+  readonly slots: Readonly<Record<string, Children>>;
   /** The active theme's custom properties, ready to put on a style attribute. */
   readonly themeVars: Readonly<Record<string, string>>;
   /**
@@ -79,7 +86,7 @@ export interface ComponentMountProps<Children = unknown> {
    * value: it arrives back through `props` under the catalog-declared value
    * prop, and the component never stamps it anywhere for Facet to read (D-08).
    */
-  readonly onValueChange?: (value: string) => void;
+  readonly onValueChange?: (value: CollectedValue) => void;
 }
 
 /**

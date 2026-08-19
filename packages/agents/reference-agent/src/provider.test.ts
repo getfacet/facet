@@ -334,7 +334,12 @@ const EXACT_SPEC_RESULT = JSON.stringify({
   tool: "read_component_spec",
   status: "ok",
   outcome: "no_stage_change",
-  data: { tag: "Screen", props: ["name"], acceptsChildren: true },
+  data: {
+    tag: "Screen",
+    props: ["name"],
+    contentClass: "Container",
+    content: { mode: "children" },
+  },
 });
 const SPEC_WIRE_TURN: ProviderTurn = {
   system: "sys",

@@ -88,6 +88,12 @@ export const AUTHOR_ERROR_CODES: readonly AuthorErrorCode[] = Object.freeze([
   "too-many-screens",
   "unknown-tag",
   "children-not-accepted",
+  "slot-not-accepted",
+  "missing-child-slot",
+  "unknown-slot",
+  "slot-tag-not-allowed",
+  "missing-slot-children",
+  "too-many-slot-children",
   "reserved-attribute",
   "undeclared-prop",
   "missing-required-prop",
@@ -153,6 +159,12 @@ export type AuthorErrorCode =
   | "too-many-screens"
   | "unknown-tag"
   | "children-not-accepted"
+  | "slot-not-accepted"
+  | "missing-child-slot"
+  | "unknown-slot"
+  | "slot-tag-not-allowed"
+  | "missing-slot-children"
+  | "too-many-slot-children"
   | "reserved-attribute"
   | "undeclared-prop"
   | "missing-required-prop"

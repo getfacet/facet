@@ -27,7 +27,13 @@
  */
 
 import { BOUNDS } from "@facet/core";
-import type { ComponentMountProps, ComponentNode, ComponentSpec, DataModel } from "@facet/core";
+import type {
+  ComponentMountProps,
+  ComponentNode,
+  ComponentSpec,
+  DataModel,
+  FacetAssetRegistry,
+} from "@facet/core";
 import { cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
 import type { ReactNode } from "react";
@@ -44,7 +50,7 @@ function scalar(value: string): StoredValue {
   return { kind: "scalar", value };
 }
 
-function reference(scheme: "data" | "nav" | "agent", target: string): StoredValue {
+function reference(scheme: "data" | "nav" | "agent" | "asset", target: string): StoredValue {
   return { kind: "reference", scheme, target };
 }
 
@@ -82,7 +88,7 @@ const SPEC: ComponentSpec = {
     action: { type: "string", guidance: "May carry an action reference." },
     plain: { type: "string", guidance: "An ordinary optional string, no default." },
   },
-  acceptsChildren: false,
+  content: { mode: "none" },
 };
 
 const MODEL: DataModel = {
@@ -194,7 +200,7 @@ describe("resolveProps hands a trusted component declared props only", () => {
         limit: { type: "number", minimum: 1, maximum: 50, default: 999, guidance: "Bounded." },
         tone: { type: "string", enum: ["primary"], default: "elsewhere", guidance: "A domain." },
       },
-      acceptsChildren: false,
+      content: { mode: "none" },
     };
     const resolution = resolveProps(node("Panel", { caption: scalar("Revenue") }), spec, MODEL);
 
@@ -218,7 +224,7 @@ describe("resolveProps hands a trusted component declared props only", () => {
         tone: { type: "string", default: 7, guidance: "Not a string." },
         dense: { type: "boolean", default: "yes", guidance: "Not a boolean." },
       },
-      acceptsChildren: false,
+      content: { mode: "none" },
     } as unknown as ComponentSpec;
     const resolution = resolveProps(node("Panel", { caption: scalar("Revenue") }), spec, MODEL);
 
@@ -314,6 +320,76 @@ describe("resolveProps hands a trusted component declared props only", () => {
 
     expect(issuesFor(resolution, "rows")).toEqual(["invalid_value"]);
     expect("rows" in resolution.props).toBe(false);
+  });
+});
+
+describe("resolveProps resolves only declared image asset props", () => {
+  const imageSpec: ComponentSpec = {
+    tag: "Image",
+    whenToUse: "Show one host-pinned image.",
+    props: {
+      asset: {
+        type: "string",
+        required: true,
+        assetKind: "image",
+        guidance: "The host-pinned image asset.",
+      },
+      caption: { type: "string", guidance: "Ordinary text." },
+    },
+    content: { mode: "none" },
+  };
+  const assets: FacetAssetRegistry = {
+    hero: { kind: "image", src: "https://cdn.example.com/hero.png", width: 1200, height: 800 },
+  };
+
+  it("hands the trusted component a frozen descriptor from the pinned registry", () => {
+    const resolution = resolveProps(
+      node("Image", { asset: reference("asset", "hero") }),
+      imageSpec,
+      MODEL,
+      assets,
+    );
+
+    expect(resolution.issues).toEqual([]);
+    expect(resolution.props["asset"]).toEqual(assets.hero);
+    expect(Object.isFrozen(resolution.props["asset"])).toBe(true);
+  });
+
+  it("rejects literals, data bindings, missing keys, and asset refs on ordinary props", () => {
+    const literal = resolveProps(
+      node("Image", { asset: scalar("https://example.com/x.png") }),
+      imageSpec,
+      MODEL,
+      assets,
+    );
+    const bound = resolveProps(
+      node("Image", { asset: reference("data", "sales.label") }),
+      imageSpec,
+      MODEL,
+      assets,
+    );
+    const missing = resolveProps(
+      node("Image", { asset: reference("asset", "missing") }),
+      imageSpec,
+      MODEL,
+      assets,
+    );
+    const ordinary = resolveProps(
+      node("Image", {
+        asset: reference("asset", "hero"),
+        caption: reference("asset", "hero"),
+      }),
+      imageSpec,
+      MODEL,
+      assets,
+    );
+
+    for (const resolution of [literal, bound, missing]) {
+      expect(issuesFor(resolution, "asset")).toEqual(["invalid_value"]);
+      expect("asset" in resolution.props).toBe(false);
+    }
+    expect(issuesFor(ordinary, "caption")).toEqual(["invalid_value"]);
+    expect("caption" in ordinary.props).toBe(false);
   });
 });
 
@@ -544,7 +620,7 @@ describe("one hostile prop cannot erase the props that resolved beside it", () =
         caption: { type: "string", required: true, guidance: "The required one." },
         rows: hostile as unknown as ComponentSpec["props"][string],
       },
-      acceptsChildren: false,
+      content: { mode: "none" },
     };
     const resolution = resolveProps(
       node("Panel", { caption: scalar("Revenue"), rows: reference("data", "sales.rows") }),
@@ -575,7 +651,7 @@ describe("one hostile prop cannot erase the props that resolved beside it", () =
         caption: { type: "string", required: true, guidance: "The required one." },
         tone: { type: "string", enum: domain, default: "primary", guidance: "A domain." },
       },
-      acceptsChildren: false,
+      content: { mode: "none" },
     };
 
     const authored = resolveProps(
@@ -676,7 +752,7 @@ describe("one hostile prop cannot erase the props that resolved beside it", () =
       tag: "Panel",
       whenToUse: "A fixture.",
       props: { ["__proto__"]: { type: "string", guidance: "Hostile." } },
-      acceptsChildren: false,
+      content: { mode: "none" },
     } as unknown as ComponentSpec;
     const hostileNode = {
       tag: "Panel",

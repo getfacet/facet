@@ -30,6 +30,23 @@ const MARKUP_NESTED = `<Facet entry="home">
   </Screen>
 </Facet>`;
 
+const MARKUP_STRUCTURED = `<Facet entry="home">
+  <Screen name="home">
+    <Split>
+      <Text slot="primary" value="First" />
+      <Text slot="primary" value="Second" />
+    </Split>
+  </Screen>
+</Facet>`;
+
+const MARKUP_REQUIRED_SLOT = `<Facet entry="home">
+  <Screen name="home">
+    <Split>
+      <Text slot="primary" value="Only" />
+    </Split>
+  </Screen>
+</Facet>`;
+
 const MUTATIONS_REQUIRING_A_PAGE: readonly AuthorMutationKind[] = [
   "insert_subtree",
   "replace_subtree",
@@ -50,19 +67,41 @@ function catalogRecord(): Record<string, unknown> {
             guidance: "The route name selected by the Facet entry.",
           },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
       {
         tag: "Text",
         whenToUse: "Short visible text.",
         props: { value: { type: "string", guidance: "Text to show." } },
-        acceptsChildren: false,
+        content: { mode: "none" },
       },
       {
         tag: "Stack",
         whenToUse: "Flow container.",
         props: {},
-        acceptsChildren: true,
+        content: { mode: "children" },
+      },
+      {
+        tag: "Split",
+        whenToUse: "Arrange primary and secondary regions.",
+        props: {},
+        content: {
+          mode: "slots",
+          slots: {
+            primary: {
+              guidance: "The primary region.",
+              minChildren: 1,
+              maxChildren: 2,
+              allowedTags: ["Text"],
+            },
+            secondary: {
+              guidance: "The optional secondary region.",
+              minChildren: 0,
+              maxChildren: 1,
+              allowedTags: ["Text"],
+            },
+          },
+        },
       },
     ],
   };
@@ -428,6 +467,177 @@ describe("applyAuthorMutation", () => {
     expect(result.document.nodes[stackId]?.tag).toBe("Stack");
     expect(result.document.nodes[stackId]?.children).toEqual([textId]);
     expect(documentText(result.session.document)).toEqual(["Ready"]);
+  });
+
+  it("preserves the target slot when update_node omits it", () => {
+    const gate = new TurnGate();
+    const session = boot(MARKUP_STRUCTURED);
+    const primaryId = Object.entries(session.document?.nodes ?? {}).find(
+      ([, node]) =>
+        node.tag === "Text" &&
+        node.slot === "primary" &&
+        node.props["value"]?.kind === "scalar" &&
+        node.props["value"].value === "First",
+    )?.[0];
+    const token = admitted(gate);
+
+    if (primaryId === undefined) {
+      throw new Error("expected primary Text node");
+    }
+
+    const result = applyAuthorMutation(
+      session,
+      "update_node",
+      { targetId: primaryId, markup: '<Text value="Updated" />' },
+      0,
+      { kind: "turn", token },
+      gate,
+    );
+
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) {
+      throw new Error(`expected mutation acceptance, got ${result.code}`);
+    }
+    expect(result.document.nodes[primaryId]?.slot).toBe("primary");
+    expect(documentText(result.document)).toEqual(["Updated", "Second"]);
+  });
+
+  it("makes replace_subtree inherit the target slot when markup omits it", () => {
+    const gate = new TurnGate();
+    const session = boot(MARKUP_STRUCTURED);
+    const targetId = Object.entries(session.document?.nodes ?? {}).find(
+      ([, node]) =>
+        node.tag === "Text" &&
+        node.props["value"]?.kind === "scalar" &&
+        node.props["value"].value === "First",
+    )?.[0];
+    const token = admitted(gate);
+
+    if (targetId === undefined) {
+      throw new Error("expected target Text node");
+    }
+
+    const result = applyAuthorMutation(
+      session,
+      "replace_subtree",
+      { targetId, markup: '<Text value="Replacement" />' },
+      0,
+      { kind: "turn", token },
+      gate,
+    );
+
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) {
+      throw new Error(`expected mutation acceptance, got ${result.code}`);
+    }
+    const replacement = Object.values(result.document.nodes).find(
+      (node) =>
+        node.props["value"]?.kind === "scalar" && node.props["value"].value === "Replacement",
+    );
+    expect(replacement?.slot).toBe("primary");
+  });
+
+  it("lets replace_subtree make an explicit slot change when Core accepts the candidate", () => {
+    const gate = new TurnGate();
+    const session = boot(MARKUP_STRUCTURED);
+    const targetId = Object.entries(session.document?.nodes ?? {}).find(
+      ([, node]) =>
+        node.tag === "Text" &&
+        node.props["value"]?.kind === "scalar" &&
+        node.props["value"].value === "First",
+    )?.[0];
+    const token = admitted(gate);
+
+    if (targetId === undefined) {
+      throw new Error("expected target Text node");
+    }
+
+    const result = applyAuthorMutation(
+      session,
+      "replace_subtree",
+      { targetId, markup: '<Text slot="secondary" value="Moved" />' },
+      0,
+      { kind: "turn", token },
+      gate,
+    );
+
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) {
+      throw new Error(`expected mutation acceptance, got ${result.code}`);
+    }
+    const moved = Object.values(result.document.nodes).find(
+      (node) => node.props["value"]?.kind === "scalar" && node.props["value"].value === "Moved",
+    );
+    expect(moved?.slot).toBe("secondary");
+  });
+
+  it("rejects an update_node slot change and leaves the revision unchanged", () => {
+    const gate = new TurnGate();
+    const session = boot(MARKUP_STRUCTURED);
+    const before = snapshot(session);
+    const targetId = Object.entries(session.document?.nodes ?? {}).find(
+      ([, node]) =>
+        node.tag === "Text" &&
+        node.props["value"]?.kind === "scalar" &&
+        node.props["value"].value === "First",
+    )?.[0];
+    const token = admitted(gate);
+
+    if (targetId === undefined) {
+      throw new Error("expected target Text node");
+    }
+
+    const result = applyAuthorMutation(
+      session,
+      "update_node",
+      { targetId, markup: '<Text slot="secondary" value="Moved" />' },
+      0,
+      { kind: "turn", token },
+      gate,
+    );
+
+    expect(result).toMatchObject({ ok: false, code: "invalid_fragment" });
+    expectUnchanged(session, before);
+  });
+
+  it("relays Core slot rejection and leaves the revision unchanged", () => {
+    const gate = new TurnGate();
+    const session = boot(MARKUP_STRUCTURED);
+    const before = snapshot(session);
+    const splitId = nodeIdByTag(session.document, "Split");
+    const token = admitted(gate);
+
+    const result = applyAuthorMutation(
+      session,
+      "insert_subtree",
+      { targetId: splitId, markup: '<Text slot="unknown" value="Nope" />' },
+      0,
+      { kind: "turn", token },
+      gate,
+    );
+
+    expect(result).toMatchObject({ ok: false, code: "unknown-slot" });
+    expectUnchanged(session, before);
+  });
+
+  it("rejects removing a required slot child and leaves the revision unchanged", () => {
+    const gate = new TurnGate();
+    const session = boot(MARKUP_REQUIRED_SLOT);
+    const before = snapshot(session);
+    const textId = nodeIdByTag(session.document, "Text");
+    const token = admitted(gate);
+
+    const result = applyAuthorMutation(
+      session,
+      "remove_subtree",
+      { targetId: textId },
+      0,
+      { kind: "turn", token },
+      gate,
+    );
+
+    expect(result).toMatchObject({ ok: false, code: "missing-slot-children" });
+    expectUnchanged(session, before);
   });
 
   it("rejects update_node fragments that author children", () => {

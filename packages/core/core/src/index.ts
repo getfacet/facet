@@ -31,6 +31,14 @@ export type { Action, ActionResult } from "./actions.js";
 
 export { isAuthoredNumberLiteral, parseAuthoredNumber } from "./author-scalar.js";
 
+export { resolveFacetAsset, validateFacetAssetRegistry } from "./asset-registry.js";
+export type {
+  FacetAssetDescriptor,
+  FacetAssetRegistry,
+  FacetAssetRegistryValidationResult,
+  FacetImageAsset,
+} from "./asset-registry.js";
+
 export { BOUNDS } from "./bounds.js";
 export type { Bounds } from "./bounds.js";
 
@@ -40,13 +48,19 @@ export type { CatalogValidationResult, FacetCatalog, ModalConformanceResult } fr
 export { validateComponentSpec } from "./component-spec.js";
 export type {
   CollectSpec,
-  ComponentAuthoringRole,
   ComponentSpec,
   ComponentSpecValidationResult,
   PropSchema,
   StructuredPropType,
   ThemeRecipeSpec,
 } from "./component-spec.js";
+
+export { deriveComponentContentClass } from "./component-content.js";
+export type {
+  ComponentContentClass,
+  ComponentContentSpec,
+  ComponentSlotSpec,
+} from "./component-content.js";
 
 export { deriveMessageId, truncateConversationText, validateVisitorText } from "./conversation.js";
 export type { ConversationMessage } from "./conversation.js";
@@ -94,7 +108,13 @@ export type { MarkupAst, MarkupNode, ParseMarkupResult } from "./markup-parser.j
 export { serializeDocument, serializeScreen } from "./markup-serialize.js";
 export type { SerializeIssue, SerializeResult } from "./markup-serialize.js";
 
-export type { CollectableMount, ComponentMountProps, MountedComponent } from "./mount-contract.js";
+export type {
+  CollectableMount,
+  CollectedValue,
+  CollectedValueKind,
+  ComponentMountProps,
+  MountedComponent,
+} from "./mount-contract.js";
 
 export { NEUTRAL_COPY_DEFAULTS, resolveNeutralCopy } from "./neutral-copy.js";
 export type { NeutralCopy, NeutralCopyResolution } from "./neutral-copy.js";
@@ -118,6 +138,8 @@ export { nextRevision } from "./revision.js";
 export type { CasOutcome, StageRevision } from "./revision.js";
 
 export type { FacetStage } from "./stage.js";
+
+export type { StructuredFieldSpec, StructuredShapeSpec } from "./structured-shape.js";
 
 export {
   FACET_THEME_CONTRACT,

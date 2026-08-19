@@ -36,7 +36,7 @@
  * exactly the edge the cut removed.
  */
 
-import type { ComponentSpec, DataModel } from "@facet/core";
+import type { ComponentMountProps, ComponentSpec, DataModel } from "@facet/core";
 import { BOUNDS } from "@facet/core";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { readFileSync } from "node:fs";
@@ -70,8 +70,13 @@ const FIELD_SPEC: CollectableSpec = {
     value: { type: "string", default: "", guidance: "The value shown." },
     secret: { type: "boolean", default: false, guidance: "Whether the value is withheld." },
   },
-  acceptsChildren: false,
-  collect: { collectable: true, valueProp: "value", sensitiveProp: "secret" },
+  content: { mode: "none" },
+  collect: {
+    collectable: true,
+    valueProp: "value",
+    valueKind: "string",
+    sensitiveProp: "secret",
+  },
 };
 
 /** The same contract with a non-empty declared default, so a default is visible. */
@@ -80,12 +85,34 @@ const SEEDED_SPEC: CollectableSpec = {
   props: { ...FIELD_SPEC.props, value: { type: "string", default: "north", guidance: "Region." } },
 };
 
+const TOGGLE_SPEC: CollectableSpec = {
+  tag: "Toggle",
+  whenToUse: "Collect one boolean choice.",
+  props: {
+    name: { type: "string", required: true, guidance: "The collect name." },
+    value: { type: "boolean", default: false, guidance: "Whether it is enabled." },
+  },
+  content: { mode: "none" },
+  collect: { collectable: true, valueProp: "value", valueKind: "boolean" },
+};
+
+const MULTI_SPEC: CollectableSpec = {
+  tag: "ChoiceGroup",
+  whenToUse: "Collect several string choices.",
+  props: {
+    name: { type: "string", required: true, guidance: "The collect name." },
+    value: { type: "array", bindable: true, guidance: "The selected values." },
+  },
+  content: { mode: "none" },
+  collect: { collectable: true, valueProp: "value", valueKind: "string[]" },
+};
+
 /** A component the catalog never declared collectable. */
 const BUTTON_SPEC: ComponentSpec = {
   tag: "Button",
   whenToUse: "Give the visitor one control.",
   props: { label: { type: "string", required: true, guidance: "The words on the control." } },
-  acceptsChildren: false,
+  content: { mode: "none" },
 };
 
 /** One controlled input, standing in for the trusted `Field` implementation. */
@@ -124,7 +151,7 @@ function host(options: {
   readonly store: FieldStore;
   readonly nodeId?: string;
   readonly spec?: CollectableSpec;
-  readonly props?: Readonly<Record<string, string | number | boolean>>;
+  readonly props?: ComponentMountProps["props"];
   readonly mount?: (injection: FieldInjection) => ReactNode;
 }): ReactNode {
   return createElement(FieldHost, {
@@ -245,7 +272,13 @@ describe("createFieldStore", () => {
   it("is per-session: two stores share nothing", () => {
     const first = createFieldStore();
     const second = createFieldStore();
-    first.register({ nodeId: "n4", name: "email", sensitive: false, seed: "ada@example.com" });
+    first.register({
+      nodeId: "n4",
+      name: "email",
+      sensitive: false,
+      seed: "ada@example.com",
+      valueKind: "string",
+    });
 
     expect(first.collectSource("email")).toEqual({ kind: "value", value: "ada@example.com" });
     expect(second.collectSource("email")).toEqual({ kind: "unavailable" });
@@ -260,7 +293,13 @@ describe("createFieldStore", () => {
 
   it("holds the seed until the visitor writes, then the written value", () => {
     const store = createFieldStore();
-    store.register({ nodeId: "n4", name: "email", sensitive: false, seed: "seeded" });
+    store.register({
+      nodeId: "n4",
+      name: "email",
+      sensitive: false,
+      seed: "seeded",
+      valueKind: "string",
+    });
 
     expect(store.collectSource("email")).toEqual({ kind: "value", value: "seeded" });
 
@@ -272,8 +311,20 @@ describe("createFieldStore", () => {
 
   it("treats a repeated collect name as no source rather than guessing one", () => {
     const store = createFieldStore();
-    store.register({ nodeId: "n4", name: "email", sensitive: false, seed: "first" });
-    store.register({ nodeId: "n9", name: "email", sensitive: false, seed: "second" });
+    store.register({
+      nodeId: "n4",
+      name: "email",
+      sensitive: false,
+      seed: "first",
+      valueKind: "string",
+    });
+    store.register({
+      nodeId: "n9",
+      name: "email",
+      sensitive: false,
+      seed: "second",
+      valueKind: "string",
+    });
 
     // Two live fields answering to one name is ambiguous, and the closed entry
     // union has no "ambiguous" kind. Answering "unavailable" is order
@@ -284,7 +335,7 @@ describe("createFieldStore", () => {
 
   it("collects nothing by name from a registration that has no name", () => {
     const store = createFieldStore();
-    store.register({ nodeId: "n4", sensitive: false, seed: "held" });
+    store.register({ nodeId: "n4", sensitive: false, seed: "held", valueKind: "string" });
 
     expect(store.readValue("n4")).toBe("held");
     expect(store.collectSource("")).toEqual({ kind: "unavailable" });
@@ -293,7 +344,13 @@ describe("createFieldStore", () => {
 
   it("re-points a live field's address and keeps its value", () => {
     const store = createFieldStore();
-    store.register({ nodeId: "n4", name: "email", sensitive: false, seed: "" });
+    store.register({
+      nodeId: "n4",
+      name: "email",
+      sensitive: false,
+      seed: "",
+      valueKind: "string",
+    });
     store.write("n4", "typed");
 
     store.setName("n4", "emailAddress");
@@ -305,7 +362,13 @@ describe("createFieldStore", () => {
 
   it("treats an empty or absent address as no address, and ignores an unregistered node", () => {
     const store = createFieldStore();
-    store.register({ nodeId: "n4", name: "email", sensitive: false, seed: "held" });
+    store.register({
+      nodeId: "n4",
+      name: "email",
+      sensitive: false,
+      seed: "held",
+      valueKind: "string",
+    });
 
     store.setName("n4", "");
     store.setName("n9", "orphan");
@@ -323,11 +386,83 @@ describe("createFieldStore", () => {
 
   it("clamps a written value to B-23, so the store cannot hold an uncollectable one", () => {
     const store = createFieldStore();
-    store.register({ nodeId: "n4", name: "email", sensitive: false, seed: "" });
+    store.register({
+      nodeId: "n4",
+      name: "email",
+      sensitive: false,
+      seed: "",
+      valueKind: "string",
+    });
 
     store.write("n4", "v".repeat(BOUNDS.collectedValueChars + 500));
 
     expect(store.readValue("n4")).toHaveLength(BOUNDS.collectedValueChars);
+  });
+
+  it("stores booleans without coercion and ignores a value of the wrong declared kind", () => {
+    const store = createFieldStore();
+    store.register({
+      nodeId: "n4",
+      name: "enabled",
+      sensitive: false,
+      seed: false,
+      valueKind: "boolean",
+    });
+
+    store.write("n4", true);
+    expect(store.collectSource("enabled")).toEqual({ kind: "value", value: true });
+
+    store.write("n4", "true");
+    expect(store.collectSource("enabled")).toEqual({ kind: "value", value: true });
+  });
+
+  it("copies, freezes, and bounds collected string arrays", () => {
+    const store = createFieldStore();
+    const seed = ["north"];
+    store.register({
+      nodeId: "n4",
+      name: "regions",
+      sensitive: false,
+      seed,
+      valueKind: "string[]",
+    });
+    seed.push("mutated-after-register");
+
+    expect(store.readValue("n4")).toEqual(["north"]);
+
+    const next = Array.from(
+      { length: BOUNDS.dataModelArrayLength + 2 },
+      (_unused, index) => `v${index}`,
+    );
+    next[0] = "x".repeat(BOUNDS.collectedValueChars + 10);
+    store.write("n4", next);
+    next[1] = "mutated-after-write";
+
+    const stored = store.readValue("n4");
+    expect(Array.isArray(stored) ? stored : []).toHaveLength(BOUNDS.dataModelArrayLength);
+    expect(Array.isArray(stored) ? stored[0] : "").toHaveLength(BOUNDS.collectedValueChars);
+    expect(Array.isArray(stored) ? stored[1] : "").toBe("v1");
+    expect(Object.isFrozen(stored)).toBe(true);
+  });
+
+  it("ignores an unreadable collected array instead of throwing", () => {
+    const store = createFieldStore();
+    store.register({
+      nodeId: "n4",
+      name: "regions",
+      sensitive: false,
+      seed: [],
+      valueKind: "string[]",
+    });
+    const revoked = Proxy.revocable([] as string[], {});
+    revoked.revoke();
+
+    const escaped = errorsDuring(() => {
+      store.write("n4", revoked.proxy);
+    });
+
+    expect(escaped).toEqual([]);
+    expect(store.readValue("n4")).toEqual([]);
   });
 
   it("ignores a write to a node that is not registered", () => {
@@ -341,7 +476,13 @@ describe("createFieldStore", () => {
 
   it("drops the value when the node unregisters", () => {
     const store = createFieldStore();
-    const dispose = store.register({ nodeId: "n4", name: "email", sensitive: false, seed: "" });
+    const dispose = store.register({
+      nodeId: "n4",
+      name: "email",
+      sensitive: false,
+      seed: "",
+      valueKind: "string",
+    });
     store.write("n4", "typed");
 
     dispose();
@@ -352,8 +493,20 @@ describe("createFieldStore", () => {
 
   it("lets a stale disposer remove nothing", () => {
     const store = createFieldStore();
-    const stale = store.register({ nodeId: "n4", name: "email", sensitive: false, seed: "old" });
-    store.register({ nodeId: "n4", name: "email", sensitive: false, seed: "new" });
+    const stale = store.register({
+      nodeId: "n4",
+      name: "email",
+      sensitive: false,
+      seed: "old",
+      valueKind: "string",
+    });
+    store.register({
+      nodeId: "n4",
+      name: "email",
+      sensitive: false,
+      seed: "new",
+      valueKind: "string",
+    });
 
     stale();
 
@@ -367,12 +520,24 @@ describe("createFieldStore", () => {
       notifications += 1;
     });
 
-    const dispose = store.register({ nodeId: "n4", name: "email", sensitive: false, seed: "" });
+    const dispose = store.register({
+      nodeId: "n4",
+      name: "email",
+      sensitive: false,
+      seed: "",
+      valueKind: "string",
+    });
     store.write("n4", "typed");
     dispose();
     const afterSubscribed = notifications;
     unsubscribe();
-    store.register({ nodeId: "n7", name: "region", sensitive: false, seed: "" });
+    store.register({
+      nodeId: "n7",
+      name: "region",
+      sensitive: false,
+      seed: "",
+      valueKind: "string",
+    });
 
     expect(afterSubscribed).toBe(3);
     expect(notifications).toBe(afterSubscribed);
@@ -429,6 +594,54 @@ describe("FieldHost", () => {
     expect(inputIn(container).value).toBe("ada@example.com");
     expect(store.readValue("n4")).toBe("ada@example.com");
     expect(store.collectSource("email")).toEqual({ kind: "value", value: "ada@example.com" });
+  });
+
+  it("routes a boolean change through FieldHost and injects the typed value back", () => {
+    const store = createFieldStore();
+    const { container } = render(
+      host({
+        store,
+        spec: TOGGLE_SPEC,
+        props: { name: "enabled" },
+        mount: (injection) =>
+          createElement(
+            "button",
+            { type: "button", onClick: () => injection.onValueChange(true) },
+            String(injection.props["value"]),
+          ),
+      }),
+    );
+
+    fireEvent.click(container.querySelector("button") as HTMLButtonElement);
+
+    expect(container.querySelector("button")?.textContent).toBe("true");
+    expect(store.collectSource("enabled")).toEqual({ kind: "value", value: true });
+  });
+
+  it("routes a string-array change through FieldHost as an immutable snapshot", () => {
+    const store = createFieldStore();
+    const selected = ["north", "west"];
+    const { container } = render(
+      host({
+        store,
+        spec: MULTI_SPEC,
+        props: { name: "regions", value: ["north"] },
+        mount: (injection) =>
+          createElement(
+            "button",
+            { type: "button", onClick: () => injection.onValueChange(selected) },
+            JSON.stringify(injection.props["value"]),
+          ),
+      }),
+    );
+
+    fireEvent.click(container.querySelector("button") as HTMLButtonElement);
+    selected.push("mutated-after-change");
+
+    expect(container.querySelector("button")?.textContent).toBe('["north","west"]');
+    const source = store.collectSource("regions");
+    expect(source).toEqual({ kind: "value", value: ["north", "west"] });
+    expect(source.kind === "value" && Object.isFrozen(source.value)).toBe(true);
   });
 
   it("does not resurrect a stale value across a remount", () => {
@@ -731,7 +944,13 @@ describe("the sensitive exclusion: enforced by the collection logic", () => {
 
   it("hands out no value at all for a sensitive field", () => {
     const store = createFieldStore();
-    store.register({ nodeId: "n4", name: "token", sensitive: true, seed: SECRET });
+    store.register({
+      nodeId: "n4",
+      name: "token",
+      sensitive: true,
+      seed: SECRET,
+      valueKind: "string",
+    });
 
     const source = store.collectSource("token");
 

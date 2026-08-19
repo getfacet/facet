@@ -56,12 +56,13 @@ describe("quickstart guide brief", () => {
 
     expect(QUICKSTART_PAGE_BRIEF).not.toMatch(retiredContainerTerms);
     expect(QUICKSTART_PAGE_BRIEF).toMatch(/safe declarative\s+component markup/);
-    expect(QUICKSTART_PAGE_BRIEF).toContain("Screen, AppShell, Stack, Row, Split, Grid, Modal");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("ProfileHeader");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("ProductShowcase");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("StatStrip, Gallery");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("Testimonial, Timeline");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("Table, Button, and Field");
+    expect(QUICKSTART_PAGE_BRIEF).toContain(
+      "Screen, Stack, Row, Grid, Split, AppShell, Section, Card, Modal, Divider",
+    );
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Navigation, NavigationItem, Button");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("MetricGroup, Table, Chart, Progress, Timeline");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("BoardColumn, Calendar, Result, Empty, Alert, Form");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Toggle, MessageThread, Accordion, and AccordionItem");
   });
 });
 
@@ -258,7 +259,7 @@ export default {
           required: true,
         },
       },
-      acceptsChildren: false,
+      content: { mode: "none" },
     },
   ],
   registry: { PromoBanner },
@@ -287,7 +288,7 @@ export default {
       tag: "PromoBanner",
       whenToUse: "Use for a promotional banner fixture.",
       props: {},
-      acceptsChildren: false,
+      content: { mode: "none" },
     },
   ],
 };
@@ -370,10 +371,10 @@ describe("runCli — quickstart built-in default", () => {
       const seedText = JSON.stringify(globals.__FACET_INITIAL_STAGE__);
 
       expect(globals.__FACET_INITIAL_STAGE__).toEqual(QUICKSTART_INITIAL_STAGE);
-      expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(121);
-      expect(seedText).toHaveLength(24_704);
+      expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(129);
+      expect(seedText).toHaveLength(23_575);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "372d977c4b6ab24814805ad416fef28e06a1e401c031c8180f409343c0f3b0a2",
+        "da42d6215d7e3607718bb8d35211a57c6f7dc665996927f8120080dbd6c01c3d",
       );
     } finally {
       await running.close();

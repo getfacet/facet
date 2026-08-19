@@ -54,35 +54,57 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { DEFAULT_CATALOG } from "./catalog.js";
 import * as rootBarrel from "./index.js";
-import { Badge, Metric, Table, Text } from "./react/content.js";
+import {
+  Avatar,
+  Badge,
+  Chart,
+  Icon,
+  Image,
+  List,
+  Metric,
+  MetricGroup,
+  Progress,
+  Table,
+  Text,
+  Timeline,
+} from "./react/content.js";
+import { ActionBar, ActionGroup, Button, Navigation, NavigationItem } from "./react/expression.js";
+import {
+  Accordion,
+  AccordionItem,
+  ChoiceGroup,
+  Field,
+  Form,
+  MessageThread,
+  Select,
+  Toggle,
+} from "./react/interactive.js";
+import {
+  AppShell,
+  Card,
+  Divider,
+  Grid,
+  Modal,
+  Row,
+  Screen,
+  Section,
+  Split,
+  Stack,
+} from "./react/layout.js";
 import {
   Alert,
-  Avatar,
-  CTA,
-  Divider,
-  FeatureList,
-  Footer,
-  Gallery,
-  Hero,
-  LinkList,
-  LogoMark,
-  MediaCard,
-  Nav,
-  ProductShowcase,
-  ProfileHeader,
-  Progress,
-  Section,
-  SideNav,
-  SideNavItem,
-  SocialLinks,
-  StatStrip,
-  Testimonial,
-  Timeline,
-  VisualPanel,
-} from "./react/expression.js";
-import { Button, Field } from "./react/interactive.js";
-import { AppShell, Grid, Row, Screen, Split, Stack } from "./react/layout.js";
-import { Card, Empty, Modal } from "./react/surface.js";
+  Board,
+  BoardColumn,
+  Calendar,
+  Collection,
+  Detail,
+  Empty,
+  Header,
+  ItemCard,
+  Property,
+  PropertyList,
+  Result,
+} from "./react/surface.js";
 import * as barrel from "./react.js";
 import { DEFAULT_REGISTRY } from "./react.js";
 import { DEFAULT_THEME } from "./theme-default.js";
@@ -102,43 +124,52 @@ const BARREL_KEYS: readonly string[] = ["DEFAULT_REGISTRY"];
  */
 const EXPECTED: readonly (readonly [string, MountedComponent<ReactNode, ReactNode>])[] = [
   ["Screen", Screen],
-  ["AppShell", AppShell],
   ["Stack", Stack],
   ["Row", Row],
-  ["Split", Split],
   ["Grid", Grid],
-  ["Modal", Modal],
-  ["Card", Card],
-  ["Empty", Empty],
-  ["LogoMark", LogoMark],
-  ["Nav", Nav],
-  ["SideNav", SideNav],
-  ["SideNavItem", SideNavItem],
+  ["Split", Split],
+  ["AppShell", AppShell],
   ["Section", Section],
+  ["Card", Card],
+  ["Modal", Modal],
   ["Divider", Divider],
-  ["Hero", Hero],
-  ["Avatar", Avatar],
-  ["ProfileHeader", ProfileHeader],
-  ["ProductShowcase", ProductShowcase],
-  ["VisualPanel", VisualPanel],
-  ["MediaCard", MediaCard],
-  ["LinkList", LinkList],
-  ["SocialLinks", SocialLinks],
-  ["FeatureList", FeatureList],
-  ["StatStrip", StatStrip],
-  ["Gallery", Gallery],
-  ["Testimonial", Testimonial],
-  ["Timeline", Timeline],
-  ["CTA", CTA],
-  ["Alert", Alert],
-  ["Progress", Progress],
-  ["Footer", Footer],
-  ["Text", Text],
-  ["Metric", Metric],
-  ["Badge", Badge],
-  ["Table", Table],
+  ["Navigation", Navigation],
+  ["NavigationItem", NavigationItem],
   ["Button", Button],
+  ["ActionGroup", ActionGroup],
+  ["ActionBar", ActionBar],
+  ["Text", Text],
+  ["Avatar", Avatar],
+  ["Icon", Icon],
+  ["Image", Image],
+  ["Badge", Badge],
+  ["Metric", Metric],
+  ["MetricGroup", MetricGroup],
+  ["Table", Table],
+  ["Chart", Chart],
+  ["Progress", Progress],
+  ["Timeline", Timeline],
+  ["List", List],
+  ["Header", Header],
+  ["Collection", Collection],
+  ["ItemCard", ItemCard],
+  ["Detail", Detail],
+  ["PropertyList", PropertyList],
+  ["Property", Property],
+  ["Board", Board],
+  ["BoardColumn", BoardColumn],
+  ["Calendar", Calendar],
+  ["Result", Result],
+  ["Empty", Empty],
+  ["Alert", Alert],
+  ["Form", Form],
   ["Field", Field],
+  ["Select", Select],
+  ["ChoiceGroup", ChoiceGroup],
+  ["Toggle", Toggle],
+  ["MessageThread", MessageThread],
+  ["Accordion", Accordion],
+  ["AccordionItem", AccordionItem],
 ];
 
 /** The custom properties a real bootstrap hands every mount. */
@@ -252,6 +283,19 @@ function requiredProps(spec: ComponentSpec): ComponentMountProps["props"] {
   return props;
 }
 
+/** A visible probe for every declared named region in a structured component. */
+function slotProbes(spec: ComponentSpec): ComponentMountProps<ReactNode>["slots"] {
+  if (spec.content.mode !== "slots") return Object.freeze({});
+  return Object.freeze(
+    Object.fromEntries(
+      Object.keys(spec.content.slots).map((name) => [
+        name,
+        <span data-facet-slot-probe={name}>{`${spec.tag}.${name}`}</span>,
+      ]),
+    ),
+  );
+}
+
 // --- Mounting, and reading the styles back off the DOM -----------------------
 
 /**
@@ -265,14 +309,16 @@ function mountRoot(tag: string, themeVars: Readonly<Record<string, string>>): HT
   if (Component === undefined) {
     throw new Error(`${tag} resolved to no implementation.`);
   }
+  const spec = specFor(tag);
   const { container } = render(
     <Component
-      props={requiredProps(specFor(tag))}
+      props={requiredProps(spec)}
+      slots={slotProbes(spec)}
       themeVars={themeVars}
       onAction={noop}
       onValueChange={noop}
     >
-      {null}
+      <span data-facet-children-probe={tag}>{tag}</span>
     </Component>,
   );
   const root = container.firstElementChild;
@@ -511,8 +557,8 @@ function reachableFrom(entry: ModulePath): Reachable {
 }
 
 describe("DEFAULT_REGISTRY — trusted default implementations (DC-016, DC-002)", () => {
-  it("holds exactly thirty-eight entries", () => {
-    expect(sortedKeys(DEFAULT_REGISTRY)).toHaveLength(38);
+  it("holds exactly forty-seven entries", () => {
+    expect(sortedKeys(DEFAULT_REGISTRY)).toHaveLength(47);
   });
 
   it("carries exactly the catalog's tag set — the two halves of the trust boundary", () => {
@@ -533,7 +579,7 @@ describe("DEFAULT_REGISTRY — trusted default implementations (DC-016, DC-002)"
     }
   });
 
-  it("pins the thirty-eight expected tags, so a renamed component cannot pass silently", () => {
+  it("pins the forty-seven expected tags, so a renamed component cannot pass silently", () => {
     expect(EXPECTED.map(([tag]) => tag).sort()).toEqual(sortedKeys(DEFAULT_REGISTRY));
   });
 
@@ -561,6 +607,26 @@ describe("DEFAULT_REGISTRY — every entry mounts (DC-002)", () => {
     expect(defaultThemeSnapshots.map(({ tag, isConnected }) => [tag, isConnected])).toEqual(
       Object.keys(DEFAULT_REGISTRY).map((tag) => [tag, true]),
     );
+  });
+
+  it("passes all seventeen structured components their declared named slots", () => {
+    const structured = DEFAULT_CATALOG.components.filter((spec) => spec.content.mode === "slots");
+    expect(structured).toHaveLength(17);
+
+    for (const spec of structured) {
+      if (spec.content.mode !== "slots") {
+        throw new Error(`${spec.tag} is not a structured component.`);
+      }
+      const root = mountRoot(spec.tag, THEME_VARS);
+      expect(root.querySelector(`[data-facet-children-probe="${spec.tag}"]`), spec.tag).toBeNull();
+      for (const name of Object.keys(spec.content.slots)) {
+        expect(
+          root.querySelector(`[data-facet-slot-probe="${name}"]`),
+          `${spec.tag}.${name}`,
+        ).not.toBeNull();
+      }
+      cleanup();
+    }
   });
 });
 
@@ -590,11 +656,11 @@ describe("DEFAULT_REGISTRY — every entry mounts (DC-002)", () => {
  * The fallback ban is asserted only here.
  */
 describe("DEFAULT_REGISTRY — one theme mechanism, across every default tag", () => {
-  it("sweeps all thirty-eight registered tags, so no component escapes the mechanism", () => {
+  it("sweeps all forty-seven registered tags, so no component escapes the mechanism", () => {
     // The guard on every sweep below: they iterate the registry, so a tag added
     // without a trusted implementation of the mechanism is swept by definition
     // rather than by someone remembering to extend a list.
-    expect(Object.keys(DEFAULT_REGISTRY)).toHaveLength(38);
+    expect(Object.keys(DEFAULT_REGISTRY)).toHaveLength(47);
   });
 
   it("builds an alternate theme in which every single token's value differs", () => {
@@ -693,6 +759,14 @@ describe("@facet/assets/react barrel — the exact key set (D-12)", () => {
 });
 
 describe("@facet/assets entry boundary — the root is React-free (RISK-PKG-1, D-09)", () => {
+  it("exports exactly the three default data symbols and no retired surface", () => {
+    expect(Object.keys(rootBarrel).sort()).toEqual([
+      "DEFAULT_CATALOG",
+      "DEFAULT_COMPONENT_SPECS",
+      "DEFAULT_THEME",
+    ]);
+  });
+
   it("reaches only the seven Node-safe data modules from the root entry", () => {
     expect(reachableFrom("index.ts").modules).toEqual([
       "catalog.ts",

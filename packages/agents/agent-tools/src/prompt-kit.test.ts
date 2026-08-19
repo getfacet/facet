@@ -81,7 +81,12 @@ describe("FACET_PROMPT_KIT", () => {
     expect(FACET_PROMPT_KIT).toContain("decide the spatial relationship");
     expect(FACET_PROMPT_KIT).toContain("minimum layout components");
     expect(FACET_PROMPT_KIT).toContain("fill that structure");
-    expect(FACET_PROMPT_KIT).toContain("discovery guidance only");
+    expect(FACET_PROMPT_KIT).toContain("Content classes are discovery guidance only");
+    expect(FACET_PROMPT_KIT).toContain("Structured uses declared named slots");
+    expect(FACET_PROMPT_KIT).toContain("slot cardinalities and allowed tags");
+    expect(FACET_PROMPT_KIT).toContain("structured prop shapes");
+    expect(FACET_PROMPT_KIT).toContain("asset kinds");
+    expect(FACET_PROMPT_KIT).toContain("collect value kind");
     expect(FACET_PROMPT_KIT).toContain("simple screen may contain");
     expect(FACET_PROMPT_KIT).toContain("Do not add layout wrappers");
     expect(FACET_PROMPT_KIT.indexOf("identify the screen job")).toBeLessThan(

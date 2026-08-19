@@ -36,7 +36,7 @@ describe("quickstart guide", () => {
 
     expect(QUICKSTART_INITIAL_STAGE.entry).toBe("what");
     expect(QUICKSTART_INITIAL_STAGE.screens).toHaveLength(4);
-    expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(121);
+    expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes).length).toBeGreaterThan(80);
     for (const node of Object.values(QUICKSTART_INITIAL_STAGE.nodes)) {
       expect(catalogTags.has(node.tag)).toBe(true);
     }
@@ -46,14 +46,17 @@ describe("quickstart guide", () => {
     const serialized = serializeDocument(QUICKSTART_INITIAL_STAGE).text;
 
     expect(serialized).toContain('<Screen name="what"');
-    expect(serialized).toContain('<Nav brand="Facet" mark="F" label="Quickstart"');
-    expect(serialized).toContain('<Button label="Design System" action="nav:system" tone="quiet"');
-    expect(serialized).toContain('<Button label="Try a surface" action="nav:try"');
-    expect(serialized).toContain('<ProductShowcase eyebrow="Live contract"');
-    expect(serialized).toContain('<Gallery title="Starter surfaces" columns="3" rhythm="even"');
+    expect(serialized).toContain('<Navigation label="Quickstart" orientation="horizontal"');
+    expect(serialized).toContain(
+      '<NavigationItem slot="items" label="Design System" action="nav:system"',
+    );
+    expect(serialized).toContain('<Button slot="actions" label="Try a surface" action="nav:try"');
+    expect(serialized).toContain(
+      '<Detail slot="primary" eyebrow="Live contract" title="The page is data, not code"',
+    );
+    expect(serialized).toContain('<Collection title="Starter surfaces"');
     expect(serialized).toContain('<Modal triggerLabel="How should I ask?"');
     expect(serialized).not.toContain("<AppShell");
-    expect(serialized).not.toContain("<SideNav");
     expect(serialized).not.toContain("Pattern"); // component-hard-cut: allowed-negative
     expect(serialized).not.toContain("Preset"); // component-hard-cut: allowed-negative
     expect(serialized).not.toContain("Brick"); // component-hard-cut: allowed-negative
@@ -62,8 +65,8 @@ describe("quickstart guide", () => {
   it("pins the regenerated seed size and sha256 golden", () => {
     const json = JSON.stringify(QUICKSTART_INITIAL_STAGE);
 
-    expect(json).toHaveLength(24704);
-    expect(sha256(json)).toBe("372d977c4b6ab24814805ad416fef28e06a1e401c031c8180f409343c0f3b0a2");
+    expect(json).toHaveLength(23_575);
+    expect(sha256(json)).toBe("da42d6215d7e3607718bb8d35211a57c6f7dc665996927f8120080dbd6c01c3d");
   });
 
   it("keeps the seed within the quickstart prompt budget", () => {
@@ -75,7 +78,7 @@ describe("quickstart guide", () => {
 
   it("uses stable generated node ids for critical calls to action", () => {
     const values = Object.entries(QUICKSTART_INITIAL_STAGE.nodes)
-      .filter(([, candidate]) => candidate.tag === "Button")
+      .filter(([, candidate]) => candidate.tag === "Button" || candidate.tag === "NavigationItem")
       .map(([id]) => ({ id, label: propText(id, "label"), action: propText(id, "action") }));
 
     expect(values).toContainEqual(
@@ -107,15 +110,21 @@ describe("quickstart guide", () => {
   });
 
   it("brief tells the agent to choose a service group before components", () => {
-    expect(QUICKSTART_PAGE_BRIEF).toContain("Choose the service group before choosing components");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("Personal Presence");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("Marketing / Landing");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("Data / Report");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("dashboard/workspace is only one group");
+    expect(QUICKSTART_PAGE_BRIEF).toContain(
+      "Choose the service\nfamily before choosing components",
+    );
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Personal Profile / Resume");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Booking / Consultation");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("Operations / Board");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("SaaS\nand analytics are only two families");
   });
 
   it("describes the active registered catalog", () => {
     expect(QUICKSTART_PAGE_BRIEF).toContain("active registered catalog");
+    expect(DEFAULT_CATALOG.components).toHaveLength(47);
+    for (const spec of DEFAULT_CATALOG.components) {
+      expect(QUICKSTART_PAGE_BRIEF).toContain(spec.tag);
+    }
     expect(QUICKSTART_PAGE_BRIEF).not.toContain("registered default-catalog components");
     expect(QUICKSTART_PAGE_BRIEF).not.toContain("Author only registered default-catalog");
   });

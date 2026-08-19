@@ -38,7 +38,7 @@ function component(tag: string, whenToUse = `Use ${tag} when it fits.`): Record<
         guidance: `DO_NOT_LEAK_PROP_SCHEMA_FOR_${tag}`,
       },
     },
-    acceptsChildren: false,
+    content: { mode: "none" },
   };
 }
 
@@ -53,7 +53,7 @@ function screenSpec(): Record<string, unknown> {
         guidance: "Screen name.",
       },
     },
-    acceptsChildren: true,
+    content: { mode: "children" },
   };
 }
 
@@ -279,7 +279,9 @@ describe("stage observation prompt", () => {
       stageRevision: 1,
       currentScreen: null,
       screens: ["home"],
-      components: [{ tag: "Card", whenToUse: "Use for grouped content." }],
+      components: [
+        { tag: "Card", whenToUse: "Use for grouped content.", contentClass: "Container" },
+      ],
       data: [{ path: "orders", shape: "array", fields: ["id"], count: 1 }],
       issues: ["no_current_screen"],
     });

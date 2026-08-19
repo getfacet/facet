@@ -30,11 +30,12 @@
  * barrel-exported; nothing outside `@facet/assets` may import it.
  */
 
-import { themeTokenRef } from "@facet/core";
+import { BOUNDS, themeTokenRef, validateFacetAssetRegistry } from "@facet/core";
 import type {
   ComponentMountProps,
   FacetFoundationGroupName,
   FacetFoundationTokenRef,
+  FacetImageAsset,
   FacetSemanticGroupName,
   FacetSemanticTokenRef,
   FacetThemeTokenRef,
@@ -178,6 +179,12 @@ export function enumProp<Value extends string>(
   return domain.find((candidate) => candidate === value) ?? fallback;
 }
 
+/** Reads a string prop, preserving an intentional empty string. */
+export function stringProp(props: ResolvedProps, name: string, fallback: string): string {
+  const value = readValue(props, name);
+  return typeof value === "string" ? value : fallback;
+}
+
 /** Reads a free-text prop, treating an empty or absent one as nothing to render. */
 export function textProp(props: ResolvedProps, name: string): string | undefined {
   const value = readValue(props, name);
@@ -188,6 +195,29 @@ export function textProp(props: ResolvedProps, name: string): string | undefined
 export function flagProp(props: ResolvedProps, name: string, fallback: boolean): boolean {
   const value = readValue(props, name);
   return typeof value === "boolean" ? value : fallback;
+}
+
+/** Reads a finite number, or nothing when the resolved value is unusable. */
+export function finiteNumberProp(props: ResolvedProps, name: string): number | undefined {
+  const value = readValue(props, name);
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/** Reads a finite number and clamps it to the component's declared range. */
+export function numberProp(
+  props: ResolvedProps,
+  name: string,
+  minimum: number,
+  maximum: number,
+  fallback: number,
+): number {
+  if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum > maximum) {
+    return fallback;
+  }
+  const value = readValue(props, name);
+  const candidate = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  const finiteFallback = Number.isFinite(candidate) ? candidate : minimum;
+  return Math.min(maximum, Math.max(minimum, finiteFallback));
 }
 
 /**
@@ -203,9 +233,48 @@ export function countProp(
   maximum: number,
   fallback: number,
 ): number {
+  return Math.trunc(numberProp(props, name, minimum, maximum, fallback));
+}
+
+/**
+ * Reads an array prop into a bounded ordinary array. Copying prevents a hostile
+ * array proxy or accessor from being consulted later during React rendering.
+ */
+export function arrayProp(
+  props: ResolvedProps,
+  name: string,
+  maximum: number = BOUNDS.dataModelArrayLength,
+): readonly unknown[] {
   const value = readValue(props, name);
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return fallback;
+  try {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const limit = Math.min(
+      BOUNDS.dataModelArrayLength,
+      Math.max(0, Number.isFinite(maximum) ? Math.trunc(maximum) : 0),
+      value.length,
+    );
+    const result: unknown[] = [];
+    for (let index = 0; index < limit; index += 1) {
+      try {
+        result.push(value[index]);
+      } catch {
+        result.push(undefined);
+      }
+    }
+    return result;
+  } catch {
+    return [];
   }
-  return Math.min(maximum, Math.max(minimum, Math.trunc(value)));
+}
+
+/**
+ * Reads a renderer-resolved image descriptor. Re-validating the closed object
+ * keeps direct or hostile mounts from turning this reader into a raw URL path.
+ */
+export function imageAssetProp(props: ResolvedProps, name: string): FacetImageAsset | undefined {
+  const value = readValue(props, name);
+  const validation = validateFacetAssetRegistry({ asset: value });
+  return validation.ok ? validation.registry["asset"] : undefined;
 }

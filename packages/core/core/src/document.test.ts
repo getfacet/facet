@@ -57,7 +57,7 @@ const EXAMPLE_MARKUP = [
   '<Facet entry="home">',
   '<Screen name="home">',
   '<Stack gap="md">',
-  '<Text value="July revenue" />',
+  '<Text value="July revenue" icon="asset:revenue" />',
   '<Metric label="Total" value="data:sales.total" />',
   '<Button label="View details" action="nav:details" />',
   "</Stack>",
@@ -108,6 +108,37 @@ describe("buildDocument — deterministic id allocation", () => {
       kind: "reference",
       scheme: "nav",
       target: "details",
+    });
+    expect(document.nodes["n3"]?.props["icon"]).toEqual({
+      kind: "reference",
+      scheme: "asset",
+      target: "revenue",
+    });
+  });
+
+  it("stores a direct child's slot outside its prop record", () => {
+    const document = buildAccepted(
+      [
+        '<Facet entry="home">',
+        '<Screen name="home">',
+        '<Panel title="Revenue">',
+        '<Text slot="header" value="July revenue" />',
+        '<Metric value="data:sales.total" slot="body" />',
+        "</Panel>",
+        "</Screen>",
+        "</Facet>",
+      ].join("\n"),
+    );
+
+    expect(document.nodes["n3"]).toEqual({
+      tag: "Text",
+      slot: "header",
+      props: { value: { kind: "scalar", value: "July revenue" } },
+      children: [],
+    });
+    expect(document.nodes["n4"]?.slot).toBe("body");
+    expect(document.nodes["n4"]?.props).toEqual({
+      value: { kind: "reference", scheme: "data", target: "sales.total" },
     });
   });
 
@@ -243,6 +274,7 @@ describe("buildDocument — rejections", () => {
       "an id given by reference",
       '<Facet entry="home"><Screen name="home" id="data:a.b" /></Facet>',
     ],
+    ["a slot on a root Screen", '<Facet entry="home"><Screen name="home" slot="body" /></Facet>'],
   ];
 
   for (const [label, markup] of rejected) {

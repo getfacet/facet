@@ -207,7 +207,7 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Text",
     whenToUse: "Show one run of copy.",
-    acceptsChildren: false,
+    content: { mode: "none" },
     props: {
       value: { type: "string", guidance: "The copy to show.", required: true, bindable: true },
     },
@@ -215,7 +215,7 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Screen",
     whenToUse: "Hold one named screen of the document.",
-    acceptsChildren: true,
+    content: { mode: "children" },
     props: {
       name: {
         type: "string",

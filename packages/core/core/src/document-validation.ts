@@ -99,6 +99,7 @@
  */
 
 import { parseAction } from "./actions.js";
+import { resolveFacetAsset, type FacetAssetRegistry } from "./asset-registry.js";
 import { parseAuthoredNumber } from "./author-scalar.js";
 import { BOUNDS } from "./bounds.js";
 import { buildCatalogIndex, type FacetCatalog } from "./catalog.js";
@@ -239,7 +240,13 @@ function looksStructured(text: string): boolean {
 }
 
 /** The three schemes the parser produces; anything else is not a reference. */
-const REFERENCE_SCHEMES: readonly ReferenceScheme[] = Object.freeze(["data", "nav", "agent"]);
+const REFERENCE_SCHEMES: readonly ReferenceScheme[] = Object.freeze([
+  "data",
+  "nav",
+  "agent",
+  "asset",
+]);
+const EMPTY_ASSET_REGISTRY: FacetAssetRegistry = Object.freeze({});
 
 function isReferenceScheme(value: unknown): value is ReferenceScheme {
   return typeof value === "string" && REFERENCE_SCHEMES.includes(value as ReferenceScheme);
@@ -266,9 +273,10 @@ export function validateAuthorMarkup(
   ast: MarkupAst,
   catalog: FacetCatalog,
   dataModel: DataModel,
+  assetRegistry: FacetAssetRegistry = EMPTY_ASSET_REGISTRY,
 ): AuthorValidationResult {
   try {
-    return validate(ast, catalog, dataModel);
+    return validate(ast, catalog, dataModel, assetRegistry);
   } catch {
     return {
       ok: false,
@@ -286,6 +294,7 @@ function validate(
   ast: MarkupAst,
   catalog: FacetCatalog,
   dataModel: DataModel,
+  assetRegistry: FacetAssetRegistry,
 ): AuthorValidationResult {
   const document = buildDocument(ast);
   if (document === null) {
@@ -314,7 +323,14 @@ function validate(
 
   const index = buildCatalogIndex(catalog);
   const screens = envelopeScreens(ast);
-  const fault = walk(screens, index, document, dataModel, collectScopes(screens, index));
+  const fault = walk(
+    screens,
+    index,
+    document,
+    dataModel,
+    assetRegistry,
+    collectScopes(screens, index),
+  );
   if (fault !== null) {
     return { ok: false, error: fault };
   }
@@ -483,6 +499,7 @@ function walk(
   index: ReadonlyMap<string, ComponentSpec>,
   document: ComponentDocument,
   dataModel: DataModel,
+  assetRegistry: FacetAssetRegistry,
   scopes: readonly CollectScope[],
 ): AuthorError | null {
   const stack: Visit[] = [];
@@ -507,7 +524,7 @@ function walk(
         repair: `Build the page across screens of at most ${BOUNDS.nodesPerDocument} nodes in total.`,
       });
     }
-    const fault = checkNode(visit, index, document, dataModel);
+    const fault = checkNode(visit, index, document, dataModel, assetRegistry);
     if (fault !== null) {
       return fault;
     }
@@ -530,6 +547,7 @@ function checkNode(
   index: ReadonlyMap<string, ComponentSpec>,
   document: ComponentDocument,
   dataModel: DataModel,
+  assetRegistry: FacetAssetRegistry,
 ): AuthorError | null {
   const node = visit.node;
   // Placement first, before the catalog is consulted at all. That order is the
@@ -560,7 +578,7 @@ function checkNode(
       repair: "Use a registered tag; the component index lists every one this session admits.",
     });
   }
-  return checkComponent(node, spec, document, dataModel, visit.collect);
+  return checkComponent(node, spec, document, dataModel, assetRegistry, visit.collect);
 }
 
 function checkComponent(
@@ -568,6 +586,7 @@ function checkComponent(
   spec: ComponentSpec,
   document: ComponentDocument,
   dataModel: DataModel,
+  assetRegistry: FacetAssetRegistry,
   collect: CollectScope,
 ): AuthorError | null {
   const present = new Set<string>();
@@ -587,7 +606,7 @@ function checkComponent(
         repair: "Read the component's spec for the props it does declare, and drop the rest.",
       });
     }
-    const fault = checkValue(prop, schema, spec, document, dataModel, collect);
+    const fault = checkValue(prop, schema, spec, document, dataModel, assetRegistry, collect);
     if (fault !== null) {
       return fault;
     }
@@ -605,13 +624,86 @@ function checkComponent(
   }
 
   const children = Array.isArray(node.children) ? node.children : [];
-  if (!spec.acceptsChildren && children.length > 0) {
+  if (spec.content.mode === "none" && children.length > 0) {
     return authorError({
       code: "children-not-accepted",
       location: locationOf(children[0]?.location),
       cause: `\`<${spec.tag}>\` takes no children.`,
       repair: `Self-close it as \`<${spec.tag} ... />\` and put the content in a component that accepts children.`,
     });
+  }
+  if (spec.content.mode === "children") {
+    const assigned = children.find((child) => child.slot !== undefined);
+    if (assigned !== undefined) {
+      return authorError({
+        code: "slot-not-accepted",
+        location: locationOf(assigned.location),
+        cause: `\`<${spec.tag}>\` accepts ordinary children, not named slots.`,
+        repair:
+          "Remove the slot attribute or choose a structured component that declares that slot.",
+      });
+    }
+    return null;
+  }
+  if (spec.content.mode === "slots") {
+    const counts = new Map<string, number>();
+    for (const child of children) {
+      const slotName = child.slot;
+      if (slotName === undefined) {
+        return authorError({
+          code: "missing-child-slot",
+          location: locationOf(child.location),
+          cause: `Every direct child of \`<${spec.tag}>\` must name one declared slot.`,
+          repair: "Add a literal slot attribute named by the parent component spec.",
+        });
+      }
+      if (!Object.hasOwn(spec.content.slots, slotName)) {
+        return authorError({
+          code: "unknown-slot",
+          location: locationOf(child.location),
+          cause: `\`<${spec.tag}>\` declares no \`${slotName}\` slot.`,
+          repair: "Read the parent component spec and use one of its named slots.",
+        });
+      }
+      const slot = spec.content.slots[slotName];
+      if (slot === undefined) {
+        return authorError({
+          code: "unknown-slot",
+          location: locationOf(child.location),
+          cause: `\`<${spec.tag}>\` declares no \`${slotName}\` slot.`,
+          repair: "Read the parent component spec and use one of its named slots.",
+        });
+      }
+      if (slot.allowedTags !== undefined && !slot.allowedTags.includes(child.tag)) {
+        return authorError({
+          code: "slot-tag-not-allowed",
+          location: locationOf(child.location),
+          cause: `\`<${child.tag}>\` is not allowed in \`${spec.tag}.${slotName}\`.`,
+          repair: "Use one of the slot's allowed component tags.",
+        });
+      }
+      const count = (counts.get(slotName) ?? 0) + 1;
+      if (count > slot.maxChildren) {
+        return authorError({
+          code: "too-many-slot-children",
+          location: locationOf(child.location),
+          cause: `\`${spec.tag}.${slotName}\` accepts at most ${String(slot.maxChildren)} children.`,
+          repair: "Remove the excess child or move it to another declared slot.",
+        });
+      }
+      counts.set(slotName, count);
+    }
+    for (const slotName of Object.keys(spec.content.slots).sort()) {
+      const slot = spec.content.slots[slotName];
+      if (slot !== undefined && (counts.get(slotName) ?? 0) < slot.minChildren) {
+        return authorError({
+          code: "missing-slot-children",
+          location: locationOf(node.location),
+          cause: `\`${spec.tag}.${slotName}\` requires at least ${String(slot.minChildren)} children.`,
+          repair: `Add a direct child with \`slot="${slotName}"\`.`,
+        });
+      }
+    }
   }
   return null;
 }
@@ -651,6 +743,7 @@ function checkValue(
   spec: ComponentSpec,
   document: ComponentDocument,
   dataModel: DataModel,
+  assetRegistry: FacetAssetRegistry,
   collect: CollectScope,
 ): AuthorError | null {
   const location = locationOf(prop.valueLocation);
@@ -719,7 +812,17 @@ function checkValue(
         location,
       );
     }
-    return checkReference(scheme, target, prop, schema, spec, document, dataModel, location);
+    return checkReference(
+      scheme,
+      target,
+      prop,
+      schema,
+      spec,
+      document,
+      dataModel,
+      assetRegistry,
+      location,
+    );
   }
   const scalar = value["value"];
   if (value["kind"] !== "scalar" || typeof scalar !== "string") {
@@ -889,8 +992,36 @@ function checkReference(
   spec: ComponentSpec,
   document: ComponentDocument,
   dataModel: DataModel,
+  assetRegistry: FacetAssetRegistry,
   location: SourceLocation,
 ): AuthorError | null {
+  if (scheme === "asset") {
+    if (schema.type !== "string" || schema.assetKind !== "image") {
+      return authorError({
+        code: "invalid-value",
+        location,
+        cause: `\`${spec.tag}.${prop.name}\` does not declare an image asset, so it cannot use \`asset:${excerpt(target)}\`.`,
+        repair: "Use asset:key only on a prop whose component spec declares assetKind image.",
+      });
+    }
+    const resolved = resolveFacetAsset(assetRegistry, target, schema.assetKind);
+    return resolved === null
+      ? authorError({
+          code: "invalid-value",
+          location,
+          cause: `\`asset:${excerpt(target)}\` names no compatible host-pinned image asset.`,
+          repair: "Use an image key present in this session's asset registry.",
+        })
+      : null;
+  }
+  if (schema.type === "string" && schema.assetKind === "image") {
+    return authorError({
+      code: "invalid-value",
+      location,
+      cause: `\`${spec.tag}.${prop.name}\` accepts only a host-pinned \`asset:<key>\` reference, not \`${scheme}:${excerpt(target)}\`.`,
+      repair: "Use an image key present in this session's asset registry.",
+    });
+  }
   if (scheme === "data") {
     return checkBinding(target, prop, schema, location, dataModel);
   }
@@ -1012,6 +1143,14 @@ function checkScalar(
     case "number":
       return checkNumber(text, prop, schema, spec, location);
     case "string":
+      if (schema.assetKind === "image") {
+        return authorError({
+          code: "invalid-value",
+          location,
+          cause: `\`${spec.tag}.${prop.name}\` accepts a host-pinned image asset, not a URL or literal string.`,
+          repair: `Write \`${prop.name}="asset:<key>"\` using a key from this session's asset registry.`,
+        });
+      }
       return schema.enum === undefined || schema.enum.includes(text)
         ? null
         : authorError({

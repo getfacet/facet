@@ -1,5 +1,4 @@
-import type { ComponentAuthoringRole, ComponentSpec } from "@facet/core";
-import type { DataValueDescriptor } from "@facet/core";
+import type { ComponentContentClass, ComponentSpec, DataValueDescriptor } from "@facet/core";
 export type { FacetToolSession } from "@facet/core";
 
 export interface RenderPageInput {
@@ -45,7 +44,7 @@ export interface PublishDataInput {
 export interface CatalogIndexEntry {
   readonly tag: string;
   readonly whenToUse: string;
-  readonly authoringRole?: ComponentAuthoringRole;
+  readonly contentClass: ComponentContentClass;
 }
 
 export type CatalogIndex = readonly CatalogIndexEntry[];
@@ -67,4 +66,6 @@ export interface TurnObservation {
   readonly issues: readonly string[];
 }
 
-export type ComponentSpecWithIndex = ComponentSpec;
+export type ComponentSpecDetail = ComponentSpec & {
+  readonly contentClass: ComponentContentClass;
+};

@@ -6,6 +6,7 @@ import {
   resolveQuickstartPageActiveDesign,
   type ResolveQuickstartPageActiveDesignOptions,
 } from "./active-design.js";
+import { QUICKSTART_PREVIEW_ASSET_REGISTRY } from "./component-preview-fixtures.js";
 
 const defaultTags = DEFAULT_CATALOG.components.map((component) => component.tag);
 
@@ -24,6 +25,7 @@ describe("quickstart page active design", () => {
     expect(design.mode).toBe("default");
     expect(design.bootstrap.catalog).toEqual(DEFAULT_CATALOG);
     expect(design.bootstrap.theme).toEqual(DEFAULT_THEME);
+    expect(design.bootstrap.assetRegistry).toEqual(QUICKSTART_PREVIEW_ASSET_REGISTRY);
     expect(design.defaultRegistryTags).toEqual(defaultTags);
     expect(design.customRegistryTags).toEqual([]);
     expect(design.registryTags).toEqual(defaultTags);
@@ -40,7 +42,7 @@ describe("quickstart page active design", () => {
             tag: "PromoBanner",
             whenToUse: "Use for a promotional banner.",
             props: {},
-            acceptsChildren: false,
+            content: { mode: "none" },
           },
         ],
         registry: { PromoBanner },
@@ -65,6 +67,7 @@ describe("quickstart page active design", () => {
     expect(design.customRegistryTags).toEqual(["PromoBanner"]);
     expect(design.registryTags).toEqual([...defaultTags, "PromoBanner"]);
     expect(design.bootstrap.registry["PromoBanner"]).toBe(PromoBanner);
+    expect(design.bootstrap.assetRegistry).toEqual(QUICKSTART_PREVIEW_ASSET_REGISTRY);
     expect(design.examples[0]?.id).toBe("promo-banner");
     expect(design.notes[0]?.id).toBe("voice");
   });

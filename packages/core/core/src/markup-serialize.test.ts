@@ -17,6 +17,7 @@ const REFERENCE_TARGETS: Record<Extract<StoredValue, { kind: "reference" }>["sch
   data: "sales.total",
   nav: "home",
   agent: "refresh",
+  asset: "hero-image",
 };
 
 const INDENT = " ".repeat(2);
@@ -157,6 +158,18 @@ describe("serializeDocument — one grammar for write and read", () => {
       expect(result.text).toContain(`"${scheme}:${target}"`);
     }
     expect(rebuild(result.text)).toEqual(document);
+  });
+
+  it("writes a stored slot before ordinary props and round-trips it", () => {
+    const document = documentFrom(
+      '<Facet entry="home"><Screen name="home"><Split><Card slot="primary" /><Card slot="secondary" /></Split></Screen></Facet>',
+    );
+    const serialized = serializeDocument(document);
+
+    expect(serialized.issues).toEqual([]);
+    expect(serialized.text).toContain('<Card slot="primary" id="n3" />');
+    expect(serialized.text).toContain('<Card slot="secondary" id="n4" />');
+    expect(rebuild(serialized.text)).toEqual(document);
   });
 });
 

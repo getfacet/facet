@@ -19,7 +19,7 @@ function component(tag: string, overrides: Record<string, unknown> = {}): Record
     tag,
     whenToUse: `Use ${tag} when the page needs it.`,
     props: {},
-    acceptsChildren: false,
+    content: { mode: "none" },
     ...overrides,
   };
 }
@@ -35,7 +35,20 @@ function catalogRecord(): Record<string, unknown> {
       }),
       component("Panel", {
         props: {},
-        acceptsChildren: true,
+        content: { mode: "children" },
+      }),
+      component("Split", {
+        content: {
+          mode: "slots",
+          slots: {
+            primary: {
+              guidance: "The required primary region.",
+              minChildren: 1,
+              maxChildren: 1,
+              allowedTags: ["Text"],
+            },
+          },
+        },
       }),
       component("Screen", {
         props: {
@@ -45,7 +58,7 @@ function catalogRecord(): Record<string, unknown> {
             guidance: "The screen name the document entry selects.",
           },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       }),
     ],
   };
@@ -71,7 +84,7 @@ function catalogWithTextRecipe(): FacetCatalog {
       }),
       component("Panel", {
         props: {},
-        acceptsChildren: true,
+        content: { mode: "children" },
       }),
       component("Screen", {
         props: {
@@ -81,7 +94,7 @@ function catalogWithTextRecipe(): FacetCatalog {
             guidance: "The screen name the document entry selects.",
           },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       }),
     ],
   });
@@ -155,6 +168,36 @@ function expectStableNormalization(stored: Session, expectsDocument: boolean): v
 }
 
 describe("MemoryStageStore CAS", () => {
+  it("preserves a component node's slot through save and read-back", async () => {
+    const store = new MemoryStageStore();
+    const session = baseSession({
+      document: {
+        entry: "home",
+        screens: ["n1"],
+        nodes: {
+          n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+          n2: { tag: "Split", props: {}, children: ["n3"] },
+          n3: {
+            tag: "Text",
+            slot: "primary",
+            props: { value: scalar("Ready") },
+            children: [],
+          },
+        },
+      },
+    });
+
+    await expect(store.save("session-a", session, 0)).resolves.toEqual({
+      ok: true,
+      revision: 0,
+    });
+
+    await expect(loadSession(store, "session-a")).resolves.toMatchObject({
+      session: { document: { nodes: { n3: { slot: "primary" } } } },
+      issues: [],
+    });
+  });
+
   it("rejects a stale save with the current revision and never merges it", async () => {
     const store = new MemoryStageStore();
     const initial = baseSession();
@@ -269,6 +312,70 @@ describe("MemoryStageStore CAS", () => {
 });
 
 describe("validatePersistedSession fail-safe restore", () => {
+  it("drops children restored beneath a component with content mode none", () => {
+    const stored = baseSession({
+      document: {
+        entry: "home",
+        screens: ["n1"],
+        nodes: {
+          n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+          n2: { tag: "Text", props: { value: scalar("parent") }, children: ["n3"] },
+          n3: { tag: "Text", props: { value: scalar("child") }, children: [] },
+        },
+      },
+    });
+
+    const restored = validatePersistedSession(stored);
+
+    expect(restored.issues.map((entry) => entry.code)).toContain("children_not_allowed");
+    expect(restored.session.document?.nodes["n1"]?.children).toEqual([]);
+  });
+
+  it("drops a restored node with a malformed slot", () => {
+    const stored = baseSession({
+      document: {
+        entry: "home",
+        screens: ["n1"],
+        nodes: {
+          n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+          n2: {
+            tag: "Text",
+            slot: "not a slot",
+            props: { value: scalar("bad") },
+            children: [],
+          },
+        },
+      } as unknown as ComponentDocument,
+    });
+
+    const restored = validatePersistedSession(stored);
+
+    expect(restored.issues.map((entry) => entry.code)).toContain("invalid_slot");
+    expect(restored.session.document?.nodes["n1"]?.children).toEqual([]);
+  });
+
+  it("rejects a restored screen root assigned to a slot", () => {
+    const stored = baseSession({
+      document: {
+        entry: "home",
+        screens: ["n1"],
+        nodes: {
+          n1: {
+            tag: "Screen",
+            slot: "primary",
+            props: { name: scalar("home") },
+            children: [],
+          },
+        },
+      },
+    });
+
+    const restored = validatePersistedSession(stored);
+
+    expect(restored.issues.map((entry) => entry.code)).toContain("invalid_screen_slot");
+    expect(restored.session.document).toBeNull();
+  });
+
   it("degrades a cyclic restored document to a bounded safe subset", () => {
     const stored = baseSession({
       document: {

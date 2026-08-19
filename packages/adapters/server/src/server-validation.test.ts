@@ -102,6 +102,23 @@ describe("server VisitorEvent validation", () => {
       normalizeEventBody({ sessionKey: "s1", event: { ...visitorEvent(), arg: 1 } }),
     ).toBeUndefined();
   });
+
+  it("preserves typed collected values accepted by @facet/core", () => {
+    const result = normalizeEventBody({
+      sessionKey: "s1",
+      event: visitorEvent({
+        collect: {
+          enabled: { kind: "value", value: true },
+          choices: { kind: "value", value: ["one", "two"] },
+        },
+      }),
+    });
+
+    expect(result?.event.collect).toEqual({
+      enabled: { kind: "value", value: true },
+      choices: { kind: "value", value: ["one", "two"] },
+    });
+  });
 });
 
 describe("server external agent control validation", () => {

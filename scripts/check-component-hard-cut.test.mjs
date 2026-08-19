@@ -61,6 +61,32 @@ function hardCutResidueSamples() {
   ];
 }
 
+function retiredComponentContractSamples() {
+  const joined = (...parts) => parts.join("");
+  return [
+    joined("accepts", "Children"),
+    joined("authoring", "Role"),
+    joined("Component", "Authoring", "Role"),
+    joined("C", "TA"),
+    joined("Feature", "List"),
+    joined("Foot", "er"),
+    joined("Gall", "ery"),
+    joined("He", "ro"),
+    joined("Link", "List"),
+    joined("Logo", "Mark"),
+    joined("Media", "Card"),
+    joined("N", "av"),
+    joined("Product", "Showcase"),
+    joined("Profile", "Header"),
+    joined("Side", "N", "av"),
+    joined("Side", "N", "av", "Item"),
+    joined("Social", "Links"),
+    joined("Stat", "Strip"),
+    joined("Testi", "monial"),
+    joined("Visual", "Panel"),
+  ];
+}
+
 function retiredToolNameSamples() {
   const joined = (left, right, separator = "") => [left, right].join(separator);
   return [
@@ -155,6 +181,68 @@ test("allows generic external component prose that makes no Facet tier claim", a
   const result = scanHardCut({ cwd });
 
   assert.deepEqual(result.violations, []);
+});
+
+test("detects every retired component-contract symbol with exact identifier boundaries", async (t) => {
+  const cwd = await makeFixture(t);
+  const retired = retiredComponentContractSamples();
+  await Promise.all(
+    retired.map((sample, index) =>
+      writeFixture(cwd, `packages/example/src/retired-component-${index}.ts`, `${sample}\n`),
+    ),
+  );
+
+  const result = scanHardCut({ cwd });
+
+  assert.equal(
+    result.violations.filter((violation) => violation.group === "retired_component_contract")
+      .length,
+    retired.length,
+  );
+});
+
+test("allows current identifiers that only contain retired component-contract text", async (t) => {
+  const cwd = await makeFixture(t);
+  await writeFixture(
+    cwd,
+    "packages/example/src/current.ts",
+    retiredComponentContractSamples()
+      .map((sample) => `export const ${sample}Current = true;`)
+      .join("\n"),
+  );
+
+  const result = scanHardCut({ cwd, mode: "production" });
+
+  assert.deepEqual(result.violations, []);
+});
+
+test("keeps retired component-contract vocabulary scoped to source files", async (t) => {
+  const cwd = await makeFixture(t);
+  const retired = retiredComponentContractSamples()[0];
+  await writeFixture(cwd, "docs/history.md", `Historical record: ${retired}.\n`);
+  await writeFixture(cwd, "packages/example/example/README.md", `Historical record: ${retired}.\n`);
+
+  const result = scanHardCut({ cwd });
+
+  assert.deepEqual(result.violations, []);
+});
+
+test("waives same-line annotated retired component-contract negatives in tests", async (t) => {
+  const cwd = await makeFixture(t);
+  const retired = retiredComponentContractSamples();
+  await writeFixture(
+    cwd,
+    "packages/example/src/retired-component.test.ts",
+    retired.map((sample) => `const negative = "${sample}"; // ${allowedAnnotation()}`).join("\n"),
+  );
+
+  const result = scanHardCut({ cwd });
+
+  assert.deepEqual(result.violations, []);
+  assert.equal(
+    result.waived.filter((violation) => violation.group === "retired_component_contract").length,
+    retired.length,
+  );
 });
 
 test("waives same-line annotated negatives only in eligible test and fixture paths", async (t) => {

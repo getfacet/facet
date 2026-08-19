@@ -113,6 +113,7 @@ function modalDocument(): ComponentDocument {
       }),
       field: Object.freeze({
         tag: "Field",
+        slot: "body",
         props: Object.freeze({
           name: scalar("region"),
           label: scalar("Region"),
@@ -128,7 +129,7 @@ const PROMO_BANNER_SPEC: ComponentSpec = Object.freeze({
   tag: "PromoBanner",
   whenToUse: "Use for a branded promotional banner.",
   props: Object.freeze({}),
-  acceptsChildren: false,
+  content: Object.freeze({ mode: "none" }),
 });
 
 function PromoBanner(): ReactNode {
@@ -477,9 +478,7 @@ describe("AssetExplorer", () => {
     expect(container.querySelector('[data-screen-pattern-option="promo-screen"]')).toBeInstanceOf(
       HTMLElement,
     );
-    expect(
-      container.querySelector('[data-screen-pattern-option="revenue-command-center"]'),
-    ).toBeNull();
+    expect(container.querySelector('[data-screen-pattern-option="landing"]')).toBeNull();
 
     click(container.querySelector('[data-facet-asset-source-option="default"]') as HTMLElement);
     click(buttonNamed(container, "Components"));

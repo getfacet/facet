@@ -93,14 +93,17 @@ function click(element: HTMLElement): void {
 
 function presentedTags(): readonly string[] {
   return [...deriveComponentInspectorRows(DEFAULT_CATALOG)]
-    .sort((left, right) => left.presentation.order - right.presentation.order)
+    .sort((left, right) => {
+      const order = { Leaf: 0, Container: 1, Structured: 2 } as const;
+      return order[left.contentClass] - order[right.contentClass];
+    })
     .map((row) => row.tag);
 }
 
 const PROMO_BANNER_SPEC = Object.freeze({
   tag: "PromoBanner",
   whenToUse: "Use for active design launch announcements.",
-  acceptsChildren: false,
+  content: Object.freeze({ mode: "none" }),
   props: Object.freeze({
     eyebrow: Object.freeze({
       type: "string",
@@ -177,8 +180,11 @@ describe("ComponentInspector", () => {
       screen.whenToUse,
     );
     expect(
-      components.querySelector('[data-component-contract-summary-item="children"]')?.textContent,
-    ).toContain("accepted");
+      components.querySelector('[data-component-contract-summary-item="class"]')?.textContent,
+    ).toContain("Container");
+    expect(
+      components.querySelector('[data-component-contract-summary-item="mode"]')?.textContent,
+    ).toContain("children");
     expect(components.querySelector('[data-component-prop="name"]')?.textContent).toContain(
       "required",
     );
@@ -206,7 +212,28 @@ describe("ComponentInspector", () => {
       "valueProp value",
     );
     expect(components.querySelector('[data-component-collect="Field"]')?.textContent).toContain(
+      "valueKind string",
+    );
+    expect(components.querySelector('[data-component-collect="Field"]')?.textContent).toContain(
       "sensitiveProp secret",
+    );
+
+    click(buttonNamed(components, "Form"));
+
+    expect(
+      components.querySelector('[data-component-contract-summary-item="class"]')?.textContent,
+    ).toContain("Structured");
+    expect(
+      components.querySelector('[data-component-contract-summary-item="mode"]')?.textContent,
+    ).toContain("slots");
+    expect(components.querySelector('[data-component-content="Form"]')?.textContent).toContain(
+      "fields",
+    );
+    expect(components.querySelector('[data-component-slot="fields"]')?.textContent).toContain(
+      "1-20 children",
+    );
+    expect(components.querySelector('[data-component-slot="actions"]')?.textContent).toContain(
+      "1-4 children",
     );
   });
 
@@ -239,25 +266,25 @@ describe("ComponentInspector", () => {
   it("groups component names behind collapsible sidebar sections", () => {
     const container = render(<ComponentInspector renderPreview={stubPreview} />);
     const components = section(container, "Components section");
-    const surfacesToggle = components.querySelector(
-      '[data-component-group-toggle="surface"]',
+    const containersToggle = components.querySelector(
+      '[data-component-group-toggle="container"]',
     ) as HTMLButtonElement | null;
 
-    if (surfacesToggle === null) {
-      throw new Error("Missing surface group toggle");
+    if (containersToggle === null) {
+      throw new Error("Missing container group toggle");
     }
-    expect(surfacesToggle).toBeInstanceOf(HTMLButtonElement);
-    expect(surfacesToggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(containersToggle).toBeInstanceOf(HTMLButtonElement);
+    expect(containersToggle?.getAttribute("aria-expanded")).toBe("true");
     expect(components.querySelector('[data-component-option="Card"]')).toBeTruthy();
 
-    click(surfacesToggle);
+    click(containersToggle);
 
-    expect(surfacesToggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(containersToggle?.getAttribute("aria-expanded")).toBe("false");
     expect(components.querySelector('[data-component-option="Card"]')).toBeNull();
 
-    click(surfacesToggle);
+    click(containersToggle);
 
-    expect(surfacesToggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(containersToggle?.getAttribute("aria-expanded")).toBe("true");
     expect(components.querySelector('[data-component-option="Card"]')).toBeTruthy();
   });
 

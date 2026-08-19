@@ -34,6 +34,7 @@
 
 import { BOUNDS } from "./bounds.js";
 import { isFacetIdentifier } from "./identifiers.js";
+import type { CollectedValue } from "./mount-contract.js";
 
 /**
  * One `agent:` event.
@@ -73,7 +74,7 @@ export interface VisitorEvent {
   readonly collect: Readonly<
     Record<
       string,
-      | { readonly kind: "value"; readonly value: string }
+      | { readonly kind: "value"; readonly value: CollectedValue }
       | { readonly kind: "omitted_sensitive" }
       | { readonly kind: "collect_source_unavailable" }
     >
@@ -382,14 +383,60 @@ function validateEntry(
   if (kind === "collect_source_unavailable") {
     return { ok: true, entry: Object.freeze({ kind: "collect_source_unavailable" }) };
   }
-  const collected = value["value"];
-  if (typeof collected !== "string") {
-    return reject("invalid_collected_value", `${at}.value`, "A collected value is a string.");
+  const collected = validateCollectedValue(value["value"], `${at}.value`);
+  if (!collected.ok) {
+    return collected;
   }
-  if (collected.length > BOUNDS.collectedValueChars) {
-    return reject("collected_value_too_long", `${at}.value`, "The collected value exceeds B-23.");
+  return { ok: true, entry: Object.freeze({ kind: "value", value: collected.value }) };
+}
+
+function validateCollectedValue(
+  value: unknown,
+  at: string,
+): { readonly ok: true; readonly value: CollectedValue } | EventRejection {
+  if (typeof value === "boolean") {
+    return { ok: true, value };
   }
-  return { ok: true, entry: Object.freeze({ kind: "value", value: collected }) };
+  if (typeof value === "string") {
+    if (value.length > BOUNDS.collectedValueChars) {
+      return reject("collected_value_too_long", at, "The collected value exceeds B-23.");
+    }
+    return { ok: true, value };
+  }
+  if (!Array.isArray(value)) {
+    return reject(
+      "invalid_collected_value",
+      at,
+      "A collected value is a string, boolean, or string array.",
+    );
+  }
+  if (value.length > BOUNDS.dataModelArrayLength) {
+    return reject(
+      "too_many_collected_values",
+      at,
+      "A collected string array exceeds the existing data-array bound.",
+    );
+  }
+  const items: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (typeof item !== "string") {
+      return reject(
+        "invalid_collected_value",
+        `${at}[${index}]`,
+        "Every collected array item must be a string.",
+      );
+    }
+    if (item.length > BOUNDS.collectedValueChars) {
+      return reject(
+        "collected_value_too_long",
+        `${at}[${index}]`,
+        "A collected array item exceeds B-23.",
+      );
+    }
+    items.push(item);
+  }
+  return { ok: true, value: Object.freeze(items) };
 }
 
 /** Narrows an authored `kind` to the closed vocabulary, or `null` if it is none of them. */

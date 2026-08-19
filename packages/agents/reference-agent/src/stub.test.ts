@@ -143,6 +143,8 @@ describe("createStubAgent", () => {
       name: { kind: "value", value: "Ada" },
       token: { kind: "omitted_sensitive" },
       email: { kind: "value", value: "a@b.c" },
+      enabled: { kind: "value", value: true },
+      interests: { kind: "value", value: ["design", "systems"] },
       missing: { kind: "collect_source_unavailable" },
     };
 
@@ -152,7 +154,7 @@ describe("createStubAgent", () => {
     expect(session.appliedMarkup).toEqual([STUB_MARKUP]);
     expect(session.document).toEqual(acceptedDocument(STUB_MARKUP));
     expect(first.text).toBe(
-      "submit: email=a@b.c missing=collect_source_unavailable name=Ada token=omitted_sensitive",
+      'submit: email=a@b.c enabled=true interests=["design","systems"] missing=collect_source_unavailable name=Ada token=omitted_sensitive',
     );
     expect(second).toEqual(first);
   });

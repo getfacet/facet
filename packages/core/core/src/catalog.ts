@@ -271,6 +271,22 @@ function validateCatalogShape(value: unknown): CatalogValidationResult {
   if (nonconforming !== undefined) {
     return nonconforming;
   }
+  for (const [componentIndex, spec] of components.entries()) {
+    if (spec.content.mode !== "slots") continue;
+    for (const slotName of Object.keys(spec.content.slots).sort()) {
+      const allowedTags = spec.content.slots[slotName]?.allowedTags;
+      if (allowedTags === undefined) continue;
+      for (const [allowedTagIndex, allowedTag] of allowedTags.entries()) {
+        if (!tags.has(allowedTag)) {
+          return reject(
+            "unknown_allowed_tag",
+            `${CATALOG_KEY}[${componentIndex}].content.slots.${slotName}.allowedTags.${allowedTagIndex}`,
+            "Every allowed slot tag must be registered in the same catalog.",
+          );
+        }
+      }
+    }
+  }
   return { ok: true, catalog: Object.freeze({ components: Object.freeze(components) }) };
 }
 
@@ -286,8 +302,8 @@ function validateScreenConformance(
   spec: ComponentSpec,
   position: string,
 ): CatalogRejection | undefined {
-  if (!spec.acceptsChildren) {
-    return rejectScreen(`${position}.acceptsChildren`, "A screen root holds the screen's content.");
+  if (spec.content.mode !== "children") {
+    return rejectScreen(`${position}.content`, "A screen root holds ordinary screen content.");
   }
   if (spec.collect !== undefined) {
     return rejectScreen(`${position}.collect`, "A screen root is not a value Facet collects.");
@@ -357,11 +373,35 @@ function validateModalSpec(value: unknown): ModalConformanceResult {
   if (spec.tag !== MODAL_TAG) {
     return reject("modal_tag_mismatch", "tag", `The frame projects the ${MODAL_TAG} tag only.`);
   }
-  if (!spec.acceptsChildren) {
+  if (spec.content.mode !== "slots") {
     return reject(
-      "modal_must_accept_children",
-      "acceptsChildren",
-      "The frame projects flow content as children.",
+      "modal_must_use_slots",
+      "content",
+      "The frame projects named body and actions regions.",
+    );
+  }
+  const slotNames = Object.keys(spec.content.slots).sort();
+  if (slotNames.join(",") !== "actions,body") {
+    return reject(
+      "modal_slots_mismatch",
+      "content.slots",
+      "Modal declares exactly body and actions slots.",
+    );
+  }
+  const body = spec.content.slots["body"];
+  const actions = spec.content.slots["actions"];
+  if (
+    body === undefined ||
+    body.minChildren !== 1 ||
+    body.maxChildren !== 16 ||
+    actions === undefined ||
+    actions.minChildren !== 0 ||
+    actions.maxChildren !== 4
+  ) {
+    return reject(
+      "modal_slot_cardinality_mismatch",
+      "content.slots",
+      "Modal body accepts 1..16 children and actions accepts 0..4.",
     );
   }
   if (spec.collect !== undefined) {

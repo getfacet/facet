@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { defineAgent } from "@facet/agent";
-import { DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
 import type {
   VisitorEvent,
   ComponentDocument,
@@ -617,39 +617,25 @@ describe("quickstart E2E — initialMarkup seeding", () => {
 });
 
 describe("quickstart E2E — CLI default seed and barrel surface", () => {
-  it("quickstart CLI ships the exact 121-node component seed before provider output", async () => {
+  it("quickstart CLI ships the exact structured component seed before provider output", async () => {
     const booted = await bootCli([]);
     try {
       const shell = await (await fetch(`${booted.running.url}/`)).text();
       const inline = bootGlobals(shell).__FACET_INITIAL_STAGE__;
       expect(inline).toEqual(QUICKSTART_INITIAL_STAGE);
-      expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(121);
+      expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(129);
 
       const seedText = JSON.stringify(inline);
-      expect(seedText).toHaveLength(24_704);
+      expect(seedText).toHaveLength(23_575);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "372d977c4b6ab24814805ad416fef28e06a1e401c031c8180f409343c0f3b0a2",
+        "da42d6215d7e3607718bb8d35211a57c6f7dc665996927f8120080dbd6c01c3d",
       );
-      for (const tag of [
-        "Screen",
-        "Stack",
-        "Row",
-        "Split",
-        "Grid",
-        "Card",
-        "Hero",
-        "ProductShowcase",
-        "VisualPanel",
-        "MediaCard",
-        "Text",
-        "Badge",
-        "Field",
-        "Button",
-        "Modal",
-        "Empty",
-      ]) {
-        expect(seedText).toContain(`"tag":"${tag}"`);
-      }
+      const seedTags = new Set(
+        Object.values(QUICKSTART_INITIAL_STAGE.nodes).map((node) => node.tag),
+      );
+      expect(
+        [...seedTags].filter((tag) => !DEFAULT_CATALOG.components.some((spec) => spec.tag === tag)),
+      ).toEqual([]);
       expect(booted.captured.out.join("\n")).toContain("openai");
     } finally {
       await booted.running.close();

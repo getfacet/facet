@@ -47,7 +47,7 @@
  * entry point.
  */
 
-import type { CollectSpec, ComponentSpec } from "@facet/core";
+import type { CollectedValue, CollectedValueKind, CollectSpec, ComponentSpec } from "@facet/core";
 import { BOUNDS } from "@facet/core";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
@@ -113,7 +113,7 @@ export interface FieldInjection {
    */
   readonly props: ResolvedProps;
   /** How the visitor's new value reaches the store. */
-  readonly onValueChange: (value: string) => void;
+  readonly onValueChange: (value: CollectedValue) => void;
 }
 
 /** One live collectable node, as the store records it. */
@@ -122,8 +122,9 @@ export interface FieldRegistration {
   /** The name a `collect` list addresses it by; absent when the node declares none. */
   readonly name?: string;
   readonly sensitive: boolean;
+  readonly valueKind: CollectedValueKind;
   /** The value Facet shows until the visitor changes it. */
-  readonly seed: string;
+  readonly seed: CollectedValue;
 }
 
 /** The per-session store of local field values. There is no process-global one. */
@@ -140,9 +141,9 @@ export interface FieldStore {
    */
   setName(nodeId: string, name: string | undefined): void;
   /** Records the visitor's new value for a registered node. */
-  write(nodeId: string, value: string): void;
+  write(nodeId: string, value: CollectedValue): void;
   /** The node's current value, or `undefined` when nothing is registered under it. */
-  readValue(nodeId: string): string | undefined;
+  readValue(nodeId: string): CollectedValue | undefined;
   /** Subscribes to every change, for `useSyncExternalStore`. */
   subscribe(listener: () => void): () => void;
   /** What the payload builder sees for one collect name. */
@@ -162,7 +163,8 @@ export interface FieldHostProps {
 interface FieldRecord {
   readonly name: string | undefined;
   readonly sensitive: boolean;
-  readonly value: string;
+  readonly valueKind: CollectedValueKind;
+  readonly value: CollectedValue;
   /** Identifies this registration, so a stale disposer removes nothing. */
   readonly token: symbol;
 }
@@ -179,10 +181,51 @@ export function isCollectable(spec: ComponentSpec): spec is CollectableSpec {
 }
 
 /** A value the store may hold: never longer than a value that could be collected. */
-function clamp(value: string): string {
-  return value.length > BOUNDS.collectedValueChars
-    ? value.slice(0, BOUNDS.collectedValueChars)
-    : value;
+function normalizeValue(kind: CollectedValueKind, value: unknown): CollectedValue | null {
+  try {
+    if (kind === "boolean") {
+      return typeof value === "boolean" ? value : null;
+    }
+    if (kind === "string") {
+      if (typeof value !== "string") {
+        return null;
+      }
+      return value.length > BOUNDS.collectedValueChars
+        ? value.slice(0, BOUNDS.collectedValueChars)
+        : value;
+    }
+    if (!Array.isArray(value)) {
+      return null;
+    }
+    const items: string[] = [];
+    const count = Math.min(value.length, BOUNDS.dataModelArrayLength);
+    for (let index = 0; index < count; index += 1) {
+      const item = value[index];
+      if (typeof item !== "string") {
+        return null;
+      }
+      items.push(
+        item.length > BOUNDS.collectedValueChars ? item.slice(0, BOUNDS.collectedValueChars) : item,
+      );
+    }
+    return Object.freeze(items);
+  } catch {
+    return null;
+  }
+}
+
+function emptyValue(kind: CollectedValueKind): CollectedValue {
+  if (kind === "boolean") {
+    return false;
+  }
+  return kind === "string" ? "" : Object.freeze([] as string[]);
+}
+
+function sameValue(left: CollectedValue, right: CollectedValue): boolean {
+  if (!Array.isArray(left) || !Array.isArray(right)) {
+    return left === right;
+  }
+  return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
 /** Creates one session's field store. Nothing here is shared between sessions. */
@@ -202,7 +245,10 @@ export function createFieldStore(): FieldStore {
     records.set(registration.nodeId, {
       name: normalizeName(registration.name),
       sensitive: registration.sensitive,
-      value: clamp(registration.seed),
+      valueKind: registration.valueKind,
+      value:
+        normalizeValue(registration.valueKind, registration.seed) ??
+        emptyValue(registration.valueKind),
       token,
     });
     notify();
@@ -232,20 +278,20 @@ export function createFieldStore(): FieldStore {
     notify();
   }
 
-  function write(nodeId: string, value: string): void {
+  function write(nodeId: string, value: CollectedValue): void {
     const record = records.get(nodeId);
     if (record === undefined) {
       return;
     }
-    const next = clamp(value);
-    if (next === record.value) {
+    const next = normalizeValue(record.valueKind, value);
+    if (next === null || sameValue(next, record.value)) {
       return;
     }
     records.set(nodeId, { ...record, value: next });
     notify();
   }
 
-  function readValue(nodeId: string): string | undefined {
+  function readValue(nodeId: string): CollectedValue | undefined {
     return records.get(nodeId)?.value;
   }
 
@@ -296,16 +342,20 @@ export function createFieldStore(): FieldStore {
  * what makes an untouched collectable node yield a stated value rather than an
  * inferred blank.
  */
-function readSeed(spec: CollectableSpec, props: ResolvedProps): string {
+function readSeed(spec: CollectableSpec, props: ResolvedProps): CollectedValue {
   const authored = props[spec.collect.valueProp];
-  if (typeof authored === "string") {
-    return authored;
+  const resolved = normalizeValue(spec.collect.valueKind, authored);
+  if (resolved !== null) {
+    return resolved;
   }
   const declared = spec.props[spec.collect.valueProp];
-  if (declared !== undefined && "default" in declared && typeof declared.default === "string") {
-    return declared.default;
+  if (declared !== undefined && "default" in declared) {
+    const fallback = normalizeValue(spec.collect.valueKind, declared.default);
+    if (fallback !== null) {
+      return fallback;
+    }
   }
-  return "";
+  return emptyValue(spec.collect.valueKind);
 }
 
 /**
@@ -353,10 +403,11 @@ const useRegistrationEffect = typeof window === "undefined" ? useEffect : useLay
  */
 export function FieldHost(host: FieldHostProps): ReactNode {
   const { nodeId, spec, props, store, mount } = host;
-  const seed = readSeed(spec, props);
+  const seed = useMemo(() => readSeed(spec, props), [spec, props]);
   const sensitive = readSensitive(spec.collect, props);
   const name = readName(props);
   const valueProp = spec.collect.valueProp;
+  const valueKind = spec.collect.valueKind;
 
   const stored = useSyncExternalStore(
     store.subscribe,
@@ -372,11 +423,18 @@ export function FieldHost(host: FieldHostProps): ReactNode {
   // one is deliberate: it is what makes re-authoring a secret field as an
   // ordinary one yield nothing rather than the secret.
   useRegistrationEffect(
-    () => store.register({ nodeId, sensitive, seed, ...(name === undefined ? {} : { name }) }),
+    () =>
+      store.register({
+        nodeId,
+        sensitive,
+        seed,
+        valueKind,
+        ...(name === undefined ? {} : { name }),
+      }),
     // `name` is read here but is intentionally not a dependency: it is carried
     // so a fresh registration is complete in one step, and the effect below owns
     // every later change to it.
-    [store, nodeId, sensitive, seed],
+    [store, nodeId, sensitive, seed, valueKind],
   );
 
   // The address moves on its own, because values are keyed by the stable node
@@ -388,7 +446,7 @@ export function FieldHost(host: FieldHostProps): ReactNode {
   }, [store, nodeId, name]);
 
   const onValueChange = useCallback(
-    (next: string) => {
+    (next: CollectedValue) => {
       store.write(nodeId, next);
     },
     [store, nodeId],

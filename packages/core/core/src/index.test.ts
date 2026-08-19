@@ -55,6 +55,12 @@ const PUBLIC_SURFACE: readonly string[] = Object.freeze([
   "ActionResult",
   "isAuthoredNumberLiteral",
   "parseAuthoredNumber",
+  "resolveFacetAsset",
+  "validateFacetAssetRegistry",
+  "FacetAssetDescriptor",
+  "FacetAssetRegistry",
+  "FacetAssetRegistryValidationResult",
+  "FacetImageAsset",
   "BOUNDS",
   "Bounds",
   "buildCatalogIndex",
@@ -65,12 +71,15 @@ const PUBLIC_SURFACE: readonly string[] = Object.freeze([
   "ModalConformanceResult",
   "validateComponentSpec",
   "CollectSpec",
-  "ComponentAuthoringRole",
   "ComponentSpec",
   "ComponentSpecValidationResult",
   "PropSchema",
   "StructuredPropType",
   "ThemeRecipeSpec",
+  "deriveComponentContentClass",
+  "ComponentContentClass",
+  "ComponentContentSpec",
+  "ComponentSlotSpec",
   "ConversationMessage",
   "deriveMessageId",
   "truncateConversationText",
@@ -117,6 +126,8 @@ const PUBLIC_SURFACE: readonly string[] = Object.freeze([
   "SerializeResult",
   "SerializeIssue",
   "CollectableMount",
+  "CollectedValue",
+  "CollectedValueKind",
   "ComponentMountProps",
   "MountedComponent",
   "NEUTRAL_COPY_DEFAULTS",
@@ -138,6 +149,8 @@ const PUBLIC_SURFACE: readonly string[] = Object.freeze([
   "collectTurnOutcome",
   "FacetAgent",
   "FacetStage",
+  "StructuredFieldSpec",
+  "StructuredShapeSpec",
   "FacetTargetedMutationInput",
   "FacetTargetedMutationResult",
   "FacetToolSession",
@@ -174,7 +187,7 @@ const PUBLIC_SURFACE: readonly string[] = Object.freeze([
 ]);
 
 /** The contract's own count, pinned so a silent list edit is a failure. */
-const PUBLIC_SURFACE_SIZE = 121;
+const PUBLIC_SURFACE_SIZE = 134;
 
 /**
  * The exact off-barrel set named by the contract. `markup-lexer.ts` is private
@@ -231,6 +244,7 @@ const PUBLIC_RESULT_CONTRACTS: readonly string[] = Object.freeze([
   "ThemeExtensionDeclarationValidationResult",
   "ThemeValidationResult",
   "TurnOutcomeValidationResult",
+  "FacetAssetRegistryValidationResult",
 ]);
 
 /** One re-export statement parsed out of the barrel. */
@@ -383,7 +397,7 @@ describe("gate 1 — the exact barrel key snapshot", () => {
     expect(declared.size).toBe(PUBLIC_SURFACE_SIZE);
   });
 
-  it("pins the contract list itself at 85 unique keys", () => {
+  it("pins the contract list itself at 134 unique keys", () => {
     expect(PUBLIC_SURFACE).toHaveLength(PUBLIC_SURFACE_SIZE);
     expect(new Set(PUBLIC_SURFACE).size).toBe(PUBLIC_SURFACE_SIZE);
   });

@@ -1,122 +1,135 @@
 /**
- * The default interactive components: `Button` and `Field`.
+ * Default input, communication, and disclosure component specifications.
  *
- * Two declarations here carry weight beyond their own tags.
+ * Collection is catalog-owned. Each control declares its address, injected
+ * value prop, and exact collected-value kind; components cannot opt themselves
+ * into collection at render time. Structured data remains binding-only and the
+ * two fixed shapes below are the complete option and message contracts.
  *
- * **`Button.action` is a string.** An authored `nav:` or `agent:` reference may
- * only sit on a prop declared `string`, so a narrower type would make the one
- * control that does anything unable to say what it does. It declares no `enum`
- * either: the domain is the closed scheme vocabulary — `nav:<screen>` and
- * `agent:<event>` — whose targets are open, and browser-local action routing is refused by the
- * grammar itself rather than by a value list here. It is not bindable, because
- * what a control does is authored; letting published data choose it would make
- * the action surface depend on a data publish.
- *
- * **`Field` declares the collect contract (D-08).** `collect` names `value` as
- * the prop Facet injects and `secret` as the flag that withholds it. Naming them
- * here is what makes collectable identity catalog-owned: the renderer reads the
- * spec, not a DOM stamp, so a component cannot opt itself in, opt itself out, or
- * quietly yield nothing. `value` declares a `default` of `""` — that default is
- * exactly what a collectable node that never registered yields, so the fallback
- * is a stated value rather than an inferred blank. `secret` is a boolean because
- * the collect contract requires the sensitive prop to be one.
- *
- * The module is **private**: it is not barrel-exported and is not a package
- * entry point. `catalog.ts` composes it into the one public default catalog.
+ * This module is private. `catalog.ts` is the only default-catalog assembler.
  */
 
 import type { ComponentSpec } from "@facet/core";
 
-export const BUTTON_SPEC: ComponentSpec = {
-  tag: "Button",
-  authoringRole: "interaction",
-  whenToUse:
-    "Give the visitor one control that moves to another screen or sends an event to the agent.",
-  props: {
+const OPTION_SHAPE = {
+  fields: {
     label: {
       type: "string",
       required: true,
-      guidance: "The words on the control, naming what activating it does.",
+      guidance: "The visitor-facing option label.",
     },
-    action: {
+    value: {
       type: "string",
       required: true,
-      guidance:
-        "What activating it does: `nav:<screen>` to move to a screen this document declares, or `agent:<event>` to send a named event. There is no other action.",
+      guidance: "The stable value collected when the option is chosen.",
     },
-    arg: {
-      type: "string",
-      guidance:
-        "One explicit argument sent with an `agent:` event, when the event needs a value the visitor did not type.",
-    },
-    collect: {
-      type: "string",
-      guidance:
-        "The `Field` names whose values this `agent:` event carries, separated by spaces. A field this never names is never sent.",
-    },
-    tone: {
-      type: "string",
-      enum: ["primary", "secondary", "quiet"],
-      default: "secondary",
-      guidance:
-        "How prominent the control is: the screen's primary action, an ordinary one, or a quiet one.",
+    disabled: {
+      type: "boolean",
+      guidance: "Whether the option is unavailable.",
     },
   },
-  acceptsChildren: false,
+} as const;
+
+const MESSAGE_SHAPE = {
+  fields: {
+    id: {
+      type: "string",
+      required: true,
+      guidance: "The stable message identifier.",
+    },
+    author: {
+      type: "string",
+      required: true,
+      guidance: "The name of the message author.",
+    },
+    body: {
+      type: "string",
+      required: true,
+      guidance: "The message text.",
+    },
+    timestamp: {
+      type: "string",
+      guidance: "A display-ready timestamp.",
+    },
+    side: {
+      type: "string",
+      guidance: "Which side of the thread presents the message.",
+    },
+    status: {
+      type: "string",
+      guidance: "A display-ready delivery status.",
+    },
+  },
+} as const;
+
+export const FORM_SPEC: ComponentSpec = {
+  tag: "Form",
+  whenToUse: "Group collectable controls with the actions that submit or use their values.",
+  props: {
+    layout: {
+      type: "string",
+      enum: ["stacked", "inline"],
+      default: "stacked",
+      guidance: "Whether fields stack vertically or flow inline when space permits.",
+    },
+  },
+  content: {
+    mode: "slots",
+    slots: {
+      fields: {
+        guidance: "The controls whose values this form collects.",
+        minChildren: 1,
+        maxChildren: 20,
+      },
+      actions: {
+        guidance: "The controls that submit or otherwise act on the form.",
+        minChildren: 1,
+        maxChildren: 4,
+      },
+    },
+  },
   themeRecipe: {
     tokens: {
-      primaryBg: "color",
-      primaryText: "color",
-      primaryBorder: "color",
-      secondaryBg: "color",
-      secondaryText: "color",
-      secondaryBorder: "color",
-      quietText: "color",
-      radius: "length",
-      paddingInline: "length",
-      paddingBlock: "length",
-      focusRing: "shadow",
+      gap: "length",
+      inlineGap: "length",
     },
   },
 };
 
 export const FIELD_SPEC: ComponentSpec = {
   tag: "Field",
-  authoringRole: "interaction",
-  whenToUse: "Ask the visitor for one value that a `Button` can name in its `collect` list.",
+  whenToUse: "Ask the visitor for one short text value.",
   props: {
     name: {
       type: "string",
       required: true,
-      guidance:
-        "The name a `Button` writes in `collect` to send this value. Unique within the screen.",
+      guidance: "The unique name a Button writes in its collect list.",
     },
     label: {
       type: "string",
       required: true,
-      guidance: "What the visitor is being asked for, shown beside the input.",
+      guidance: "What the visitor is being asked for.",
     },
     value: {
       type: "string",
       default: "",
-      guidance:
-        "The value shown. Facet owns it once the visitor types; write it only to seed a starting value, and read it back through `collect`, never from the page.",
+      guidance: "The initial value before the visitor edits the field.",
     },
     placeholder: {
       type: "string",
-      guidance: "A short hint shown while the field is still empty.",
+      guidance: "A short hint shown while the field is empty.",
     },
     secret: {
       type: "boolean",
       default: false,
-      guidance:
-        "`true` masks the value and keeps it out of every event payload — it is reported as withheld rather than sent.",
+      guidance: "Whether the value is masked and withheld from event payloads.",
     },
   },
-  acceptsChildren: false,
+  content: { mode: "none" },
   collect: {
     collectable: true,
     valueProp: "value",
+    valueKind: "string",
     sensitiveProp: "secret",
   },
   themeRecipe: {
@@ -128,13 +141,242 @@ export const FIELD_SPEC: ComponentSpec = {
       inputFocusBorder: "color",
       inputRadius: "length",
       inputPadding: "length",
+      focusRing: "shadow",
     },
   },
 };
 
-/**
- * The interactive group, in the order the default catalog registers it. Frozen
- * so a host reading the assembled catalog cannot lengthen the group; the specs
- * themselves are frozen by `validateCatalog` at the trust boundary.
- */
-export const INTERACTIVE_SPECS: readonly ComponentSpec[] = Object.freeze([BUTTON_SPEC, FIELD_SPEC]);
+export const SELECT_SPEC: ComponentSpec = {
+  tag: "Select",
+  whenToUse: "Let the visitor choose one value from a data-backed option list.",
+  props: {
+    name: {
+      type: "string",
+      required: true,
+      guidance: "The unique name a Button writes in its collect list.",
+    },
+    label: {
+      type: "string",
+      required: true,
+      guidance: "What the visitor is choosing.",
+    },
+    options: {
+      type: "array",
+      required: true,
+      bindable: true,
+      shape: OPTION_SHAPE,
+      guidance: "Options published through the data model.",
+    },
+    value: {
+      type: "string",
+      default: "",
+      guidance: "The initially selected option value.",
+    },
+    placeholder: {
+      type: "string",
+      guidance: "A short prompt shown until an option is selected.",
+    },
+  },
+  content: { mode: "none" },
+  collect: { collectable: true, valueProp: "value", valueKind: "string" },
+  themeRecipe: {
+    tokens: {
+      labelText: "color",
+      inputBg: "color",
+      inputText: "color",
+      inputBorder: "color",
+      inputFocusBorder: "color",
+      inputRadius: "length",
+      inputPadding: "length",
+      focusRing: "shadow",
+    },
+  },
+};
+
+export const CHOICE_GROUP_SPEC: ComponentSpec = {
+  tag: "ChoiceGroup",
+  whenToUse: "Let the visitor choose several values from a short data-backed option list.",
+  props: {
+    name: {
+      type: "string",
+      required: true,
+      guidance: "The unique name a Button writes in its collect list.",
+    },
+    label: {
+      type: "string",
+      required: true,
+      guidance: "What the visitor is choosing.",
+    },
+    options: {
+      type: "array",
+      required: true,
+      bindable: true,
+      shape: OPTION_SHAPE,
+      guidance: "Choices published through the data model.",
+    },
+    value: {
+      type: "array",
+      bindable: true,
+      guidance: "The currently selected option values.",
+    },
+    layout: {
+      type: "string",
+      enum: ["stacked", "inline"],
+      default: "stacked",
+      guidance: "Whether choices stack vertically or flow inline when space permits.",
+    },
+  },
+  content: { mode: "none" },
+  collect: { collectable: true, valueProp: "value", valueKind: "string[]" },
+  themeRecipe: {
+    tokens: {
+      labelText: "color",
+      optionText: "color",
+      optionBorder: "color",
+      selectedBg: "color",
+      selectedBorder: "color",
+      radius: "length",
+      gap: "length",
+      focusRing: "shadow",
+    },
+  },
+};
+
+export const TOGGLE_SPEC: ComponentSpec = {
+  tag: "Toggle",
+  whenToUse: "Let the visitor turn one boolean setting on or off.",
+  props: {
+    name: {
+      type: "string",
+      required: true,
+      guidance: "The unique name a Button writes in its collect list.",
+    },
+    label: {
+      type: "string",
+      required: true,
+      guidance: "The setting the visitor can turn on or off.",
+    },
+    value: {
+      type: "boolean",
+      default: false,
+      guidance: "Whether the setting starts on.",
+    },
+  },
+  content: { mode: "none" },
+  collect: { collectable: true, valueProp: "value", valueKind: "boolean" },
+  themeRecipe: {
+    tokens: {
+      labelText: "color",
+      trackOff: "color",
+      trackOn: "color",
+      thumb: "color",
+      focusRing: "shadow",
+    },
+  },
+};
+
+export const MESSAGE_THREAD_SPEC: ComponentSpec = {
+  tag: "MessageThread",
+  whenToUse: "Show a bounded data-backed conversation in chronological order.",
+  props: {
+    messages: {
+      type: "array",
+      required: true,
+      bindable: true,
+      shape: MESSAGE_SHAPE,
+      guidance: "Messages published through the data model in display order.",
+    },
+  },
+  content: { mode: "none" },
+  themeRecipe: {
+    tokens: {
+      incomingBg: "color",
+      incomingText: "color",
+      outgoingBg: "color",
+      outgoingText: "color",
+      mutedText: "color",
+      radius: "length",
+      gap: "length",
+    },
+  },
+};
+
+export const ACCORDION_SPEC: ComponentSpec = {
+  tag: "Accordion",
+  whenToUse: "Group related disclosures when the visitor should reveal details as needed.",
+  props: {
+    multiple: {
+      type: "boolean",
+      default: false,
+      guidance: "Whether more than one item may be expanded at a time.",
+    },
+  },
+  content: {
+    mode: "slots",
+    slots: {
+      items: {
+        guidance: "The disclosure items in display order.",
+        minChildren: 1,
+        maxChildren: 12,
+      },
+    },
+  },
+  themeRecipe: {
+    tokens: {
+      border: "color",
+      radius: "length",
+      divider: "color",
+    },
+  },
+};
+
+export const ACCORDION_ITEM_SPEC: ComponentSpec = {
+  tag: "AccordionItem",
+  whenToUse: "Provide one titled disclosure inside an Accordion.",
+  props: {
+    title: {
+      type: "string",
+      required: true,
+      guidance: "The label on the disclosure control.",
+    },
+    defaultOpen: {
+      type: "boolean",
+      default: false,
+      guidance: "Whether the item starts expanded.",
+    },
+  },
+  content: {
+    mode: "slots",
+    slots: {
+      body: {
+        guidance: "The content revealed when the item is expanded.",
+        minChildren: 1,
+        maxChildren: 8,
+      },
+      actions: {
+        guidance: "Optional actions associated with the item.",
+        minChildren: 0,
+        maxChildren: 2,
+      },
+    },
+  },
+  themeRecipe: {
+    tokens: {
+      summaryText: "color",
+      bodyText: "color",
+      focusRing: "shadow",
+      gap: "length",
+    },
+  },
+};
+
+export const INTERACTIVE_SPECS: readonly ComponentSpec[] = Object.freeze([
+  FORM_SPEC,
+  FIELD_SPEC,
+  SELECT_SPEC,
+  CHOICE_GROUP_SPEC,
+  TOGGLE_SPEC,
+  MESSAGE_THREAD_SPEC,
+  ACCORDION_SPEC,
+  ACCORDION_ITEM_SPEC,
+]);

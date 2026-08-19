@@ -6,14 +6,20 @@ import {
   parseDataPath,
   serializeScreen,
 } from "@facet/core";
-import type { ComponentSpec, DataPath, FacetToolSession } from "@facet/core";
+import type { DataPath, FacetToolSession } from "@facet/core";
 
-import type { ReadComponentSpecInput, ReadDataInput, ReadScreenInput } from "./types.js";
+import { componentSpecDetail } from "./specs.js";
+import type {
+  ComponentSpecDetail,
+  ReadComponentSpecInput,
+  ReadDataInput,
+  ReadScreenInput,
+} from "./types.js";
 
 export type ReadComponentSpecResult =
   | {
       readonly ok: true;
-      readonly spec: ComponentSpec;
+      readonly spec: ComponentSpecDetail;
       readonly stageRevision: number;
     }
   | {
@@ -81,7 +87,11 @@ export async function executeReadComponentSpec(
       available: availableTags(session),
     });
   }
-  return Object.freeze({ ok: true as const, spec, stageRevision: session.stageRevision });
+  return Object.freeze({
+    ok: true as const,
+    spec: componentSpecDetail(spec),
+    stageRevision: session.stageRevision,
+  });
 }
 
 export async function executeReadScreen(

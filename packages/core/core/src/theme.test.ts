@@ -51,7 +51,7 @@ const RECIPE_CATALOG: FacetCatalog = Object.freeze({
           guidance: "Screen name.",
         }),
       }),
-      acceptsChildren: true,
+      content: { mode: "children" as const },
       themeRecipe: Object.freeze({
         tokens: Object.freeze({ background: "color", contentGap: "length" }),
       }),
@@ -62,7 +62,7 @@ const RECIPE_CATALOG: FacetCatalog = Object.freeze({
       props: Object.freeze({
         label: Object.freeze({ type: "string", guidance: "Button label." }),
       }),
-      acceptsChildren: false,
+      content: { mode: "none" as const },
       themeRecipe: Object.freeze({
         tokens: Object.freeze({ primaryBg: "color", radius: "length" }),
       }),
@@ -170,14 +170,14 @@ describe("Facet Design Contract v1 theme validation", () => {
           tag: "MetricCard",
           whenToUse: "Show one metric.",
           props: Object.freeze({}),
-          acceptsChildren: false,
+          content: { mode: "none" },
           themeRecipe: Object.freeze({ tokens: Object.freeze({ accent: "color" }) }),
         }),
         Object.freeze({
           tag: "Metric-Card",
           whenToUse: "Show one metric.",
           props: Object.freeze({}),
-          acceptsChildren: false,
+          content: { mode: "none" },
           themeRecipe: Object.freeze({ tokens: Object.freeze({ accent: "color" }) }),
         }),
       ]),

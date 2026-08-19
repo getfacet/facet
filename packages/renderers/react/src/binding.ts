@@ -40,8 +40,14 @@
  * entry point.
  */
 
-import type { ComponentMountProps, ComponentNode, ComponentSpec, DataModel } from "@facet/core";
-import { BOUNDS, parseAuthoredNumber, resolveBinding } from "@facet/core";
+import type {
+  ComponentMountProps,
+  ComponentNode,
+  ComponentSpec,
+  DataModel,
+  FacetAssetRegistry,
+} from "@facet/core";
+import { BOUNDS, parseAuthoredNumber, resolveBinding, resolveFacetAsset } from "@facet/core";
 import { createContext, createElement, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
 
@@ -130,6 +136,8 @@ const FALSE_LITERAL = "false";
 /** The exact lowercase framework event-argument convention (D-07). */
 const ARG_PROP = "arg";
 
+const EMPTY_ASSET_REGISTRY: FacetAssetRegistry = Object.freeze(Object.create(null));
+
 /** The spec's declared prop schemas, read defensively from an unvalidated spec. */
 function declaredProps(spec: ComponentSpec): Readonly<Record<string, unknown>> {
   if (!isReadableRecord(spec)) {
@@ -181,6 +189,12 @@ function readSchema(schema: unknown): PropSchema | null {
     return null;
   }
   return schema as unknown as PropSchema;
+}
+
+function declaredAssetKind(schema: PropSchema): "image" | null {
+  return readOwn(schema as unknown as Record<string, unknown>, "assetKind") === "image"
+    ? "image"
+    : null;
 }
 
 /** Whether the schema declares this prop required. */
@@ -321,15 +335,38 @@ type ValueOutcome =
  * one, for the same reason it is not at author time: the domain of an action is
  * the closed scheme vocabulary, whose targets are open.
  */
-function resolveValue(stored: unknown, schema: PropSchema, model: DataModel): ValueOutcome {
+function resolveValue(
+  stored: unknown,
+  schema: PropSchema,
+  model: DataModel,
+  assetRegistry: FacetAssetRegistry,
+): ValueOutcome {
   if (!isSafeRecord(stored)) {
     return { ok: false, reason: "invalid_value" };
   }
   const kind = readOwn(stored, "kind");
+  const assetKind = declaredAssetKind(schema);
   if (kind === "reference") {
     const scheme = readOwn(stored, "scheme");
     const target = readOwn(stored, "target");
     if (typeof target !== "string") {
+      return { ok: false, reason: "invalid_value" };
+    }
+    if (scheme === "asset") {
+      const asset = assetKind === null ? null : resolveFacetAsset(assetRegistry, target, assetKind);
+      return asset === null
+        ? { ok: false, reason: "invalid_value" }
+        : {
+            ok: true,
+            value: Object.freeze({
+              kind: asset.kind,
+              src: asset.src,
+              ...(asset.width === undefined ? {} : { width: asset.width }),
+              ...(asset.height === undefined ? {} : { height: asset.height }),
+            }),
+          };
+    }
+    if (assetKind !== null) {
       return { ok: false, reason: "invalid_value" };
     }
     if (scheme === "data") {
@@ -354,6 +391,9 @@ function resolveValue(stored: unknown, schema: PropSchema, model: DataModel): Va
   if (kind !== "scalar") {
     return { ok: false, reason: "invalid_value" };
   }
+  if (assetKind !== null) {
+    return { ok: false, reason: "invalid_value" };
+  }
   const text = readOwn(stored, "value");
   if (typeof text !== "string") {
     return { ok: false, reason: "invalid_value" };
@@ -376,6 +416,7 @@ export function resolveProps(
   node: ComponentNode,
   spec: ComponentSpec,
   model: DataModel,
+  assetRegistry: FacetAssetRegistry = EMPTY_ASSET_REGISTRY,
 ): PropResolution {
   // A null prototype, not an object literal. `props[name] = value` with the name
   // `__proto__` on an ordinary literal invokes the prototype setter: the value
@@ -403,7 +444,7 @@ export function resolveProps(
   }
 
   try {
-    collect(schemas, stored, model, props, issues);
+    collect(schemas, stored, model, assetRegistry, props, issues);
     const argument = props[ARG_PROP];
     if (typeof argument === "string" && argument.length > BOUNDS.collectedValueChars) {
       issues.push({ scope: "node", reason: "event_arg_too_long" });
@@ -454,9 +495,10 @@ function resolveDeclared(
   schemas: Readonly<Record<string, unknown>>,
   stored: Readonly<Record<string, unknown>>,
   model: DataModel,
+  assetRegistry: FacetAssetRegistry,
 ): PropOutcome {
   try {
-    return declared(name, schemas, stored, model);
+    return declared(name, schemas, stored, model, assetRegistry);
   } catch {
     return { kind: "issue", reason: "resolution_failed" };
   }
@@ -467,6 +509,7 @@ function declared(
   schemas: Readonly<Record<string, unknown>>,
   stored: Readonly<Record<string, unknown>>,
   model: DataModel,
+  assetRegistry: FacetAssetRegistry,
 ): PropOutcome {
   const schema = readSchema(readOwn(schemas, name));
   if (schema === null) {
@@ -479,7 +522,7 @@ function declared(
     const fallback = agreeDefault(declaredDefault(schema), schema);
     return fallback === null ? { kind: "absent" } : { kind: "value", value: fallback };
   }
-  const outcome = resolveValue(readOwn(stored, name), schema, model);
+  const outcome = resolveValue(readOwn(stored, name), schema, model, assetRegistry);
   return outcome.ok
     ? { kind: "value", value: outcome.value }
     : { kind: "issue", reason: outcome.reason };
@@ -489,13 +532,14 @@ function collect(
   schemas: Readonly<Record<string, unknown>>,
   stored: Readonly<Record<string, unknown>>,
   model: DataModel,
+  assetRegistry: FacetAssetRegistry,
   props: Record<string, ResolvedValue>,
   issues: BindingIssue[],
 ): void {
   const data = isSafeRecord(model) ? model : {};
 
   for (const name of [...ownKeys(schemas)].sort()) {
-    const outcome = resolveDeclared(name, schemas, stored, data);
+    const outcome = resolveDeclared(name, schemas, stored, data, assetRegistry);
     if (outcome.kind === "value") {
       props[name] = outcome.value;
     } else if (outcome.kind === "issue") {
@@ -565,7 +609,14 @@ export function useDataModel(): DataModel {
  * obligation so a future caller that mutates instead fails there rather than in
  * a browser.
  */
-export function useResolvedProps(node: ComponentNode, spec: ComponentSpec): PropResolution {
+export function useResolvedProps(
+  node: ComponentNode,
+  spec: ComponentSpec,
+  assetRegistry: FacetAssetRegistry = EMPTY_ASSET_REGISTRY,
+): PropResolution {
   const model = useDataModel();
-  return useMemo(() => resolveProps(node, spec, model), [node, spec, model]);
+  return useMemo(
+    () => resolveProps(node, spec, model, assetRegistry),
+    [node, spec, model, assetRegistry],
+  );
 }

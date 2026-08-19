@@ -2,9 +2,9 @@
  * The component spec form.
  *
  * A `ComponentSpec` is the serializable description of one trusted component:
- * its tag, one line saying when to use it, a closed prop contract with per-prop
- * guidance, whether it takes children, and — only for a component Facet
- * collects a value from — a `collect` block. It is plain JSON data, because the
+ * its tag, one line saying when to use it, closed prop and content contracts,
+ * and — only for a component Facet collects a value from — a `collect` block.
+ * It is plain JSON data, because the
  * same spec has to travel to the agent as discovery text, to the renderer as a
  * validation table, and to disk as part of a session.
  *
@@ -61,17 +61,16 @@
  * whole point of its own forbidden-key set, and its rejections carry their own
  * code, `nonconforming_event_arg`.
  *
- * `authoringRole` is optional discovery metadata. It lets an agent scan a large
- * catalog by broad composition role without changing what a component may
- * render or where it may appear. Existing host components may omit it.
- *
  * `validateComponentSpec` is **total**: it never throws, for any input of any
  * type, including a host object with a throwing getter. It returns the first
  * failure in a fixed order, so the same input always yields the same rejection.
  */
 
 import { BOUNDS } from "./bounds.js";
+import { type ComponentContentSpec, validateComponentContentSpec } from "./component-content.js";
 import { isFacetIdentifier } from "./identifiers.js";
+import type { CollectedValueKind } from "./mount-contract.js";
+import { type StructuredShapeSpec, validateStructuredShapeSpec } from "./structured-shape.js";
 import { facetThemeToKebabCase, type FacetThemeTokenValueKind } from "./theme-contract.js";
 
 /** The three scalar types an authored prop value can take. */
@@ -98,6 +97,7 @@ export type PropSchema =
       readonly bindable?: boolean;
       readonly enum?: readonly string[];
       readonly default?: string;
+      readonly assetKind?: "image";
     }
   | {
       readonly type: "number";
@@ -121,6 +121,7 @@ export type PropSchema =
       readonly guidance: string;
       readonly required?: boolean;
       readonly bindable: true;
+      readonly shape?: StructuredShapeSpec;
     };
 
 /**
@@ -135,6 +136,7 @@ export type PropSchema =
 export interface CollectSpec {
   readonly collectable: true;
   readonly valueProp: string;
+  readonly valueKind: CollectedValueKind;
   readonly sensitiveProp?: string;
 }
 
@@ -143,18 +145,13 @@ export interface ThemeRecipeSpec {
   readonly tokens: Readonly<Record<string, FacetThemeTokenValueKind>>;
 }
 
-/** A broad authoring role used only to organize component discovery. */
-export type ComponentAuthoringRole = "layout" | "surface" | "content" | "interaction";
-
 /** The serializable description of one component in the active catalog. */
 export interface ComponentSpec {
   readonly tag: string;
   /** One line, at most B-12 characters: when an agent should reach for this. */
   readonly whenToUse: string;
-  /** Optional discovery grouping; it does not affect validation or rendering behavior. */
-  readonly authoringRole?: ComponentAuthoringRole;
   readonly props: Readonly<Record<string, PropSchema>>;
-  readonly acceptsChildren: boolean;
+  readonly content: ComponentContentSpec;
   readonly collect?: CollectSpec;
   readonly themeRecipe?: ThemeRecipeSpec;
 }
@@ -187,21 +184,14 @@ type SpecRejection = Extract<ComponentSpecValidationResult, { readonly ok: false
 const SPEC_KEYS: readonly string[] = [
   "tag",
   "whenToUse",
-  "authoringRole",
   "props",
-  "acceptsChildren",
+  "content",
   "collect",
   "themeRecipe",
 ];
 
-const COMPONENT_AUTHORING_ROLES: readonly ComponentAuthoringRole[] = [
-  "layout",
-  "surface",
-  "content",
-  "interaction",
-];
-
-const COLLECT_KEYS: readonly string[] = ["collectable", "valueProp", "sensitiveProp"];
+const COLLECT_KEYS: readonly string[] = ["collectable", "valueProp", "valueKind", "sensitiveProp"];
+const COLLECTED_VALUE_KINDS: readonly CollectedValueKind[] = ["string", "boolean", "string[]"];
 const THEME_RECIPE_KEYS: readonly string[] = ["tokens"];
 const TOKEN_VALUE_KINDS: readonly FacetThemeTokenValueKind[] = [
   "color",
@@ -227,6 +217,9 @@ const COLLECT_REQUEST_PROP = "collect";
 /** The exact prop name that carries the one explicit argument an event sends. */
 const EVENT_ARG_PROP = "arg";
 
+/** Structural child placement belongs to the markup grammar, never component props. */
+const SLOT_PROP = "slot";
+
 /**
  * The keywords neither framework prop may carry. Each is checked as a **key**: a
  * `bindable: false` is as much a declaration about binding as a `bindable: true`,
@@ -250,11 +243,17 @@ const EVENT_ARG_FORBIDDEN_KEYS: readonly string[] = ["default", "bindable"];
 const COMMON_PROP_KEYS: readonly string[] = ["type", "guidance", "required", "bindable", "default"];
 
 /** A structured prop declares no default and no domain, so it drops both. */
-const STRUCTURED_PROP_KEYS: readonly string[] = ["type", "guidance", "required", "bindable"];
+const STRUCTURED_PROP_KEYS: readonly string[] = [
+  "type",
+  "guidance",
+  "required",
+  "bindable",
+  "shape",
+];
 
 /** The closed keyword set per declared type — everything else is an unknown key. */
 const PROP_KEYS: Readonly<Record<PropDeclarationType, readonly string[]>> = {
-  string: [...COMMON_PROP_KEYS, "enum"],
+  string: [...COMMON_PROP_KEYS, "enum", "assetKind"],
   number: [...COMMON_PROP_KEYS, "enum", "minimum", "maximum"],
   boolean: COMMON_PROP_KEYS,
   array: STRUCTURED_PROP_KEYS,
@@ -325,26 +324,9 @@ function validateSpec(value: unknown): ComponentSpecValidationResult {
     return reject("when_to_use_too_long", "whenToUse", "When-to-use text exceeds B-12.");
   }
 
-  const authoringRole = value["authoringRole"];
-  if (
-    "authoringRole" in value &&
-    (typeof authoringRole !== "string" ||
-      !COMPONENT_AUTHORING_ROLES.includes(authoringRole as ComponentAuthoringRole))
-  ) {
-    return reject(
-      "invalid_authoring_role",
-      "authoringRole",
-      "authoringRole must be layout, surface, content, or interaction.",
-    );
-  }
-
-  const acceptsChildren = value["acceptsChildren"];
-  if (typeof acceptsChildren !== "boolean") {
-    return reject(
-      "invalid_accepts_children",
-      "acceptsChildren",
-      "acceptsChildren must be boolean.",
-    );
+  const content = validateComponentContentSpec(value["content"]);
+  if (!content.ok) {
+    return content;
   }
 
   const props = validateProps(value["props"]);
@@ -368,11 +350,8 @@ function validateSpec(value: unknown): ComponentSpecValidationResult {
   const base: ComponentSpec = {
     tag,
     whenToUse,
-    ...(authoringRole === undefined
-      ? {}
-      : { authoringRole: authoringRole as ComponentAuthoringRole }),
     props: props.props,
-    acceptsChildren,
+    content: content.content,
   };
   const recipe = validateThemeRecipe(value["themeRecipe"]);
   if (!recipe.ok) {
@@ -409,6 +388,13 @@ function validateProps(
     const at = `props.${name}`;
     if (!isFacetIdentifier(name)) {
       return reject("invalid_prop_name", at, "A prop name must be a Facet identifier.");
+    }
+    if (name === SLOT_PROP) {
+      return reject(
+        "reserved_prop_name",
+        at,
+        "slot assigns a child to a structured region and cannot be a component prop.",
+      );
     }
     const schema = validatePropSchema(value[name], at);
     if (!schema.ok) {
@@ -515,7 +501,10 @@ function validatePropSchema(
     return flags;
   }
   if (type === "array" || type === "object") {
-    return validateStructuredSchema(type, guidance, flags, at);
+    return validateStructuredSchema(value, type, guidance, flags, at);
+  }
+  if (type === "string" && "assetKind" in value) {
+    return validateAssetSchema(value, guidance, flags, at);
   }
   return validateScalarSchema(value, type, guidance, flags, at);
 }
@@ -542,6 +531,7 @@ type PropFlags = { readonly required?: boolean; readonly bindable?: boolean };
  * default and shape keyword by the time this runs.
  */
 function validateStructuredSchema(
+  value: Record<string, unknown>,
   type: StructuredPropType,
   guidance: string,
   flags: PropFlags,
@@ -559,6 +549,43 @@ function validateStructuredSchema(
     draft["required"] = flags.required;
   }
   draft["bindable"] = true;
+  if ("shape" in value) {
+    const shape = validateStructuredShapeSpec(value["shape"], `${at}.shape`);
+    if (!shape.ok) {
+      return shape;
+    }
+    draft["shape"] = shape.shape;
+  }
+  return { ok: true, schema: Object.freeze(draft) as PropSchema };
+}
+
+function validateAssetSchema(
+  value: Record<string, unknown>,
+  guidance: string,
+  flags: PropFlags,
+  at: string,
+): { readonly ok: true; readonly schema: PropSchema } | SpecRejection {
+  if (value["assetKind"] !== "image") {
+    return reject(
+      "invalid_asset_kind",
+      `${at}.assetKind`,
+      "Facet V1 component props admit image assets only.",
+    );
+  }
+  for (const forbidden of ["bindable", "default", "enum"] as const) {
+    if (forbidden in value) {
+      return reject(
+        "invalid_asset_prop",
+        `${at}.${forbidden}`,
+        "An asset prop accepts only an authored asset:key reference.",
+      );
+    }
+  }
+  const draft: Record<string, unknown> = { type: "string", guidance };
+  if (flags.required !== undefined) {
+    draft["required"] = flags.required;
+  }
+  draft["assetKind"] = "image";
   return { ok: true, schema: Object.freeze(draft) as PropSchema };
 }
 
@@ -765,10 +792,38 @@ function validateCollect(
       "valueProp must name a declared prop.",
     );
   }
+  const valueKind = value["valueKind"];
+  if (
+    typeof valueKind !== "string" ||
+    !COLLECTED_VALUE_KINDS.includes(valueKind as CollectedValueKind)
+  ) {
+    return reject(
+      "invalid_collect_value_kind",
+      "collect.valueKind",
+      "valueKind must be string, boolean, or string[].",
+    );
+  }
+  const declaredType = props[valueProp]?.type;
+  const matchingType =
+    valueKind === "string[]" ? "array" : valueKind === "boolean" ? "boolean" : "string";
+  if (declaredType !== matchingType) {
+    return reject(
+      "collect_value_kind_mismatch",
+      "collect.valueKind",
+      "valueKind must agree with the declared value prop type.",
+    );
+  }
   if (!("sensitiveProp" in value)) {
     const address = validateCollectName(props, valueProp);
     return (
-      address ?? { ok: true, collect: Object.freeze({ collectable: true as const, valueProp }) }
+      address ?? {
+        ok: true,
+        collect: Object.freeze({
+          collectable: true as const,
+          valueProp,
+          valueKind: valueKind as CollectedValueKind,
+        }),
+      }
     );
   }
   const sensitiveProp = value["sensitiveProp"];
@@ -783,7 +838,12 @@ function validateCollect(
   return (
     address ?? {
       ok: true,
-      collect: Object.freeze({ collectable: true as const, valueProp, sensitiveProp }),
+      collect: Object.freeze({
+        collectable: true as const,
+        valueProp,
+        valueKind: valueKind as CollectedValueKind,
+        sensitiveProp,
+      }),
     }
   );
 }

@@ -419,7 +419,7 @@ function catalog(): FacetCatalog {
         props: {
           name: { type: "string", required: true, guidance: "Screen name." },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
       {
         tag: "Text",
@@ -427,7 +427,7 @@ function catalog(): FacetCatalog {
         props: {
           value: { type: "string", required: true, guidance: "Text value." },
         },
-        acceptsChildren: false,
+        content: { mode: "none" },
       },
     ],
   });

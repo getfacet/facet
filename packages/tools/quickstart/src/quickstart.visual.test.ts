@@ -92,7 +92,7 @@ const ACTIVE_VISUAL_OVERLAY: QuickstartDesignOverlay = Object.freeze({
       tag: "PromoBanner",
       whenToUse: "Use for an active design visual promo.",
       props: Object.freeze({}),
-      acceptsChildren: false,
+      content: { mode: "none" as const },
     }),
   ]),
   registry: Object.freeze({ PromoBanner: VisualPromoBanner }),
@@ -144,7 +144,7 @@ async function makeActiveDesignVisualBundle() {
       '      tag: "PromoBanner",',
       '      whenToUse: "Use for an active design visual promo.",',
       "      props: {},",
-      "      acceptsChildren: false,",
+      '      content: { mode: "none" },',
       "    },",
       "  ],",
       "  registry: { PromoBanner },",
@@ -224,11 +224,14 @@ async function visiblePreviewTextLength(): Promise<number> {
     });
 }
 
-async function navInsetIssues(): Promise<readonly string[]> {
+async function navigationInsetIssues(): Promise<readonly string[]> {
   return activePage()
-    .locator("[data-facet-screen-preview-frame] [data-facet-component='Nav']")
+    .locator("[data-facet-screen-preview-frame] [data-facet-component='Navigation']")
     .evaluateAll((navs) => {
       return navs.flatMap((nav, index) => {
+        if (nav.getAttribute("data-facet-navigation-orientation") === "vertical") {
+          return [];
+        }
         const rect = nav.getBoundingClientRect();
         const brand = nav.firstElementChild?.getBoundingClientRect();
         const actionRects = [...nav.querySelectorAll("button, [role='button']")]
@@ -256,7 +259,7 @@ async function navInsetIssues(): Promise<readonly string[]> {
     });
 }
 
-async function sameRowHeightDrifts(component: "Card" | "VisualPanel"): Promise<readonly number[]> {
+async function sameRowHeightDrifts(component: "Card" | "ItemCard"): Promise<readonly number[]> {
   return activePage()
     .locator("[data-facet-screen-preview-frame] [data-facet-component='Grid']")
     .evaluateAll((grids, component) => {
@@ -287,14 +290,14 @@ async function sameRowHeightDrifts(component: "Card" | "VisualPanel"): Promise<r
     }, component);
 }
 
-async function galleryPanelHeightDrifts(): Promise<readonly number[]> {
+async function collectionItemHeightDrifts(): Promise<readonly number[]> {
   return activePage()
-    .locator("[data-facet-screen-preview-frame] [data-facet-component='Gallery']")
-    .evaluateAll((galleries) => {
+    .locator("[data-facet-screen-preview-frame] [data-facet-component='Collection']")
+    .evaluateAll((collections) => {
       const drifts: number[] = [];
-      for (const gallery of galleries) {
-        const rects = [...gallery.querySelectorAll("[data-facet-component='VisualPanel']")]
-          .filter((node) => node.closest("[data-facet-component='Gallery']") === gallery)
+      for (const collection of collections) {
+        const rects = [...collection.querySelectorAll("[data-facet-component='ItemCard']")]
+          .filter((node) => node.closest("[data-facet-component='Collection']") === collection)
           .map((node) => node.getBoundingClientRect())
           .filter((rect) => rect.width > 0 && rect.height > 0)
           .map((rect) => ({ top: rect.top, height: rect.height }))
@@ -336,31 +339,40 @@ visualDescribe("quickstart visual assets gallery", () => {
   it("renders every service surface example without blank or overflow", async () => {
     await openAssets();
 
-    for (const example of screenPatterns()) {
-      await activePage()
-        .getByRole("button", { name: escapedRegExp(example.label) })
-        .click();
-      await activePage()
-        .locator("[data-facet-screen-preview-frame] [data-facet-component='Screen']")
-        .waitFor();
+    for (const viewport of [
+      { id: "desktop", width: 1440, height: 960 },
+      { id: "mobile", width: 390, height: 844 },
+    ] as const) {
+      await activePage().setViewportSize(viewport);
+      for (const example of screenPatterns()) {
+        const caseId = `${example.id}-${viewport.id}`;
+        await activePage()
+          .getByRole("button", { name: escapedRegExp(example.label) })
+          .click();
+        await activePage()
+          .locator("[data-facet-screen-preview-frame] [data-facet-component='Screen']")
+          .waitFor();
 
-      expect(await visiblePreviewTextLength(), example.id).toBeGreaterThan(80);
-      expect(await viewportOverflow(), example.id).toBeLessThanOrEqual(2);
-      expect(await navInsetIssues(), example.id).toEqual([]);
-      const drifts = [
-        ...(await sameRowHeightDrifts("Card")),
-        ...(await sameRowHeightDrifts("VisualPanel")),
-        ...(await galleryPanelHeightDrifts()),
-      ];
-      expect(
-        drifts.filter((drift) => drift > 6),
-        example.id,
-      ).toEqual([]);
+        expect(await visiblePreviewTextLength(), caseId).toBeGreaterThan(80);
+        expect(await viewportOverflow(), caseId).toBeLessThanOrEqual(2);
+        if (viewport.id === "desktop") {
+          expect(await navigationInsetIssues(), caseId).toEqual([]);
+        }
+        const drifts = [
+          ...(await sameRowHeightDrifts("Card")),
+          ...(await sameRowHeightDrifts("ItemCard")),
+          ...(await collectionItemHeightDrifts()),
+        ];
+        expect(
+          drifts.filter((drift) => drift > 6),
+          caseId,
+        ).toEqual([]);
 
-      await activePage().screenshot({
-        path: join(activeOutputDir(), `${example.id}.png`),
-        fullPage: true,
-      });
+        await activePage().screenshot({
+          path: join(activeOutputDir(), `${caseId}.png`),
+          fullPage: true,
+        });
+      }
     }
   }, 180_000);
 

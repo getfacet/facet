@@ -35,7 +35,7 @@
  * entry point.
  */
 
-import type { VisitorEvent } from "@facet/core";
+import type { CollectedValue, VisitorEvent } from "@facet/core";
 import { BOUNDS, isFacetIdentifier } from "@facet/core";
 
 /**
@@ -46,7 +46,7 @@ import { BOUNDS, isFacetIdentifier } from "@facet/core";
  * hand over cannot hand it over by mistake.
  */
 export type CollectSource =
-  | { readonly kind: "value"; readonly value: string }
+  | { readonly kind: "value"; readonly value: CollectedValue }
   | { readonly kind: "sensitive" }
   | { readonly kind: "unavailable" };
 
@@ -102,11 +102,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Narrows whatever a reader returned to the closed source union.
  *
- * A `value` source must actually carry a string; every other shape — a missing
- * kind, an unknown kind, a number where a string belongs — is not a source at
- * all and becomes a stated absence. The sensitive branch is checked on its kind
- * alone, so a source that wrongly carries a value is still handled as sensitive
- * and its value is never read.
+ * A `value` source must carry one branch of `CollectedValue`; every other shape
+ * becomes a stated absence. Bounds are checked while building the payload so a
+ * valid source can produce a precise renderer-local issue.
  */
 function asSource(value: unknown): CollectSource | null {
   if (!isRecord(value)) return null;
@@ -114,7 +112,28 @@ function asSource(value: unknown): CollectSource | null {
   if (kind === undefined) return null;
   if (kind !== "value") return { kind };
   const collected = value["value"];
-  return typeof collected === "string" ? { kind, value: collected } : null;
+  if (typeof collected === "string" || typeof collected === "boolean") {
+    return { kind, value: collected };
+  }
+  if (!Array.isArray(collected)) {
+    return null;
+  }
+  const length = collected.length;
+  if (length > BOUNDS.dataModelArrayLength) {
+    return {
+      kind,
+      value: Object.freeze(Array.from({ length: BOUNDS.dataModelArrayLength + 1 }, () => "")),
+    };
+  }
+  const items: string[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const item = collected[index];
+    if (typeof item !== "string") {
+      return null;
+    }
+    items.push(item);
+  }
+  return { kind, value: Object.freeze(items) };
 }
 
 /** Asks one source, treating a throwing reader as a source that is not there. */
@@ -252,19 +271,65 @@ export function buildCollectPayload(authored: unknown, read: CollectReader): Col
       collect[name] = Object.freeze({ kind: "collect_source_unavailable" });
       continue;
     }
-    if (source.value.length > BOUNDS.collectedValueChars) {
-      issues.push(
-        issue(
-          "collected_value_too_long",
-          `collect.${name}`,
-          "The collected value exceeds the bound, so no value is sent for it.",
-        ),
-      );
+    const collected = boundedCollectedValue(source.value, name, issues);
+    if (collected === null) {
       collect[name] = Object.freeze({ kind: "collect_source_unavailable" });
       continue;
     }
-    collect[name] = Object.freeze({ kind: "value", value: source.value });
+    collect[name] = Object.freeze({ kind: "value", value: collected });
   }
 
   return Object.freeze({ collect: Object.freeze(collect), issues: Object.freeze(issues) });
+}
+
+function boundedCollectedValue(
+  value: CollectedValue,
+  name: string,
+  issues: CollectIssue[],
+): CollectedValue | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    if (value.length <= BOUNDS.collectedValueChars) {
+      return value;
+    }
+    issues.push(
+      issue(
+        "collected_value_too_long",
+        `collect.${name}`,
+        "The collected value exceeds the bound, so no value is sent for it.",
+      ),
+    );
+    return null;
+  }
+  if (value.length > BOUNDS.dataModelArrayLength) {
+    issues.push(
+      issue(
+        "too_many_collected_values",
+        `collect.${name}`,
+        "The collected string array exceeds the data-array bound.",
+      ),
+    );
+    return null;
+  }
+  const items: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (typeof item !== "string") {
+      return null;
+    }
+    if (item.length > BOUNDS.collectedValueChars) {
+      issues.push(
+        issue(
+          "collected_value_too_long",
+          `collect.${name}[${index}]`,
+          "A collected array item exceeds the bound, so no value is sent for it.",
+        ),
+      );
+      return null;
+    }
+    items.push(item);
+  }
+  return Object.freeze(items);
 }

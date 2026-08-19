@@ -39,6 +39,7 @@
 import type {
   ComponentSpec,
   FacetCatalog,
+  FacetAssetRegistry,
   FacetTheme,
   FacetThemeExtensionDeclaration,
   MountedComponent,
@@ -74,7 +75,7 @@ function screenSpec(): ComponentSpec {
         required: true,
       },
     },
-    acceptsChildren: true,
+    content: { mode: "children" },
   };
 }
 
@@ -95,7 +96,13 @@ function modalSpec(): ComponentSpec {
         required: true,
       },
     },
-    acceptsChildren: true,
+    content: {
+      mode: "slots",
+      slots: {
+        body: { guidance: "Content shown in the frame.", minChildren: 1, maxChildren: 16 },
+        actions: { guidance: "Actions shown in the footer.", minChildren: 0, maxChildren: 4 },
+      },
+    },
   };
 }
 
@@ -105,7 +112,7 @@ function plainSpec(tag: string): ComponentSpec {
     tag,
     whenToUse: `Use ${tag} when the page needs what ${tag} shows.`,
     props: { label: { type: "string", guidance: "What this component says." } },
-    acceptsChildren: false,
+    content: { mode: "none" },
   };
 }
 
@@ -166,7 +173,7 @@ function rejected(result: RendererBootstrap): Extract<RendererBootstrap, { ok: f
   expect(result.code.length).toBeGreaterThan(0);
   expect(typeof result.at).toBe("string");
   expect(result.detail.length).toBeGreaterThan(0);
-  for (const key of ["catalog", "registry", "theme", "copy", "index"]) {
+  for (const key of ["catalog", "registry", "assetRegistry", "theme", "copy", "index"]) {
     expect(key in result).toBe(false);
   }
   return result;
@@ -186,7 +193,7 @@ describe("bootstrapRenderer closes the trust boundary on all three host paths", 
       "Badge",
     ]);
     expect([...session.index.keys()].sort()).toEqual(["Badge", "Modal", "Screen", "Text"]);
-    expect(session.index.get("Screen")?.acceptsChildren).toBe(true);
+    expect(session.index.get("Screen")?.content).toEqual({ mode: "children" });
     expect(session.theme.semantic.action.primaryBg).toBe("#2563eb");
     expect(Object.keys(session.registry).sort()).toEqual(["Badge", "Modal", "Screen", "Text"]);
   });
@@ -300,6 +307,59 @@ describe("bootstrapRenderer owns the registry for the life of the session", () =
 
   it("exports one function and nothing that could hold a session", () => {
     expect(Object.keys(bootstrapModule)).toEqual(["bootstrapRenderer"]);
+  });
+});
+
+describe("bootstrapRenderer owns the asset registry for the life of the session", () => {
+  it("uses one frozen empty registry when the host omits assets", () => {
+    const session = accepted(
+      bootstrapRenderer({
+        catalog: catalogOf(screenSpec(), modalSpec()),
+        registry: registryFor("Screen", "Modal"),
+        theme: THEME,
+      }),
+    );
+
+    expect(session.assetRegistry).toEqual({});
+    expect(Object.isFrozen(session.assetRegistry)).toBe(true);
+    expect(Object.getPrototypeOf(session.assetRegistry)).toBeNull();
+  });
+
+  it("validates and snapshots image descriptors", () => {
+    const source: Record<string, { kind: "image"; src: string; width: number }> = {
+      hero: { kind: "image", src: "https://cdn.example.com/hero.png", width: 1200 },
+    };
+    const session = accepted(
+      bootstrapRenderer({
+        catalog: catalogOf(screenSpec(), modalSpec()),
+        registry: registryFor("Screen", "Modal"),
+        theme: THEME,
+        assetRegistry: source,
+      }),
+    );
+
+    source.hero = { kind: "image", src: "https://attacker.example/changed.png", width: 1 };
+    source["injected"] = { kind: "image", src: "https://attacker.example/new.png", width: 1 };
+
+    expect(session.assetRegistry).toEqual({
+      hero: { kind: "image", src: "https://cdn.example.com/hero.png", width: 1200 },
+    } satisfies FacetAssetRegistry);
+    expect(Object.isFrozen(session.assetRegistry)).toBe(true);
+    expect(Object.isFrozen(session.assetRegistry["hero"])).toBe(true);
+  });
+
+  it("rejects an invalid asset registry atomically", () => {
+    const rejection = rejected(
+      bootstrapRenderer({
+        catalog: catalogOf(screenSpec(), modalSpec()),
+        registry: registryFor("Screen", "Modal"),
+        theme: THEME,
+        assetRegistry: { hero: { kind: "image", src: "javascript:alert(1)" } },
+      } as never),
+    );
+
+    expect(rejection.code).toBe("invalid_image_asset_src");
+    expect(rejection.at).toBe("assetRegistry.hero.src");
   });
 });
 
@@ -542,7 +602,7 @@ describe("bootstrapRenderer mirrors the catalog's Screen rule rather than re-inv
   it("relays every nonconforming-Screen fault under one code, located by fault", () => {
     const conforming = screenSpec();
     const cases: readonly { readonly spec: ComponentSpec; readonly at: string }[] = [
-      { spec: { ...conforming, acceptsChildren: false }, at: "components[0].acceptsChildren" },
+      { spec: { ...conforming, content: { mode: "none" } }, at: "components[0].content" },
       {
         // The collect block is itself **conforming** — a declared value prop
         // other than the address, and the required scalar-string `name` the
@@ -558,7 +618,7 @@ describe("bootstrapRenderer mirrors the catalog's Screen rule rather than re-inv
             ...conforming.props,
             value: { type: "string", guidance: "The value this component collects." },
           },
-          collect: { collectable: true, valueProp: "value" },
+          collect: { collectable: true, valueProp: "value", valueKind: "string" },
         },
         at: "components[0].collect",
       },
@@ -706,15 +766,15 @@ describe("bootstrapRenderer requires any registered Modal to conform, and no Mod
     const result = bootstrapRenderer({
       catalog: catalogOf(screenSpec(), plainSpec("Gauge"), {
         ...modalSpec(),
-        acceptsChildren: false,
+        content: { mode: "none" },
       }),
       registry: registryFor("Screen", "Gauge", "Modal"),
       theme: THEME,
     });
 
     const rejection = rejected(result);
-    expect(rejection.code).toBe("modal_must_accept_children");
-    expect(rejection.at).toBe("acceptsChildren");
+    expect(rejection.code).toBe("modal_must_use_slots");
+    expect(rejection.at).toBe("content");
   });
 });
 
@@ -801,7 +861,7 @@ describe("bootstrapRenderer resolves neutral copy from the framework and the hos
           default: "PWNED preparing",
         },
       },
-      acceptsChildren: false,
+      content: { mode: "none" },
     };
 
     // Serialized *before* the hostile bootstrap, so the comparison below is a

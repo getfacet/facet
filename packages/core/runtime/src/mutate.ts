@@ -193,6 +193,16 @@ function cloneNode(
   });
 }
 
+function withSlot(node: MarkupNode, slot: string | undefined): MarkupNode {
+  return Object.freeze({
+    tag: node.tag,
+    ...(slot === undefined ? {} : { slot }),
+    props: node.props,
+    children: node.children,
+    location: node.location,
+  });
+}
+
 function propScalar(node: MarkupNode, name: string): string | null {
   for (const prop of node.props) {
     if (prop.name !== name) {
@@ -507,22 +517,27 @@ function targetedDocument(
   }
 
   if (kind === "replace_subtree") {
-    const boundary = checkReplaceBoundary(document, target.targetId, located.node, freshFragment);
+    const replacement =
+      freshFragment.slot === undefined ? withSlot(freshFragment, located.node.slot) : freshFragment;
+    const boundary = checkReplaceBoundary(document, target.targetId, located.node, replacement);
     if (boundary !== null) {
       return boundary;
     }
-    return validateCandidate(session, rewriteTarget(current.ast, target.targetId, freshFragment));
+    return validateCandidate(session, rewriteTarget(current.ast, target.targetId, replacement));
   }
 
   if (freshFragment.children.length > 0) {
     return invalidFragment("update_node markup must be one childless component declaration.");
+  }
+  if (freshFragment.slot !== undefined && freshFragment.slot !== located.node.slot) {
+    return invalidFragment("update_node markup must preserve the target slot.");
   }
   const boundary = checkUpdateBoundary(document, target.targetId, located.node, freshFragment);
   if (boundary !== null) {
     return boundary;
   }
   const updated = cloneNode(
-    freshFragment,
+    withSlot(freshFragment, located.node.slot),
     [
       ...freshFragment.props.filter((prop) => prop.name !== ID_PROP),
       scalarIdProp(target.targetId, located.node),

@@ -55,8 +55,8 @@ const INDENT_UNIT = " ".repeat(2);
 /** The envelope itself occupies the first level of `B-03`. */
 const ENVELOPE_DEPTH = 1;
 
-/** The three schemes the grammar admits; a stored value outside them is corrupt. */
-const REFERENCE_SCHEMES: readonly string[] = ["data", "nav", "agent"];
+/** The four schemes the grammar admits; a stored value outside them is corrupt. */
+const REFERENCE_SCHEMES: readonly string[] = ["data", "nav", "agent", "asset"];
 
 /** The two characters that open inline structured JSON, which the grammar rejects. */
 const JSON_OPENERS: readonly string[] = ["{", "["];
@@ -230,6 +230,10 @@ function readElement(nodes: Readonly<Record<string, unknown>>, id: string): Elem
     if (!isComponentTag(tag)) {
       return { kind: "invalid" };
     }
+    const slot = node["slot"];
+    if (slot !== undefined && (typeof slot !== "string" || !isFacetIdentifier(slot))) {
+      return { kind: "invalid" };
+    }
     const props = node["props"];
     const rawChildren = node["children"];
     if (!isRecord(props) || !Array.isArray(rawChildren)) {
@@ -244,6 +248,9 @@ function readElement(nodes: Readonly<Record<string, unknown>>, id: string): Elem
     }
     const issues: SerializeIssue[] = [];
     const attributes: string[] = [];
+    if (typeof slot === "string") {
+      attributes.push(`slot="${slot}"`);
+    }
     for (const [name, value] of Object.entries(props)) {
       const rendered = renderAttribute(name, value);
       if (rendered === null) {
