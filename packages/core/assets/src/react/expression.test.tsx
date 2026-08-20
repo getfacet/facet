@@ -1,133 +1,24 @@
 // @vitest-environment jsdom
-import type { ComponentSpec, MountedComponent } from "@facet/core";
-import { themeToCssVars } from "@facet/core";
-import { cleanup, render } from "@testing-library/react";
+
+import type { ComponentMountProps, MountedComponent } from "@facet/core";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_CATALOG } from "../catalog.js";
-import {
-  ALERT_SPEC,
-  AVATAR_SPEC,
-  CTA_SPEC,
-  DIVIDER_SPEC,
-  FEATURE_LIST_SPEC,
-  FOOTER_SPEC,
-  GALLERY_SPEC,
-  HERO_SPEC,
-  LINK_LIST_SPEC,
-  LOGO_MARK_SPEC,
-  MEDIA_CARD_SPEC,
-  NAV_SPEC,
-  PRODUCT_SHOWCASE_SPEC,
-  PROFILE_HEADER_SPEC,
-  PROGRESS_SPEC,
-  SECTION_SPEC,
-  SIDE_NAV_SPEC,
-  SIDE_NAV_ITEM_SPEC,
-  SOCIAL_LINKS_SPEC,
-  STAT_STRIP_SPEC,
-  TESTIMONIAL_SPEC,
-  TIMELINE_SPEC,
-  VISUAL_PANEL_SPEC,
-} from "../specs-expression.js";
-import { DEFAULT_THEME } from "../theme-default.js";
-import {
-  Alert,
-  Avatar,
-  CTA,
-  Divider,
-  FeatureList,
-  Footer,
-  Gallery,
-  Hero,
-  LinkList,
-  LogoMark,
-  MediaCard,
-  Nav,
-  ProductShowcase,
-  ProfileHeader,
-  Progress,
-  Section,
-  SideNav,
-  SideNavItem,
-  SocialLinks,
-  StatStrip,
-  Testimonial,
-  Timeline,
-  VisualPanel,
-} from "./expression.js";
+import * as Expression from "./expression.js";
 
-type MountProps = Readonly<Record<string, string | number | boolean>>;
+type MountProps = ComponentMountProps<ReactNode>["props"];
+type Slots = ComponentMountProps<ReactNode>["slots"];
 
-interface Registered {
-  readonly spec: ComponentSpec;
-  readonly implementation: MountedComponent<ReactNode, ReactNode>;
-  readonly required: MountProps;
-  readonly children?: ReactNode;
-}
-
-const THEME_VARS = themeToCssVars(DEFAULT_THEME, { catalog: DEFAULT_CATALOG });
-const REGISTERED: readonly Registered[] = [
-  { spec: LOGO_MARK_SPEC, implementation: LogoMark, required: { label: "Facet" } },
-  { spec: NAV_SPEC, implementation: Nav, required: { brand: "Facet" }, children: "Actions" },
-  {
-    spec: SIDE_NAV_SPEC,
-    implementation: SideNav,
-    required: { title: "Facet" },
-    children: "Actions",
-  },
-  {
-    spec: SIDE_NAV_ITEM_SPEC,
-    implementation: SideNavItem,
-    required: { label: "Overview", action: "agent:overview" },
-  },
-  { spec: SECTION_SPEC, implementation: Section, required: { title: "Profile" }, children: "Body" },
-  { spec: DIVIDER_SPEC, implementation: Divider, required: { label: "Details" } },
-  { spec: HERO_SPEC, implementation: Hero, required: { title: "Alex Morgan" }, children: "Action" },
-  { spec: AVATAR_SPEC, implementation: Avatar, required: { label: "Alex Morgan" } },
-  {
-    spec: PROFILE_HEADER_SPEC,
-    implementation: ProfileHeader,
-    required: { name: "Alex Morgan" },
-    children: "Links",
-  },
-  {
-    spec: PRODUCT_SHOWCASE_SPEC,
-    implementation: ProductShowcase,
-    required: { title: "Northstar Audio" },
-    children: "Action",
-  },
-  {
-    spec: VISUAL_PANEL_SPEC,
-    implementation: VisualPanel,
-    required: { title: "Campaign tile" },
-    children: "Detail",
-  },
-  {
-    spec: MEDIA_CARD_SPEC,
-    implementation: MediaCard,
-    required: { title: "Citrus launch" },
-    children: "Detail",
-  },
-  { spec: LINK_LIST_SPEC, implementation: LinkList, required: {}, children: "Links" },
-  { spec: SOCIAL_LINKS_SPEC, implementation: SocialLinks, required: {}, children: "Links" },
-  { spec: FEATURE_LIST_SPEC, implementation: FeatureList, required: {}, children: "Feature" },
-  { spec: STAT_STRIP_SPEC, implementation: StatStrip, required: {}, children: "Stats" },
-  { spec: GALLERY_SPEC, implementation: Gallery, required: {}, children: "Gallery item" },
-  {
-    spec: TESTIMONIAL_SPEC,
-    implementation: Testimonial,
-    required: { quote: "Clear and direct.", source: "Mina" },
-  },
-  { spec: TIMELINE_SPEC, implementation: Timeline, required: {}, children: "Milestone" },
-  { spec: CTA_SPEC, implementation: CTA, required: { title: "Start now" }, children: "Button" },
-  { spec: ALERT_SPEC, implementation: Alert, required: { title: "Heads up" }, children: "Fix" },
-  { spec: PROGRESS_SPEC, implementation: Progress, required: { label: "Profile", value: 42 } },
-  { spec: FOOTER_SPEC, implementation: Footer, required: {}, children: "Footer action" },
-];
-
-const OUT_OF_FLOW_PROPERTIES: readonly string[] = [
+const THEME_VARS = Object.freeze({ "--facet-test-action": "rgb(10, 20, 30)" });
+const EXPECTED_EXPORTS = [
+  "ActionBar",
+  "ActionGroup",
+  "Button",
+  "Navigation",
+  "NavigationItem",
+] as const;
+const OUT_OF_FLOW_PROPERTIES = [
   "position",
   "z-index",
   "top",
@@ -136,22 +27,28 @@ const OUT_OF_FLOW_PROPERTIES: readonly string[] = [
   "left",
   "inset",
   "float",
-];
+] as const;
 
 afterEach(cleanup);
 
-function noop(): void {
-  return undefined;
-}
-
 function renderComponent(
-  registered: Registered,
-  props: MountProps = registered.required,
+  implementation: MountedComponent<ReactNode, ReactNode>,
+  options: {
+    readonly props?: MountProps;
+    readonly children?: ReactNode;
+    readonly slots?: Slots;
+    readonly onAction?: (prop: string) => void;
+  } = {},
 ): HTMLElement {
-  const Component = registered.implementation;
+  const Component = implementation;
   const { container } = render(
-    <Component props={props} themeVars={THEME_VARS} onAction={noop}>
-      {registered.children ?? null}
+    <Component
+      props={options.props ?? {}}
+      slots={options.slots ?? {}}
+      themeVars={THEME_VARS}
+      onAction={options.onAction ?? (() => undefined)}
+    >
+      {options.children ?? null}
     </Component>,
   );
   expect(container.childElementCount).toBe(1);
@@ -162,226 +59,246 @@ function renderComponent(
   return root;
 }
 
-function authoredDeclarations(root: HTMLElement): readonly (readonly [string, string])[] {
-  const nodes = [root, ...Array.from(root.querySelectorAll("*"))];
-  return nodes.flatMap((node) => {
+function declarations(root: HTMLElement): readonly (readonly [string, string])[] {
+  return [root, ...Array.from(root.querySelectorAll("*"))].flatMap((node) => {
     if (!(node instanceof HTMLElement)) return [];
-    return Array.from(node.style)
-      .map((name) => [name, node.style.getPropertyValue(name)] as const)
-      .filter(([, value]) => value !== "");
+    return Array.from(node.style).map((name) => [name, node.style.getPropertyValue(name)] as const);
   });
 }
 
-describe("expression React implementations", () => {
-  it("renders expressive components flow-contained", () => {
-    for (const registered of REGISTERED) {
-      const root = renderComponent(registered);
+describe("trusted navigation and action React components", () => {
+  it("exports exactly the locked navigation and action roster", () => {
+    expect(Object.keys(Expression).sort()).toEqual(EXPECTED_EXPORTS);
+  });
 
-      expect(root.getAttribute("data-facet-component")).toBe(registered.spec.tag);
-      expect(root.textContent?.length ?? 0, registered.spec.tag).toBeGreaterThan(0);
-      cleanup();
-    }
-  }, 60_000);
+  it("renders Navigation as a labelled nav from named slots", () => {
+    const root = renderComponent(Expression.Navigation, {
+      props: {
+        label: "Workspace",
+        orientation: "vertical",
+        density: "compact",
+        tone: "inverse",
+      },
+      children: <span data-testid="ignored">ignored</span>,
+      slots: {
+        brand: <span>Facet</span>,
+        items: <button type="button">Overview</button>,
+        actions: <button type="button">Account</button>,
+      },
+    });
 
-  it("emits no positioning, stacking, float, scripts, anchors or images", () => {
-    for (const registered of REGISTERED) {
-      const root = renderComponent(registered);
+    expect(root.tagName).toBe("NAV");
+    expect(root.getAttribute("aria-label")).toBe("Workspace");
+    expect(root.getAttribute("data-facet-navigation-orientation")).toBe("vertical");
+    expect(root.getAttribute("data-facet-navigation-density")).toBe("compact");
+    expect(root.getAttribute("data-facet-navigation-tone")).toBe("inverse");
+    expect(root.style.flexDirection).toBe("column");
+    expect(root.textContent).toBe("FacetOverviewAccount");
+    expect(root.querySelector('[data-testid="ignored"]')).toBeNull();
+    expect(root.querySelector('[data-facet-slot="brand"]')?.textContent).toBe("Facet");
+    expect(root.querySelector('[data-facet-slot="items"]')?.textContent).toBe("Overview");
+    expect(root.querySelector('[data-facet-slot="actions"]')?.textContent).toBe("Account");
+  });
 
-      expect(root.querySelector("script,style,a,img"), registered.spec.tag).toBeNull();
-      expect(
-        authoredDeclarations(root).filter(([name]) => OUT_OF_FLOW_PROPERTIES.includes(name)),
-        registered.spec.tag,
-      ).toEqual([]);
-      cleanup();
-    }
-  }, 60_000);
+  it("renders ActionBar from context and actions slots", () => {
+    const root = renderComponent(Expression.ActionBar, {
+      children: "ignored",
+      slots: {
+        context: <span>2 selected</span>,
+        actions: <button type="button">Archive</button>,
+      },
+    });
 
-  it("styles every root from the active theme custom properties", () => {
-    for (const registered of REGISTERED) {
-      const root = renderComponent(registered);
+    expect(root.textContent).toBe("2 selectedArchive");
+    expect(root.querySelector('[data-facet-slot="context"]')?.textContent).toBe("2 selected");
+    expect(root.querySelector('[data-facet-slot="actions"]')?.textContent).toBe("Archive");
+  });
 
-      expect(
-        Object.keys(THEME_VARS).every((name) => root.style.getPropertyValue(name) !== ""),
-      ).toBe(true);
-      cleanup();
-    }
-  }, 60_000);
+  it("renders ActionGroup only from ordered children", () => {
+    const root = renderComponent(Expression.ActionGroup, {
+      children: <button type="button">Child action</button>,
+      slots: { unused: <span>slot</span> },
+    });
 
-  it("keeps media and progress behavior bounded", () => {
-    const avatar = renderComponent(
-      REGISTERED.find((registered) => registered.spec.tag === "Avatar")!,
-      { label: "Alex Morgan" },
-    );
-    expect(avatar.textContent).toContain("AM");
-    expect(avatar.querySelector("img")).toBeNull();
+    expect(root.textContent).toBe("Child action");
+    expect(root.querySelector("span")).toBeNull();
+  });
+
+  it("renders leaf interactions as non-submitting semantic buttons", () => {
+    const button = renderComponent(Expression.Button, {
+      props: { label: "Save", action: "agent:save" },
+      children: "ignored",
+      slots: { ignored: "ignored" },
+    });
+    expect(button.tagName).toBe("BUTTON");
+    expect(button.getAttribute("type")).toBe("button");
+    expect(button.textContent).toBe("Save");
     cleanup();
 
-    const progress = renderComponent(
-      REGISTERED.find((registered) => registered.spec.tag === "Progress")!,
-      { label: "Profile", value: 142 },
-    );
-    expect(progress.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe(
-      "100",
-    );
-    const value =
-      progress.querySelector('[role="progressbar"]')?.previousElementSibling?.lastElementChild;
-    expect(value).toBeInstanceOf(HTMLElement);
-    expect((value as HTMLElement).style.whiteSpace).toBe("nowrap");
-    expect((value as HTMLElement).style.flexShrink).toBe("0");
+    const item = renderComponent(Expression.NavigationItem, {
+      props: {
+        label: "Overview",
+        action: "nav:overview",
+        mark: "O",
+        meta: "4",
+        active: true,
+      },
+      children: "ignored",
+      slots: { ignored: "ignored" },
+    });
+    expect(item.tagName).toBe("BUTTON");
+    expect(item.getAttribute("type")).toBe("button");
+    expect(item.getAttribute("aria-current")).toBe("page");
+    expect(item.textContent).toBe("OOverview4");
   });
 
-  it("lets visual panels stretch to the row height their parent establishes", () => {
-    const panel = renderComponent(
-      REGISTERED.find((registered) => registered.spec.tag === "VisualPanel")!,
-      {
-        title: "Averylongtechnicalheadingwithoutanaturalbreakpoint",
-        value: "Averylongstatuswithoutanaturalbreakpoint",
-        caption: "Averylongcaptionwithoutanaturalbreakpoint",
+  it("honors ActionGroup layout, alignment, density, tone, and title", () => {
+    const root = renderComponent(Expression.ActionGroup, {
+      props: {
+        title: "Account actions",
+        layout: "row",
+        align: "end",
+        density: "compact",
+        tone: "accent",
       },
-    );
-    const title = panel.querySelector("h2");
-    const content = panel.querySelector("div");
-    const value = content?.querySelector("span");
-    const caption = content?.querySelector("p");
+      children: <button type="button">Save</button>,
+    });
 
-    expect(panel.style.height).toBe("100%");
-    expect(panel.style.maxWidth).toBe("100%");
-    expect(panel.style.containerType).toBe("inline-size");
-    expect((title as HTMLElement).style.fontSize).toContain("12cqi");
-    for (const element of [title, content, value, caption]) {
-      expect(element).toBeInstanceOf(HTMLElement);
-      expect((element as HTMLElement).style.maxWidth).toBe("100%");
-      if (element !== content) {
-        expect((element as HTMLElement).style.overflowWrap).toBe("anywhere");
-      }
+    expect(root.getAttribute("data-facet-action-group-layout")).toBe("row");
+    expect(root.getAttribute("data-facet-action-group-tone")).toBe("accent");
+    expect(root.querySelector("h2")?.textContent).toBe("Account actions");
+    const actions = root.querySelector<HTMLElement>('[data-facet-action-group="actions"]');
+    expect(actions?.style.flexDirection).toBe("row");
+    expect(actions?.style.justifyContent).toBe("flex-end");
+    expect(actions?.style.gap).toContain("var(--facet-foundation-space-xs)");
+  });
+
+  it("honors ActionBar alignment and tone while retaining named slots", () => {
+    const root = renderComponent(Expression.ActionBar, {
+      props: { align: "between", tone: "inverse" },
+      slots: { context: "2 selected", actions: "Archive" },
+    });
+
+    expect(root.getAttribute("data-facet-action-bar-align")).toBe("between");
+    expect(root.getAttribute("data-facet-action-bar-tone")).toBe("inverse");
+    expect(root.querySelector('[data-facet-slot="context"]')?.textContent).toBe("2 selected");
+    expect(root.querySelector('[data-facet-slot="actions"]')?.textContent).toBe("Archive");
+  });
+
+  it("reports the declared action prop exactly once per activation", () => {
+    const buttonAction = vi.fn<(prop: string) => void>();
+    const button = renderComponent(Expression.Button, {
+      props: { label: "Save", action: "agent:save" },
+      onAction: buttonAction,
+    });
+    fireEvent.click(button);
+    expect(buttonAction).toHaveBeenCalledTimes(1);
+    expect(buttonAction).toHaveBeenCalledWith("action");
+    cleanup();
+
+    const navigationAction = vi.fn<(prop: string) => void>();
+    const item = renderComponent(Expression.NavigationItem, {
+      props: { label: "Overview", action: "nav:overview" },
+      onAction: navigationAction,
+    });
+    fireEvent.click(item);
+    expect(navigationAction).toHaveBeenCalledTimes(1);
+    expect(navigationAction).toHaveBeenCalledWith("action");
+  });
+
+  it("uses responsive wrapping and stable control dimensions", () => {
+    const navigation = renderComponent(Expression.Navigation, {
+      slots: { items: "Items" },
+    });
+    expect(navigation.style.flexWrap).toBe("wrap");
+    expect(navigation.style.maxWidth).toBe("100%");
+    cleanup();
+
+    const group = renderComponent(Expression.ActionGroup, {
+      props: { layout: "row" },
+      children: "Actions",
+    });
+    expect(
+      group.querySelector<HTMLElement>('[data-facet-action-group="actions"]')?.style.flexWrap,
+    ).toBe("wrap");
+    expect(group.style.minHeight).toContain("var(--facet-");
+    cleanup();
+
+    const bar = renderComponent(Expression.ActionBar, { slots: { actions: "Actions" } });
+    expect(bar.style.gridTemplateColumns).toContain("auto-fit");
+    expect(bar.style.gridTemplateColumns).toContain("var(--facet-");
+    cleanup();
+
+    for (const implementation of [Expression.Button, Expression.NavigationItem]) {
+      const control = renderComponent(implementation, { props: { label: "Action" } });
+      expect(control.style.minHeight).toContain("var(--facet-");
+      expect(control.style.boxSizing).toBe("border-box");
+      expect(control.style.maxWidth).toBe("100%");
+      expect(control.style.overflowWrap).toBe("anywhere");
+      cleanup();
     }
   });
 
-  it("keeps long hero titles contained on narrow screens", () => {
-    const hero = renderComponent(
-      REGISTERED.find((registered) => registered.spec.tag === "Hero")!,
-      { title: "Averylongservicenamewithoutanaturalbreakpoint" },
-    );
-    const title = hero.querySelector("h1");
+  it("contains long NavigationItem labels, marks, and metadata", () => {
+    const item = renderComponent(Expression.NavigationItem, {
+      props: {
+        label: "Averylongnavigationlabelwithoutanaturalbreakpoint",
+        mark: "Averylongmarkwithoutanaturalbreakpoint",
+        meta: "Averylongstatuswithoutanaturalbreakpoint",
+      },
+    });
+    const mark = item.querySelector<HTMLElement>('[data-facet-navigation-item="mark"]');
+    const label = item.querySelector<HTMLElement>('[data-facet-navigation-item="label"]');
+    const meta = item.querySelector<HTMLElement>('[data-facet-navigation-item="meta"]');
 
-    expect(title).toBeInstanceOf(HTMLElement);
-    expect((hero as HTMLElement).style.containerType).toBe("inline-size");
-    expect((title as HTMLElement).style.minWidth).toBe("0px");
-    expect((title as HTMLElement).style.maxWidth).toBe("100%");
-    expect((title as HTMLElement).style.overflowWrap).toBe("anywhere");
-    expect((title as HTMLElement).style.fontSize).toContain("clamp(");
-    expect((title as HTMLElement).style.fontSize).toContain("8cqi");
+    expect(mark?.style.maxWidth).toContain("var(--facet-");
+    expect(mark?.style.overflow).toBe("hidden");
+    expect(label?.style.minWidth).toBe("0px");
+    expect(label?.style.overflowWrap).toBe("anywhere");
+    expect(meta?.style.maxWidth).toBe("40%");
+    expect(meta?.style.overflow).toBe("hidden");
   });
 
-  it("lets side navigation fill the stretched rail its parent establishes", () => {
-    const sideNav = renderComponent(
-      REGISTERED.find((registered) => registered.spec.tag === "SideNav")!,
-      {
-        title: "Revenue",
-        label: "Command center",
-      },
-    );
+  it("uses the spec defaults for navigation and action layout", () => {
+    const navigation = renderComponent(Expression.Navigation, { slots: { items: "Items" } });
+    expect(navigation.getAttribute("data-facet-navigation-orientation")).toBe("horizontal");
+    expect(navigation.getAttribute("data-facet-navigation-density")).toBe("comfortable");
+    expect(navigation.getAttribute("data-facet-navigation-tone")).toBe("neutral");
+    expect(navigation.style.flexDirection).toBe("row");
+    cleanup();
 
-    expect(sideNav.style.height).toBe("100%");
-    expect(sideNav.style.alignSelf).toBe("stretch");
+    const group = renderComponent(Expression.ActionGroup, { children: "Actions" });
+    expect(group.getAttribute("data-facet-action-group-layout")).toBe("stack");
+    expect(group.getAttribute("data-facet-action-group-tone")).toBe("neutral");
+    expect(
+      group.querySelector<HTMLElement>('[data-facet-action-group="actions"]')?.style.flexDirection,
+    ).toBe("column");
+    cleanup();
+
+    const bar = renderComponent(Expression.ActionBar, { slots: { actions: "Actions" } });
+    expect(bar.getAttribute("data-facet-action-bar-align")).toBe("start");
+    expect(bar.getAttribute("data-facet-action-bar-tone")).toBe("neutral");
+    cleanup();
+
+    const button = renderComponent(Expression.Button, { props: { label: "Save" } });
+    expect(button.style.background).toContain("--facet-recipe-button-secondary-bg");
   });
 
-  it("keeps media cards stable inside equal-height galleries", () => {
-    const mediaCard = renderComponent(
-      REGISTERED.find((registered) => registered.spec.tag === "MediaCard")!,
-      {
-        title: "Citrus launch",
-        description: "Offer proof and launch story.",
-        aspect: "square",
-      },
-    );
-    const visual = mediaCard.firstElementChild;
-    const body = visual?.nextElementSibling;
+  it("keeps every root theme-mounted and flow-contained", () => {
+    for (const implementation of Object.values(Expression)) {
+      const root = renderComponent(implementation, {
+        props: { label: "Action" },
+        children: "Child",
+        slots: { items: "Items", actions: "Actions" },
+      });
 
-    expect(mediaCard.style.height).toBe("100%");
-    expect(visual).toBeInstanceOf(HTMLElement);
-    expect((visual as HTMLElement).style.boxSizing).toBe("border-box");
-    expect((visual as HTMLElement).style.width).toBe("100%");
-    expect((visual as HTMLElement).style.flexShrink).toBe("0");
-    expect(body).toBeInstanceOf(HTMLElement);
-    expect((body as HTMLElement).style.flex).toBe("1 1 0%");
-  });
-
-  it("keeps media-card visual labels contained on narrow screens", () => {
-    const mediaCard = renderComponent(
-      REGISTERED.find((registered) => registered.spec.tag === "MediaCard")!,
-      {
-        title: "Averylongmediatitlewithoutanaturalbreakpoint",
-        description: "Averylongmediadescriptionwithoutanaturalbreakpoint",
-        eyebrow: "averylonglabelwithoutbreakpoints",
-        meta: "liveframe.dev",
-      },
-    );
-    const body = mediaCard.firstElementChild?.nextElementSibling;
-    const title = body?.querySelector("h3");
-    const description = body?.querySelector("p");
-    const labels = mediaCard.firstElementChild?.querySelectorAll("span");
-
-    expect(mediaCard.style.maxWidth).toBe("100%");
-    expect(mediaCard.style.containerType).toBe("inline-size");
-    expect(labels).toHaveLength(2);
-    expect((labels?.[1] as HTMLElement).style.fontSize).toContain("11cqi");
-    for (const label of labels ?? []) {
-      expect((label as HTMLElement).style.minWidth).toBe("0px");
-      expect((label as HTMLElement).style.maxWidth).toContain("100%");
-      expect((label as HTMLElement).style.overflowWrap).toBe("anywhere");
-    }
-    for (const text of [title, description]) {
-      expect(text).toBeInstanceOf(HTMLElement);
-      expect((text as HTMLElement).style.maxWidth).toBe("100%");
-      expect((text as HTMLElement).style.overflowWrap).toBe("anywhere");
-    }
-    expect((title as HTMLElement).style.fontSize).toContain("11cqi");
-  });
-
-  it("keeps product showcases contained on narrow screens", () => {
-    const showcase = renderComponent(
-      REGISTERED.find((registered) => registered.spec.tag === "ProductShowcase")!,
-      {
-        title: "Averylongservicenamewithoutanaturalbreakpoint",
-        description: "Averylongdescriptionwithoutanaturalbreakpoint",
-        eyebrow: "Averylongeyebrowwithoutanaturalbreakpoint",
-        meta: "averylonglabelwithoutbreakpoints",
-      },
-    );
-    const [content, visual] = Array.from(showcase.children);
-    const title = content?.querySelector("h1");
-    const paragraphs = content?.querySelectorAll("p");
-    const labels = visual?.querySelectorAll("span");
-
-    expect(showcase.style.gridTemplateColumns).toContain("min(16rem, 100%)");
-    expect(showcase.style.maxWidth).toBe("100%");
-    expect(showcase.style.containerType).toBe("inline-size");
-    expect(showcase.style.padding).toBe("min(var(--facet-recipe-product-showcase-padding), 8%)");
-    expect(content).toBeInstanceOf(HTMLElement);
-    expect((content as HTMLElement).style.boxSizing).toBe("border-box");
-    expect((content as HTMLElement).style.maxWidth).toBe("100%");
-    expect(title).toBeInstanceOf(HTMLElement);
-    expect((title as HTMLElement).style.fontSize).toBe(
-      "clamp(var(--facet-foundation-typography-font-size-lg), 11cqi, var(--facet-recipe-product-showcase-title-font-size))",
-    );
-    expect((title as HTMLElement).style.overflowWrap).toBe("anywhere");
-    expect(paragraphs).toHaveLength(2);
-    for (const paragraph of paragraphs ?? []) {
-      expect((paragraph as HTMLElement).style.maxWidth).toBe("100%");
-      expect((paragraph as HTMLElement).style.overflowWrap).toBe("anywhere");
-    }
-    expect(visual).toBeInstanceOf(HTMLElement);
-    expect((visual as HTMLElement).style.boxSizing).toBe("border-box");
-    expect((visual as HTMLElement).style.width).toBe("100%");
-    expect((visual as HTMLElement).style.maxWidth).toBe("100%");
-    expect(labels).toHaveLength(2);
-    expect((labels?.[1] as HTMLElement).style.fontSize).toBe(
-      "clamp(var(--facet-foundation-typography-font-size-lg), 11cqi, var(--facet-foundation-typography-font-size4xl))",
-    );
-    for (const label of labels ?? []) {
-      expect((label as HTMLElement).style.maxWidth).toContain("100%");
-      expect((label as HTMLElement).style.overflowWrap).toBe("anywhere");
+      expect(root.style.getPropertyValue("--facet-test-action")).toBe(
+        THEME_VARS["--facet-test-action"],
+      );
+      expect(
+        declarations(root).filter(([name]) => OUT_OF_FLOW_PROPERTIES.includes(name as never)),
+      ).toEqual([]);
+      cleanup();
     }
   });
 });

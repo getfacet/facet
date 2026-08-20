@@ -1,41 +1,9 @@
-/**
- * The trusted React implementations of the six default layout components.
- *
- * These are the other half of Facet's trust boundary. The catalog says a
- * `Grid` accepts a `columns` between one and six; this module is the code that
- * runs when an agent authors one, and the host registered it before the session
- * ever started. An agent's markup selects among these implementations and fills
- * their declared props; it never reaches the code itself.
- *
- * Everything here is **flow-contained**. There is no coordinate, no stacking
- * control and no escape hatch, and the `FlowStyle` type the shared helpers
- * accept makes that structural rather than a promise: overlap exists only
- * through the framework's Modal frame, which is not authored geometry at all.
- * `Grid`'s narrow-viewport collapse is the interesting case — it is expressed
- * entirely in the track sizing, so it needs no media query, no stylesheet and no
- * resize listener, and it stays correct inside any container the parent gives
- * it rather than only against the viewport.
- *
- * `Screen` is a registered component like the other three. It is a structural
- * position in the grammar *and* a catalog member, because a document stores its
- * screen roots as ordinary nodes the renderer mounts, and bootstrap demands
- * exact catalog/registry equality. So it is handed the registered props —
- * `name`, plus the presentation props — and honours them here, exactly as any
- * mounted component does.
- *
- * The only import besides `react` is `@facet/core`. That one-way edge is what
- * lets `@facet/react` mount these without either package depending on the
- * other.
- *
- * **Visibility: private.** This module is not a package entry point and is not
- * barrel-exported; `react.tsx` composes it into the default registry.
- */
+/** Trusted, flow-contained React implementations for Facet structure tags. */
 
 import type { ComponentMountProps, MountedComponent } from "@facet/core";
-import { Children, Fragment, isValidElement } from "react";
 import type { ReactNode } from "react";
 
-import type { SpaceName } from "./style.js";
+import type { FlowStyle, SpaceName } from "./style.js";
 import {
   countProp,
   enumProp,
@@ -44,47 +12,36 @@ import {
   foundation,
   mountStyle,
   recipe,
+  semantic,
   space,
   textProp,
 } from "./style.js";
 
-/** How wide a screen's reading column may grow. */
-const MAX_WIDTHS = {
-  narrow: "38rem",
-  medium: "60rem",
-  wide: "80rem",
-  full: "100%",
-} as const satisfies Readonly<Record<string, string>>;
+type Mount = ComponentMountProps<ReactNode>;
 
-const SCREEN_MAX_WIDTHS = ["narrow", "medium", "wide", "full"] as const;
-const SCREEN_PADDINGS = ["none", "sm", "md", "lg"] as const;
 const SPACE_NAMES = ["none", "xs", "sm", "md", "lg", "xl"] as const;
-const STACK_ALIGNMENTS = ["start", "center", "end", "stretch"] as const;
-const STACK_JUSTIFICATIONS = ["start", "center", "end", "between"] as const;
+const ALIGNMENTS = ["start", "center", "end", "stretch"] as const;
 const ROW_ALIGNMENTS = ["start", "center", "end", "stretch", "baseline"] as const;
-const ROW_JUSTIFICATIONS = ["start", "center", "end", "between"] as const;
-const APP_SHELL_SIDEBARS = ["start", "end"] as const;
+const JUSTIFICATIONS = ["start", "center", "end", "between"] as const;
 const SPLIT_RATIOS = ["50:50", "60:40", "40:60", "70:30", "30:70"] as const;
-const SPLIT_ALIGNMENTS = ["start", "center", "end", "stretch"] as const;
+const SCREEN_WIDTHS = ["narrow", "medium", "wide", "full"] as const;
 
-/** Cross-axis alignment, as a stack and a row each name it. */
-const ALIGNMENTS = {
+const ALIGNMENT_VALUES = {
   start: "flex-start",
   center: "center",
   end: "flex-end",
   stretch: "stretch",
   baseline: "baseline",
-} as const satisfies Readonly<Record<string, string>>;
+} as const;
 
-/** Distribution of leftover space along a row. */
-const JUSTIFICATIONS = {
+const JUSTIFICATION_VALUES = {
   start: "flex-start",
   center: "center",
   end: "flex-end",
   between: "space-between",
-} as const satisfies Readonly<Record<string, string>>;
+} as const;
 
-const SPLIT_RATIO_WEIGHTS = {
+const SPLIT_WEIGHTS = {
   "50:50": [1, 1],
   "60:40": [3, 2],
   "40:60": [2, 3],
@@ -92,69 +49,95 @@ const SPLIT_RATIO_WEIGHTS = {
   "30:70": [3, 7],
 } as const satisfies Readonly<Record<string, readonly [number, number]>>;
 
-/** The narrowest a grid column may become before the grid drops a column. */
-const GRID_MIN_COLUMN = "12rem";
+const SCREEN_MAX_WIDTH = {
+  narrow: foundation("size", "contentMeasureLg"),
+  medium: foundation("size", "containerMd"),
+  wide: foundation("size", "containerXl"),
+  full: "100%",
+} as const;
 
-/** A grid's declared column bounds, mirroring `GRID_SPEC`. */
-const GRID_MIN_COLUMNS = 1;
-const GRID_MAX_COLUMNS = 6;
-const GRID_DEFAULT_COLUMNS = 3;
+const CARD_EDGE = {
+  neutral: semantic("border", "default"),
+  accent: semantic("action", "primaryBorder"),
+  success: semantic("status", "successBorder"),
+  warning: semantic("status", "warningBorder"),
+  danger: semantic("status", "dangerBorder"),
+} as const;
 
-function layoutChildren(children: ReactNode): readonly ReactNode[] {
-  const values: ReactNode[] = [];
-  Children.forEach(children, (child) => {
-    if (isValidElement<{ readonly children?: ReactNode }>(child) && child.type === Fragment) {
-      values.push(...layoutChildren(child.props.children));
-      return;
-    }
-    values.push(child);
-  });
-  return values;
-}
+const CARD_TONES = Object.keys(CARD_EDGE) as readonly (keyof typeof CARD_EDGE)[];
+const CARD_PADDINGS = ["none", "sm", "md", "lg"] as const;
+const SECTION_TONES = ["neutral", "accent", "muted"] as const;
+const SECTION_PADDINGS = ["none", "sm", "md", "lg"] as const;
 
-/**
- * The track sizing for one grid.
- *
- * When the grid may collapse, each track's floor is the larger of a readable
- * minimum and the share it would take at the requested column count. On a wide
- * container the share wins and the grid lays out exactly the requested columns;
- * as the container narrows the readable minimum takes over and `auto-fit` drops
- * columns one at a time, down to one. The whole behaviour is in the value, so
- * it responds to the container it is actually in and needs no listener.
- */
-function gridTracks(columns: number, gap: string, collapse: boolean): string {
-  if (!collapse || columns <= GRID_MIN_COLUMNS) {
-    return `repeat(${columns}, minmax(0, 1fr))`;
-  }
+const ROOT_BOUNDS: FlowStyle = Object.freeze({
+  boxSizing: "border-box",
+  width: "100%",
+  minWidth: 0,
+  maxWidth: "100%",
+});
+
+function responsiveTracks(columns: number, gap: string, minimum: string): string {
   const gaps = columns - 1;
   const share = `calc((100% - (${gap} * ${gaps})) / ${columns})`;
-  return `repeat(auto-fit, minmax(max(${GRID_MIN_COLUMN}, ${share}), 1fr))`;
+  return `repeat(auto-fit, minmax(max(min(${minimum}, 100%), ${share}), 1fr))`;
 }
 
-/**
- * The root of one named screen: its background, its reading column, and the
- * space around it.
- */
-export const Screen: MountedComponent<ReactNode, ReactNode> = function Screen({
+function headingStyle(color: string, size: string, weight: string): ReturnType<typeof flowStyle> {
+  return flowStyle({
+    margin: 0,
+    minWidth: 0,
+    maxWidth: "100%",
+    overflowWrap: "anywhere",
+    color,
+    fontFamily: foundation("typography", "fontFamilySans"),
+    fontSize: size,
+    fontWeight: weight,
+    lineHeight: foundation("typography", "lineHeightTight"),
+  });
+}
+
+function descriptionStyle(color: string): ReturnType<typeof flowStyle> {
+  return flowStyle({
+    margin: 0,
+    minWidth: 0,
+    maxWidth: "100%",
+    overflowWrap: "anywhere",
+    color,
+    fontFamily: foundation("typography", "fontFamilySans"),
+    fontSize: foundation("typography", "fontSizeSm"),
+    lineHeight: foundation("typography", "lineHeightNormal"),
+  });
+}
+
+function slotRegionStyle(extra: FlowStyle = {}): ReturnType<typeof flowStyle> {
+  return flowStyle({
+    boxSizing: "border-box",
+    minWidth: 0,
+    maxWidth: "100%",
+    ...extra,
+  });
+}
+
+/** One named screen and its ordered container children. */
+export const Screen: MountedComponent<ReactNode, ReactNode> = ({
   props,
   children,
   themeVars,
-}: ComponentMountProps<ReactNode>): ReactNode {
-  const name = textProp(props, "name") ?? "";
+}: Mount): ReactNode => {
+  const name = textProp(props, "name");
   const title = textProp(props, "title");
-  const maxWidth = enumProp(props, "maxWidth", SCREEN_MAX_WIDTHS, "medium");
-  const padding = enumProp(props, "padding", SCREEN_PADDINGS, "md");
+  const maxWidth = enumProp(props, "maxWidth", SCREEN_WIDTHS, "medium");
+  const padding = enumProp(props, "padding", CARD_PADDINGS, "md");
 
   return (
     <section
       data-facet-component="Screen"
       data-facet-screen={name}
       style={mountStyle(themeVars, {
+        ...ROOT_BOUNDS,
         display: "flex",
         flexDirection: "column",
-        boxSizing: "border-box",
-        width: "100%",
-        minWidth: 0,
+        minHeight: "100%",
         padding: space(padding),
         background: recipe("screen", "background"),
         color: recipe("screen", "text"),
@@ -164,24 +147,24 @@ export const Screen: MountedComponent<ReactNode, ReactNode> = function Screen({
       })}
     >
       <div
-        style={flowStyle({
+        style={slotRegionStyle({
           display: "flex",
           flexDirection: "column",
-          gap: recipe("screen", "contentGap"),
           width: "100%",
-          minWidth: 0,
-          maxWidth: MAX_WIDTHS[maxWidth],
           marginInline: "auto",
+          gap: recipe("screen", "contentGap"),
+          maxWidth: SCREEN_MAX_WIDTH[maxWidth],
         })}
       >
         {title === undefined ? null : (
           <h1
             style={flowStyle({
-              margin: 0,
-              fontSize: recipe("screen", "titleFontSize"),
-              fontWeight: recipe("screen", "titleFontWeight"),
+              ...headingStyle(
+                recipe("screen", "titleColor"),
+                recipe("screen", "titleFontSize"),
+                recipe("screen", "titleFontWeight"),
+              ),
               lineHeight: recipe("screen", "titleLineHeight"),
-              color: recipe("screen", "titleColor"),
             })}
           >
             {title}
@@ -193,15 +176,15 @@ export const Screen: MountedComponent<ReactNode, ReactNode> = function Screen({
   );
 };
 
-/** Children in vertical reading order. */
-export const Stack: MountedComponent<ReactNode, ReactNode> = function Stack({
+/** Ordered children in a vertical flow. */
+export const Stack: MountedComponent<ReactNode, ReactNode> = ({
   props,
   children,
   themeVars,
-}: ComponentMountProps<ReactNode>): ReactNode {
+}: Mount): ReactNode => {
   const gap: SpaceName = enumProp(props, "gap", SPACE_NAMES, "md");
-  const align = enumProp(props, "align", STACK_ALIGNMENTS, "stretch");
-  const justify = enumProp(props, "justify", STACK_JUSTIFICATIONS, "start");
+  const align = enumProp(props, "align", ALIGNMENTS, "stretch");
+  const justify = enumProp(props, "justify", JUSTIFICATIONS, "start");
   const grow = flagProp(props, "grow", false);
   const padding: SpaceName = enumProp(props, "padding", SPACE_NAMES, "none");
 
@@ -209,16 +192,15 @@ export const Stack: MountedComponent<ReactNode, ReactNode> = function Stack({
     <div
       data-facet-component="Stack"
       style={mountStyle(themeVars, {
+        ...ROOT_BOUNDS,
         display: "flex",
         flexDirection: "column",
-        boxSizing: "border-box",
-        minWidth: 0,
         flexGrow: grow ? 1 : 0,
         flexBasis: grow ? 0 : "auto",
-        gap: space(gap),
+        gap: gap === "md" ? recipe("stack", "defaultGap") : space(gap),
         padding: space(padding),
-        alignItems: ALIGNMENTS[align],
-        justifyContent: JUSTIFICATIONS[justify],
+        alignItems: ALIGNMENT_VALUES[align],
+        justifyContent: JUSTIFICATION_VALUES[justify],
       })}
     >
       {children}
@@ -226,101 +208,28 @@ export const Stack: MountedComponent<ReactNode, ReactNode> = function Stack({
   );
 };
 
-/** An app-like frame with one side rail and one main content region. */
-export const AppShell: MountedComponent<ReactNode, ReactNode> = function AppShell({
+/** Ordered children in a wrapping horizontal flow. */
+export const Row: MountedComponent<ReactNode, ReactNode> = ({
   props,
   children,
   themeVars,
-}: ComponentMountProps<ReactNode>): ReactNode {
-  const gap: SpaceName = enumProp(props, "gap", SPACE_NAMES, "lg");
-  const sidebar = enumProp(props, "sidebar", APP_SHELL_SIDEBARS, "start");
-  const collapse = flagProp(props, "collapse", true);
-  const childArray = layoutChildren(children);
-  const railChild = childArray[0] ?? null;
-  const mainChildren = childArray.slice(1);
-  const rail =
-    railChild === null ? null : (
-      <div
-        data-facet-app-shell-slot="rail"
-        style={flowStyle({
-          display: "flex",
-          minWidth: 0,
-          flex: "0 0 auto",
-          alignSelf: "stretch",
-        })}
-      >
-        {railChild}
-      </div>
-    );
-  const main =
-    mainChildren.length === 0 ? null : (
-      <div
-        data-facet-app-shell-slot="main"
-        style={flowStyle({
-          display: "flex",
-          flexDirection: "column",
-          minWidth: recipe("app-shell", "mainMinWidth"),
-          flex: "1 1 0",
-          alignSelf: "stretch",
-        })}
-      >
-        {mainChildren}
-      </div>
-    );
-
-  return (
-    <div
-      data-facet-component="AppShell"
-      style={mountStyle(themeVars, {
-        display: "flex",
-        flexDirection: "row",
-        flexWrap: collapse ? "wrap" : "nowrap",
-        alignItems: "stretch",
-        boxSizing: "border-box",
-        width: "100%",
-        minWidth: 0,
-        minHeight: recipe("app-shell", "minHeight"),
-        gap: gap === "lg" ? recipe("app-shell", "defaultGap") : space(gap),
-      })}
-    >
-      {sidebar === "end" ? (
-        <>
-          {main}
-          {rail}
-        </>
-      ) : (
-        <>
-          {rail}
-          {main}
-        </>
-      )}
-    </div>
-  );
-};
-
-/** Children side by side on one line, wrapping when the line runs out. */
-export const Row: MountedComponent<ReactNode, ReactNode> = function Row({
-  props,
-  children,
-  themeVars,
-}: ComponentMountProps<ReactNode>): ReactNode {
+}: Mount): ReactNode => {
   const gap: SpaceName = enumProp(props, "gap", SPACE_NAMES, "md");
   const align = enumProp(props, "align", ROW_ALIGNMENTS, "center");
-  const justify = enumProp(props, "justify", ROW_JUSTIFICATIONS, "start");
+  const justify = enumProp(props, "justify", JUSTIFICATIONS, "start");
   const wrap = flagProp(props, "wrap", true);
 
   return (
     <div
       data-facet-component="Row"
       style={mountStyle(themeVars, {
+        ...ROOT_BOUNDS,
         display: "flex",
         flexDirection: "row",
-        boxSizing: "border-box",
-        minWidth: 0,
-        gap: space(gap),
-        alignItems: ALIGNMENTS[align],
-        justifyContent: JUSTIFICATIONS[justify],
         flexWrap: wrap ? "wrap" : "nowrap",
+        alignItems: ALIGNMENT_VALUES[align],
+        justifyContent: JUSTIFICATION_VALUES[justify],
+        gap: gap === "md" ? recipe("row", "defaultGap") : space(gap),
       })}
     >
       {children}
@@ -328,69 +237,88 @@ export const Row: MountedComponent<ReactNode, ReactNode> = function Row({
   );
 };
 
-/** An asymmetric two-column frame for non-dashboard compositions. */
-export const Split: MountedComponent<ReactNode, ReactNode> = function Split({
+/** Ordered children in bounded, container-responsive tracks. */
+export const Grid: MountedComponent<ReactNode, ReactNode> = ({
   props,
   children,
   themeVars,
-}: ComponentMountProps<ReactNode>): ReactNode {
+}: Mount): ReactNode => {
+  const columns = countProp(props, "columns", 1, 6, 3);
+  const gap: SpaceName = enumProp(props, "gap", SPACE_NAMES, "md");
+  const collapse = flagProp(props, "collapse", true);
+  const resolvedGap = gap === "md" ? recipe("grid", "defaultGap") : space(gap);
+
+  return (
+    <div
+      data-facet-component="Grid"
+      style={mountStyle(themeVars, {
+        ...ROOT_BOUNDS,
+        display: "grid",
+        alignItems: "stretch",
+        gap: resolvedGap,
+        gridTemplateColumns: collapse
+          ? responsiveTracks(columns, resolvedGap, recipe("grid", "minColumnWidth"))
+          : `repeat(${columns}, minmax(0, 1fr))`,
+      })}
+    >
+      {children}
+    </div>
+  );
+};
+
+/** Two named regions with a responsive ratio and no child-order inference. */
+export const Split: MountedComponent<ReactNode, ReactNode> = ({
+  props,
+  slots,
+  themeVars,
+}: Mount): ReactNode => {
   const ratio = enumProp(props, "ratio", SPLIT_RATIOS, "60:40");
   const gap: SpaceName = enumProp(props, "gap", SPACE_NAMES, "lg");
-  const align = enumProp(props, "align", SPLIT_ALIGNMENTS, "stretch");
+  const align = enumProp(props, "align", ALIGNMENTS, "stretch");
   const reverse = flagProp(props, "reverse", false);
   const collapse = flagProp(props, "collapse", true);
-  const weights = SPLIT_RATIO_WEIGHTS[ratio];
-  const minColumnWidth = recipe("split", "minColumnWidth");
-  const containedColumnWidth = `min(${minColumnWidth}, 100%)`;
-  const childArray = layoutChildren(children);
-  const primaryChild = childArray[0] ?? null;
-  const secondaryChildren = childArray.slice(1);
-  const primary =
-    primaryChild === null ? null : (
-      <div
-        data-facet-split-slot="primary"
-        style={flowStyle({
-          display: "flex",
-          flexDirection: "column",
-          minWidth: collapse ? containedColumnWidth : 0,
-          maxWidth: "100%",
-          flex: `${weights[0]} 1 ${containedColumnWidth}`,
-          alignSelf: align === "stretch" ? "stretch" : "auto",
-        })}
-      >
-        {primaryChild}
-      </div>
-    );
-  const secondary =
-    secondaryChildren.length === 0 ? null : (
-      <div
-        data-facet-split-slot="secondary"
-        style={flowStyle({
-          display: "flex",
-          flexDirection: "column",
-          minWidth: collapse ? containedColumnWidth : 0,
-          maxWidth: "100%",
-          flex: `${weights[1]} 1 ${containedColumnWidth}`,
-          alignSelf: align === "stretch" ? "stretch" : "auto",
-        })}
-      >
-        {secondaryChildren}
-      </div>
-    );
+  const weights = SPLIT_WEIGHTS[ratio];
+  const minimum = `min(${recipe("split", "minColumnWidth")}, 100%)`;
+
+  const primary = (
+    <div
+      data-facet-slot="primary"
+      style={slotRegionStyle({
+        display: "flex",
+        flexDirection: "column",
+        minWidth: collapse ? minimum : 0,
+        flex: `${weights[0]} 1 ${minimum}`,
+        alignSelf: align === "stretch" ? "stretch" : "auto",
+      })}
+    >
+      {slots["primary"] ?? null}
+    </div>
+  );
+  const secondary = (
+    <div
+      data-facet-slot="secondary"
+      style={slotRegionStyle({
+        display: "flex",
+        flexDirection: "column",
+        minWidth: collapse ? minimum : 0,
+        flex: `${weights[1]} 1 ${minimum}`,
+        alignSelf: align === "stretch" ? "stretch" : "auto",
+      })}
+    >
+      {slots["secondary"] ?? null}
+    </div>
+  );
 
   return (
     <div
       data-facet-component="Split"
       data-facet-split-ratio={ratio}
       style={mountStyle(themeVars, {
+        ...ROOT_BOUNDS,
         display: "flex",
         flexDirection: "row",
         flexWrap: collapse ? "wrap" : "nowrap",
-        alignItems: ALIGNMENTS[align],
-        boxSizing: "border-box",
-        width: "100%",
-        minWidth: 0,
-        maxWidth: "100%",
+        alignItems: ALIGNMENT_VALUES[align],
         gap: gap === "lg" ? recipe("split", "defaultGap") : space(gap),
       })}
     >
@@ -409,35 +337,278 @@ export const Split: MountedComponent<ReactNode, ReactNode> = function Split({
   );
 };
 
-/** An even grid of equal columns, for repeated content of one kind. */
-export const Grid: MountedComponent<ReactNode, ReactNode> = function Grid({
+/** Named navigation, header, and main regions in an intrinsic app frame. */
+export const AppShell: MountedComponent<ReactNode, ReactNode> = ({
   props,
-  children,
+  slots,
   themeVars,
-}: ComponentMountProps<ReactNode>): ReactNode {
-  const columns = countProp(
-    props,
-    "columns",
-    GRID_MIN_COLUMNS,
-    GRID_MAX_COLUMNS,
-    GRID_DEFAULT_COLUMNS,
-  );
-  const gap: SpaceName = enumProp(props, "gap", SPACE_NAMES, "md");
+}: Mount): ReactNode => {
+  const gap: SpaceName = enumProp(props, "gap", SPACE_NAMES, "lg");
+  const sidebar = enumProp(props, "sidebar", ["start", "end"] as const, "start");
   const collapse = flagProp(props, "collapse", true);
+  const navigation = slots["navigation"];
+  const header = slots["header"];
+  const navigationRegion =
+    navigation === undefined || navigation === null ? null : (
+      <aside
+        data-facet-slot="navigation"
+        style={slotRegionStyle({
+          display: "flex",
+          flexDirection: "column",
+          width: "100%",
+          minWidth: collapse ? `min(${foundation("size", "containerXs")}, 100%)` : 0,
+          flex: `0 1 min(${foundation("size", "containerXs")}, 100%)`,
+          alignSelf: "stretch",
+        })}
+      >
+        {navigation}
+      </aside>
+    );
+  const mainRegion = (
+    <div
+      style={slotRegionStyle({
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        minWidth: collapse ? `min(${recipe("app-shell", "mainMinWidth")}, 100%)` : 0,
+        flex: `1 1 min(${recipe("app-shell", "mainMinWidth")}, 100%)`,
+        gap: foundation("space", "md"),
+      })}
+    >
+      {header === undefined || header === null ? null : (
+        <header data-facet-slot="header" style={slotRegionStyle()}>
+          {header}
+        </header>
+      )}
+      <main
+        data-facet-slot="main"
+        style={slotRegionStyle({
+          display: "flex",
+          flexDirection: "column",
+          width: "100%",
+          flex: "1 1 auto",
+        })}
+      >
+        {slots["main"] ?? null}
+      </main>
+    </div>
+  );
 
   return (
     <div
-      data-facet-component="Grid"
+      data-facet-component="AppShell"
       style={mountStyle(themeVars, {
-        display: "grid",
-        boxSizing: "border-box",
-        minWidth: 0,
-        gap: space(gap),
+        ...ROOT_BOUNDS,
+        display: "flex",
+        flexDirection: "row",
+        flexWrap: collapse ? "wrap" : "nowrap",
         alignItems: "stretch",
-        gridTemplateColumns: gridTracks(columns, space(gap), collapse),
+        gap: gap === "lg" ? recipe("app-shell", "defaultGap") : space(gap),
+        minHeight: recipe("app-shell", "minHeight"),
       })}
     >
+      {sidebar === "end" ? (
+        <>
+          {mainRegion}
+          {navigationRegion}
+        </>
+      ) : (
+        <>
+          {navigationRegion}
+          {mainRegion}
+        </>
+      )}
+    </div>
+  );
+};
+
+/** A normal-flow page section containing ordered children. */
+export const Section: MountedComponent<ReactNode, ReactNode> = ({
+  props,
+  children,
+  themeVars,
+}: Mount): ReactNode => {
+  const title = textProp(props, "title");
+  const description = textProp(props, "description");
+  const tone = enumProp(props, "tone", SECTION_TONES, "neutral");
+  const padding = enumProp(props, "padding", SECTION_PADDINGS, "md");
+  const background =
+    tone === "accent"
+      ? semantic("state", "selectedBg")
+      : tone === "muted"
+        ? semantic("surface", "muted")
+        : semantic("surface", "default");
+
+  return (
+    <section
+      data-facet-component="Section"
+      data-facet-section-tone={tone}
+      style={mountStyle(themeVars, {
+        ...ROOT_BOUNDS,
+        display: "flex",
+        flexDirection: "column",
+        gap: foundation("space", "md"),
+        padding: padding === "md" ? recipe("section", "padding") : space(padding),
+        border: `${foundation("borderWidth", "thin")} solid ${recipe("section", "border")}`,
+        borderRadius: recipe("section", "radius"),
+        background,
+        color: recipe("section", "text"),
+      })}
+    >
+      {title === undefined ? null : (
+        <h2
+          style={headingStyle(
+            recipe("section", "text"),
+            recipe("section", "titleFontSize"),
+            recipe("section", "titleFontWeight"),
+          )}
+        >
+          {title}
+        </h2>
+      )}
+      {description === undefined ? null : (
+        <p style={descriptionStyle(recipe("section", "mutedText"))}>{description}</p>
+      )}
       {children}
+    </section>
+  );
+};
+
+/** An equal-height-capable bounded surface containing ordered children. */
+export const Card: MountedComponent<ReactNode, ReactNode> = ({
+  props,
+  children,
+  themeVars,
+}: Mount): ReactNode => {
+  const title = textProp(props, "title");
+  const tone = enumProp(props, "tone", CARD_TONES, "neutral");
+  const padding = enumProp(props, "padding", CARD_PADDINGS, "md");
+
+  return (
+    <article
+      data-facet-component="Card"
+      data-facet-card-tone={tone}
+      style={mountStyle(themeVars, {
+        ...ROOT_BOUNDS,
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        gap: foundation("space", "sm"),
+        padding: padding === "md" ? recipe("card", "padding") : space(padding),
+        border: `${foundation("borderWidth", "thin")} solid ${CARD_EDGE[tone]}`,
+        borderRadius: recipe("card", "radius"),
+        boxShadow: recipe("card", "shadow"),
+        background: recipe("card", "background"),
+        color: recipe("card", "text"),
+      })}
+    >
+      {title === undefined ? null : (
+        <h2
+          style={headingStyle(
+            recipe("card", "titleColor"),
+            foundation("typography", "fontSizeLg"),
+            foundation("typography", "fontWeightMedium"),
+          )}
+        >
+          {title}
+        </h2>
+      )}
+      {children}
+    </article>
+  );
+};
+
+/** Flow content for the renderer-owned modal frame. */
+export const Modal: MountedComponent<ReactNode, ReactNode> = ({
+  props,
+  slots,
+  themeVars,
+}: Mount): ReactNode => {
+  const description = textProp(props, "description");
+  const actions = slots["actions"];
+
+  return (
+    <div
+      data-facet-component="Modal"
+      style={mountStyle(themeVars, {
+        ...ROOT_BOUNDS,
+        display: "flex",
+        flexDirection: "column",
+        gap: foundation("space", "lg"),
+        color: recipe("modal", "frameText"),
+      })}
+    >
+      {description === undefined ? null : (
+        <p style={descriptionStyle(semantic("text", "muted"))}>{description}</p>
+      )}
+      <div data-facet-slot="body" style={slotRegionStyle()}>
+        {slots["body"] ?? null}
+      </div>
+      {actions === undefined || actions === null ? null : (
+        <div
+          data-facet-slot="actions"
+          style={slotRegionStyle({
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+            gap: foundation("space", "sm"),
+            minHeight: foundation("size", "touchTarget"),
+          })}
+        >
+          {actions}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** A labelled separator leaf. */
+export const Divider: MountedComponent<ReactNode, ReactNode> = ({
+  props,
+  themeVars,
+}: Mount): ReactNode => {
+  const label = textProp(props, "label");
+  const emphasis = enumProp(props, "emphasis", ["subtle", "strong"] as const, "subtle");
+  const line: FlowStyle = {
+    flex: "1 1 auto",
+    minWidth: 0,
+    borderTopStyle: "solid",
+    borderTopWidth: foundation("borderWidth", emphasis === "strong" ? "medium" : "thin"),
+    borderTopColor: recipe("divider", "color"),
+  };
+
+  return (
+    <div
+      data-facet-component="Divider"
+      role="separator"
+      aria-label={label}
+      style={mountStyle(themeVars, {
+        ...ROOT_BOUNDS,
+        display: "flex",
+        alignItems: "center",
+        gap: recipe("divider", "gap"),
+        minHeight: foundation("borderWidth", emphasis === "strong" ? "medium" : "thin"),
+        color: recipe("divider", "text"),
+      })}
+    >
+      <span aria-hidden="true" style={flowStyle(line)} />
+      {label === undefined ? null : (
+        <span
+          style={flowStyle({
+            flex: "0 1 auto",
+            minWidth: 0,
+            maxWidth: "100%",
+            overflowWrap: "anywhere",
+            fontFamily: foundation("typography", "fontFamilySans"),
+            fontSize: foundation("typography", "fontSizeXs"),
+            fontWeight: foundation("typography", "fontWeightMedium"),
+            lineHeight: foundation("typography", "lineHeightTight"),
+          })}
+        >
+          {label}
+        </span>
+      )}
+      <span aria-hidden="true" style={flowStyle(line)} />
     </div>
   );
 };

@@ -16,7 +16,7 @@ function spec(tag: string, overrides: Record<string, unknown> = {}): Record<stri
     tag,
     whenToUse: `Use ${tag} when this component fits the page.`,
     props: {},
-    acceptsChildren: false,
+    content: { mode: "none" },
     ...overrides,
   };
 }
@@ -30,13 +30,27 @@ function screenSpec(): Record<string, unknown> {
         guidance: "The screen name the document entry can target.",
       },
     },
-    acceptsChildren: true,
+    content: { mode: "children" },
   });
 }
 
 function textSpec(): Record<string, unknown> {
   return spec("Text", {
     props: { value: { type: "string", guidance: "The text to show." } },
+  });
+}
+
+function imageSpec(): Record<string, unknown> {
+  return spec("Image", {
+    props: {
+      asset: {
+        type: "string",
+        required: true,
+        assetKind: "image",
+        guidance: "The host-pinned image asset.",
+      },
+      alt: { type: "string", required: true, guidance: "Alternative text." },
+    },
   });
 }
 
@@ -47,7 +61,21 @@ function modalSpec(overrides: Record<string, unknown> = {}): Record<string, unkn
       triggerLabel: { type: "string", required: true, guidance: "Label of the opening control." },
       title: { type: "string", required: true, guidance: "Title shown in the frame header." },
     },
-    acceptsChildren: true,
+    content: {
+      mode: "slots",
+      slots: {
+        body: {
+          guidance: "The modal's main content.",
+          minChildren: 1,
+          maxChildren: 16,
+        },
+        actions: {
+          guidance: "Controls that act on the modal.",
+          minChildren: 0,
+          maxChildren: 4,
+        },
+      },
+    },
     ...overrides,
   });
 }
@@ -107,7 +135,7 @@ describe("bootstrapSession", () => {
   });
 
   it("validates a present Modal and relays the Modal conformance rejection verbatim", () => {
-    const badModal = modalSpec({ acceptsChildren: false });
+    const badModal = modalSpec({ content: { mode: "children" } });
     const expected = validateModalConformance(badModal);
     const result = bootstrapSession({
       catalog: catalogWithScreen(textSpec(), badModal) as unknown as FacetCatalog,
@@ -151,6 +179,35 @@ describe("bootstrapSession", () => {
       expect(accepted.session.document?.entry).toBe("home");
     }
     expect(rejected(rejectedMarkup).code).toBe("unknown-tag");
+  });
+
+  it("validates and snapshots host-pinned assets for initial markup", () => {
+    const source = {
+      hero: { kind: "image" as const, src: "https://cdn.example.test/hero.png" },
+    };
+    const result = bootstrapSession({
+      catalog: (() => {
+        const validated = validateCatalog(catalogWithScreen(textSpec(), imageSpec()));
+        if (!validated.ok) throw new Error(validated.code);
+        return validated.catalog;
+      })(),
+      assetRegistry: source,
+      theme: validTheme(),
+      initialMarkup:
+        '<Facet entry="home"><Screen name="home"><Image asset="asset:hero" alt="Hero" /></Screen></Facet>', // component-hard-cut: allowed-negative
+    });
+    source.hero.src = "https://attacker.example.test/replaced.png";
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.session.assetRegistry["hero"]?.src).toBe("https://cdn.example.test/hero.png");
+      expect(Object.isFrozen(result.session.assetRegistry)).toBe(true);
+      expect(result.session.document?.nodes["n2"]?.props["asset"]).toEqual({
+        kind: "reference",
+        scheme: "asset",
+        target: "hero",
+      });
+    }
   });
 
   it("keeps each session on its own frozen catalog and theme snapshot", () => {

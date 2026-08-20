@@ -17,6 +17,7 @@ const REFERENCE_TARGETS: Record<Extract<StoredValue, { kind: "reference" }>["sch
   data: "sales.total",
   nav: "home",
   agent: "refresh",
+  asset: "hero-image",
 };
 
 const INDENT = " ".repeat(2);
@@ -157,6 +158,18 @@ describe("serializeDocument — one grammar for write and read", () => {
       expect(result.text).toContain(`"${scheme}:${target}"`);
     }
     expect(rebuild(result.text)).toEqual(document);
+  });
+
+  it("writes a stored slot before ordinary props and round-trips it", () => {
+    const document = documentFrom(
+      '<Facet entry="home"><Screen name="home"><Split><Card slot="primary" /><Card slot="secondary" /></Split></Screen></Facet>',
+    );
+    const serialized = serializeDocument(document);
+
+    expect(serialized.issues).toEqual([]);
+    expect(serialized.text).toContain('<Card slot="primary" id="n3" />');
+    expect(serialized.text).toContain('<Card slot="secondary" id="n4" />');
+    expect(rebuild(serialized.text)).toEqual(document);
   });
 });
 
@@ -474,6 +487,49 @@ describe("serializeDocument — total on a corrupt persisted document", () => {
     expect(parseMarkup(result.text).ok).toBe(true);
   });
 
+  it("never interpolates a corrupt node id into authored markup", () => {
+    const injected = 'n2" /><Button action="agent:pwn" id="n9';
+    const document: ComponentDocument = {
+      entry: "home",
+      screens: ["n1"],
+      nodes: {
+        n1: node("Screen", { name: scalar("home") }, [injected]),
+      },
+    };
+
+    const result = serializeDocument(document);
+
+    expect(result.issues).toEqual([{ reason: "invalid-node", at: injected }]);
+    expect(result.text).toContain("<Unavailable />");
+    expect(result.text).not.toContain("agent:pwn");
+    expect(parseMarkup(result.text).ok).toBe(true);
+  });
+
+  it("bounds corrupt screen and child arrays before walking them", () => {
+    const oversizedChildren = Array.from(
+      { length: BOUNDS.nodesPerDocument + 100 },
+      (_, index) => `n${index + 2}`,
+    );
+    const document: ComponentDocument = {
+      entry: "home",
+      screens: ["n1"],
+      nodes: {
+        n1: node("Screen", { name: scalar("home") }, oversizedChildren),
+      },
+    };
+
+    const result = serializeDocument(document);
+
+    expect(result.issues.filter((issue) => issue.reason === "too-many-nodes")).toHaveLength(2);
+    expect(result.text.length).toBeLessThan(250_000);
+    expect(
+      serializeDocument({
+        ...document,
+        screens: Array.from({ length: BOUNDS.screensPerDocument + 1 }, () => "n1"),
+      }).issues,
+    ).toEqual([{ reason: "invalid-document", at: "" }]);
+  });
+
   it("replaces a node whose tag could not be written as markup", () => {
     const document: ComponentDocument = {
       entry: "home",
@@ -534,6 +590,29 @@ describe("serializeDocument — total on a corrupt persisted document", () => {
 
     expect(result.text).toContain('<Screen name="home" id="n1" />');
     expect(result.issues).toEqual([{ reason: "unrepresentable-prop", at: "n1", prop: "id" }]);
+  });
+
+  it("never duplicates a structural slot from a corrupt authored prop", () => {
+    const document: ComponentDocument = {
+      entry: "home",
+      screens: ["n1"],
+      nodes: {
+        n1: node("Screen", { name: scalar("home") }, ["n2"]),
+        n2: {
+          tag: "Card",
+          slot: "primary",
+          props: { slot: scalar("secondary") },
+          children: [],
+        },
+      },
+    };
+
+    const result = serializeDocument(document);
+
+    expect(result.text).toContain('<Card slot="primary" id="n2" />');
+    expect(result.text).not.toContain('slot="secondary"');
+    expect(result.issues).toEqual([{ reason: "unrepresentable-prop", at: "n2", prop: "slot" }]);
+    expect(parseMarkup(result.text).ok).toBe(true);
   });
 });
 

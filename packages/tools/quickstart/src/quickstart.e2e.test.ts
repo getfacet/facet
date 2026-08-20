@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { defineAgent } from "@facet/agent";
-import { DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
 import type {
   VisitorEvent,
   ComponentDocument,
@@ -247,11 +247,12 @@ function postMessage(
   sessionKey: string,
   messageId: string,
   text: string,
+  stageRevision = 0,
 ): Promise<Response> {
   return fetch(`${base}/message`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionKey, messageId, text, screen: "home", stageRevision: 0 }),
+    body: JSON.stringify({ sessionKey, messageId, text, screen: "home", stageRevision }),
   });
 }
 
@@ -382,8 +383,11 @@ describe("quickstart E2E — static shell + proxy plumbing", () => {
       headers: { "Content-Type": "application/json", Origin: `http://${sameOrigin}` },
       body,
     });
-    expect(same.status).toBe(202);
-    await same.text();
+    expect(same.status).toBe(500);
+    await expect(same.json()).resolves.toMatchObject({
+      outcome: "failed",
+      code: "collect_screen_unavailable",
+    });
   });
 
   it("refuses a non-loopback Host on GET / and leaks no boot data", async () => {
@@ -412,7 +416,7 @@ describe("quickstart E2E — static shell + proxy plumbing", () => {
 });
 
 describe("quickstart E2E — stub flow through the proxy", () => {
-  it("stub run sends a document patch and one ConversationMessage", async () => {
+  it("stub run authors fields before accepting their collected values", async () => {
     const sessionKey = "e2e-flow";
     const stream = await openStream(base, sessionKey);
     try {
@@ -420,21 +424,26 @@ describe("quickstart E2E — stub flow through the proxy", () => {
       expect(kindOf(rehydrate)).toBe("patch");
       expect(rootStage(rehydrate).document).toBeNull();
 
-      const post = await postEvent(
-        base,
-        sessionKey,
-        visitorEvent("submit-turn", "submit", {
+      const prepare = await postMessage(base, sessionKey, "prepare-turn", "start");
+      expect(prepare.status).toBe(202);
+      const preparedFrames = await stream.next(2);
+      expect(preparedFrames.map(kindOf)).toEqual(["patch", "conversation"]);
+      const document = documentFromPatch(preparedFrames[0]);
+      expect(textValues(document)).toContain("Facet quickstart — stub stage");
+      expect(textValues(document)).toContain("Tell us who should receive the launch plan.");
+
+      const post = await postEvent(base, sessionKey, {
+        ...visitorEvent("submit-turn", "submit", {
           name: { kind: "value", value: "Ada" },
           email: { kind: "value", value: "a@b.c" },
         }),
-      );
+        sourceNodeId: "n10",
+        stageRevision: 1,
+      });
       expect(post.status).toBe(202);
 
-      const frames = await stream.next(2);
-      expect(frames.map(kindOf)).toEqual(["patch", "conversation"]);
-      const document = documentFromPatch(frames[0]);
-      expect(textValues(document)).toContain("Facet quickstart — stub stage");
-      expect(textValues(document)).toContain("Tell us who should receive the launch plan.");
+      const frames = await stream.next(1);
+      expect(frames.map(kindOf)).toEqual(["conversation"]);
       expect(conversationTexts(frames)).toEqual(["submit: email=a@b.c name=Ada"]);
     } finally {
       await stream.close();
@@ -476,8 +485,8 @@ describe("quickstart E2E — stub flow through the proxy", () => {
     let era: string;
     try {
       await stream1.next(1); // initial rehydrate
-      await postEvent(base, sessionKey, visitorEvent("resume-one", "refresh"));
-      const firstTurn = await stream1.next(2); // first event seeds the document, then replies
+      await postMessage(base, sessionKey, "resume-one", "start");
+      const firstTurn = await stream1.next(2); // first message seeds the document, then replies
       const stamped = firstTurn.filter((frame) => frame.id !== undefined);
       lastId = stamped[stamped.length - 1]?.id ?? "";
       expect(lastId).not.toBe("");
@@ -487,10 +496,7 @@ describe("quickstart E2E — stub flow through the proxy", () => {
       await stream1.close();
     }
 
-    await postEvent(base, sessionKey, {
-      ...visitorEvent("resume-two", "refresh"),
-      stageRevision: 1,
-    });
+    await postMessage(base, sessionKey, "resume-two", "continue", 1);
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     const resumed = await readEvents(
@@ -500,7 +506,7 @@ describe("quickstart E2E — stub flow through the proxy", () => {
       1,
     );
     expect(resumed.map(kindOf)).toEqual(["conversation"]);
-    expect(conversationTexts(resumed)).toEqual(["stub: refresh"]);
+    expect(conversationTexts(resumed)).toEqual(["stub: message"]);
     expect(Number(resumed[0]!.id!.slice(resumed[0]!.id!.indexOf(":") + 1))).toBe(lastSeq + 1);
   });
 
@@ -510,21 +516,21 @@ describe("quickstart E2E — stub flow through the proxy", () => {
     try {
       await alpha.next(1);
       await beta.next(1);
-      await postEvent(base, "e2e-alpha", visitorEvent("alpha-turn", "refresh", {}, "north"));
-      await postEvent(base, "e2e-beta", visitorEvent("beta-turn", "refresh", {}, "south"));
-      expect(conversationTexts(await alpha.next(2))).toEqual(["stub: refresh north"]);
-      expect(conversationTexts(await beta.next(2))).toEqual(["stub: refresh south"]);
+      await postMessage(base, "e2e-alpha", "alpha-turn", "north");
+      await postMessage(base, "e2e-beta", "beta-turn", "south");
+      expect(conversationTexts(await alpha.next(2))).toEqual(["stub: message"]);
+      expect(conversationTexts(await beta.next(2))).toEqual(["stub: message"]);
     } finally {
       await alpha.close();
       await beta.close();
     }
 
-    const alphaSnapshot = await readEvents(await fetch(`${base}/stream?sessionKey=e2e-alpha`), 2);
-    const betaSnapshot = await readEvents(await fetch(`${base}/stream?sessionKey=e2e-beta`), 2);
-    expect(JSON.stringify(alphaSnapshot)).toContain("stub: refresh north");
-    expect(JSON.stringify(alphaSnapshot)).not.toContain("stub: refresh south");
-    expect(JSON.stringify(betaSnapshot)).toContain("stub: refresh south");
-    expect(JSON.stringify(betaSnapshot)).not.toContain("stub: refresh north");
+    const alphaSnapshot = await readEvents(await fetch(`${base}/stream?sessionKey=e2e-alpha`), 3);
+    const betaSnapshot = await readEvents(await fetch(`${base}/stream?sessionKey=e2e-beta`), 3);
+    expect(JSON.stringify(alphaSnapshot)).toContain("alpha-turn:assistant");
+    expect(JSON.stringify(alphaSnapshot)).not.toContain("beta-turn:assistant");
+    expect(JSON.stringify(betaSnapshot)).toContain("beta-turn:assistant");
+    expect(JSON.stringify(betaSnapshot)).not.toContain("alpha-turn:assistant");
   });
 
   it("keeps the retired local /record route deleted", async () => {
@@ -602,7 +608,7 @@ describe("quickstart E2E — initialMarkup seeding", () => {
       const stream = await openStream(seeded.url, "seed-visible");
       try {
         await stream.next(1);
-        const post = await postEvent(seeded.url, "seed-visible", visitorEvent("seed-turn"));
+        const post = await postMessage(seeded.url, "seed-visible", "seed-turn", "show seed");
         expect(post.status).toBe(202);
         expect(conversationTexts(await stream.next(1))).toEqual(["noop"]);
       } finally {
@@ -617,39 +623,25 @@ describe("quickstart E2E — initialMarkup seeding", () => {
 });
 
 describe("quickstart E2E — CLI default seed and barrel surface", () => {
-  it("quickstart CLI ships the exact 121-node component seed before provider output", async () => {
+  it("quickstart CLI ships the exact structured component seed before provider output", async () => {
     const booted = await bootCli([]);
     try {
       const shell = await (await fetch(`${booted.running.url}/`)).text();
       const inline = bootGlobals(shell).__FACET_INITIAL_STAGE__;
       expect(inline).toEqual(QUICKSTART_INITIAL_STAGE);
-      expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(121);
+      expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(129);
 
       const seedText = JSON.stringify(inline);
-      expect(seedText).toHaveLength(24_704);
+      expect(seedText).toHaveLength(23_577);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "372d977c4b6ab24814805ad416fef28e06a1e401c031c8180f409343c0f3b0a2",
+        "a96ea82d441b042be424c95d630e1d992f85d19b60f89810ce31d1009b2769d7",
       );
-      for (const tag of [
-        "Screen",
-        "Stack",
-        "Row",
-        "Split",
-        "Grid",
-        "Card",
-        "Hero",
-        "ProductShowcase",
-        "VisualPanel",
-        "MediaCard",
-        "Text",
-        "Badge",
-        "Field",
-        "Button",
-        "Modal",
-        "Empty",
-      ]) {
-        expect(seedText).toContain(`"tag":"${tag}"`);
-      }
+      const seedTags = new Set(
+        Object.values(QUICKSTART_INITIAL_STAGE.nodes).map((node) => node.tag),
+      );
+      expect(
+        [...seedTags].filter((tag) => !DEFAULT_CATALOG.components.some((spec) => spec.tag === tag)),
+      ).toEqual([]);
       expect(booted.captured.out.join("\n")).toContain("openai");
     } finally {
       await booted.running.close();

@@ -140,10 +140,10 @@ describe("parseMarkup — the accepted grammar", () => {
     });
   });
 
-  it("parses the three reference schemes", () => {
+  it("parses the four reference schemes", () => {
     const roots = expectRoots(
       parseMarkup(
-        `<Metric value="data:sales.rows.total" /><Button action="nav:overview" /><Button action="agent:refresh" />`,
+        `<Metric value="data:sales.rows.total" /><Button action="nav:overview" /><Button action="agent:refresh" /><Image src="asset:hero" />`,
       ),
     );
     expect(roots[0]?.props[0]?.value).toEqual({
@@ -161,6 +161,11 @@ describe("parseMarkup — the accepted grammar", () => {
       scheme: "agent",
       target: "refresh",
     });
+    expect(roots[3]?.props[0]?.value).toEqual({
+      kind: "reference",
+      scheme: "asset",
+      target: "hero",
+    });
   });
 
   it("does not mistake an ordinary scalar containing a colon for a reference", () => {
@@ -171,6 +176,35 @@ describe("parseMarkup — the accepted grammar", () => {
   it("accepts the reserved read-only id attribute, which the read grammar emits", () => {
     const roots = expectRoots(parseMarkup(`<Text id="n7" label="Revenue" />`));
     expect(roots[0]?.props[0]?.name).toBe("id");
+  });
+
+  it("extracts the reserved slot attribute from a direct child", () => {
+    const roots = expectRoots(
+      parseMarkup(`<Panel><Text label="Revenue" slot="header" tone="strong" /></Panel>`),
+    );
+    const child = roots[0]?.children[0];
+
+    expect(child?.slot).toBe("header");
+    expect(child?.props).toEqual([
+      {
+        name: "label",
+        value: { kind: "scalar", value: "Revenue" },
+        location: { offset: 13, line: 1, column: 14 },
+        valueLocation: { offset: 19, line: 1, column: 20 },
+      },
+      {
+        name: "tone",
+        value: { kind: "scalar", value: "strong" },
+        location: { offset: 43, line: 1, column: 44 },
+        valueLocation: { offset: 48, line: 1, column: 49 },
+      },
+    ]);
+  });
+
+  it("requires slot to be a literal scalar Facet identifier", () => {
+    for (const value of ["", "data:header", "asset:header", "bad slot", "1header"]) {
+      expectSingleError(parseMarkup(`<Panel><Text slot="${value}" /></Panel>`), "invalid-value");
+    }
   });
 
   it("reports the node count so a caller can measure a mutation", () => {
@@ -284,6 +318,17 @@ describe("parseMarkup — the eight forbidden constructs, each exactly one error
     }
   });
 
+  it("returns a safe component-tag repair coordinate without the raw tag", () => {
+    const result = parseMarkup("<div />");
+    if (result.ok) throw new Error("expected raw HTML rejection");
+
+    expect(result.error.repairContext).toEqual({
+      kind: "component_tag",
+      expected: "registered_component",
+    });
+    expect(JSON.stringify(result.error.repairContext)).not.toContain("div");
+  });
+
   it("rejects the innerHTML escape hatch prop", () => {
     expectSingleError(parseMarkup(`<Text dangerouslySetInnerHTML="<b>x</b>" />`), "dangerous-prop");
   });
@@ -307,7 +352,7 @@ describe("parseMarkup — the eight forbidden constructs, each exactly one error
   });
 
   it("rejects an empty reference target", () => {
-    for (const value of ["data:", "nav:", "agent:"]) {
+    for (const value of ["data:", "nav:", "agent:", "asset:"]) {
       expectSingleError(parseMarkup(`<Button action="${value}" />`), "empty-reference");
     }
   });
@@ -679,6 +724,17 @@ describe("parseMarkup — bounds are read from BOUNDS, never re-typed", () => {
     );
   });
 
+  it("B-04: counts the reserved slot as an author-declared attribute", () => {
+    expect(
+      expectRoots(parseMarkup(`<Text slot="body" ${authorProps(BOUNDS.propsPerElement - 1)} />`))[0]
+        ?.props,
+    ).toHaveLength(BOUNDS.propsPerElement - 1);
+    expectSingleError(
+      parseMarkup(`<Text slot="body" ${authorProps(BOUNDS.propsPerElement)} />`),
+      "too-many-props",
+    );
+  });
+
   it("B-04: excludes at most one id, so a repeated id cannot buy extra prop budget", () => {
     expectSingleError(
       parseMarkup(`<Text id="n1" ${authorProps(BOUNDS.propsPerElement)} id="n2" />`),
@@ -754,6 +810,7 @@ describe("parseMarkup — every parse code is reachable", () => {
     { code: "missing-prop-value", source: "<Text label />" },
     { code: "duplicate-prop", source: `<Text label="a" label="b" />` },
     { code: "empty-reference", source: `<Button action="agent:" />` },
+    { code: "invalid-value", source: `<Text slot="bad slot" />` },
     { code: "invalid-tag-name", source: "< Text />" },
     { code: "invalid-prop-name", source: `<Text 1label="a" />` },
     { code: "unexpected-token", source: `<Text = "a" />` },
@@ -776,10 +833,15 @@ describe("parseMarkup — every parse code is reachable", () => {
     "too-many-screens",
     "unknown-tag",
     "children-not-accepted",
+    "slot-not-accepted",
+    "missing-child-slot",
+    "unknown-slot",
+    "slot-tag-not-allowed",
+    "missing-slot-children",
+    "too-many-slot-children",
     "reserved-attribute",
     "undeclared-prop",
     "missing-required-prop",
-    "invalid-value",
     "inline-structure",
     "unknown-scheme",
     "binding-not-allowed",
@@ -876,6 +938,7 @@ describe("markup-parser — the module surface", () => {
       data: "sales.total",
       nav: "overview",
       agent: "refresh",
+      asset: "hero",
     });
 
     const schemes = Object.keys(SCHEME_PROBE) as readonly Scheme[];

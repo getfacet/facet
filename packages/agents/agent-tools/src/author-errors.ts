@@ -1,11 +1,17 @@
 import { BOUNDS } from "@facet/core";
-import type { AuthorError, AuthorErrorCode, SourceLocation } from "@facet/core";
+import type {
+  AuthorError,
+  AuthorErrorCode,
+  AuthorRepairContext,
+  SourceLocation,
+} from "@facet/core";
 
 export interface ProjectedAuthorError {
   readonly code: AuthorErrorCode;
   readonly location: SourceLocation;
   readonly cause: string;
   readonly repair: string;
+  readonly repairContext?: AuthorRepairContext;
 }
 
 export interface AuthorErrorResult {
@@ -27,6 +33,7 @@ export function renderAuthorError(error: AuthorError): AuthorErrorResult {
       location: Object.freeze({ ...error.location }),
       cause: bounded(error.cause),
       repair: bounded(error.repair),
+      ...(error.repairContext === undefined ? {} : { repairContext: error.repairContext }),
     }),
   });
 }

@@ -29,7 +29,7 @@ const PROMO_BANNER_SPEC: ComponentSpec = Object.freeze({
       required: true,
     }),
   }),
-  acceptsChildren: false,
+  content: Object.freeze({ mode: "none" }),
 });
 
 function accepted(overlay: unknown) {
@@ -186,7 +186,7 @@ describe("quickstart design overlay validation", () => {
                 default: "Launch",
               },
             },
-            acceptsChildren: false,
+            content: { mode: "none" },
           },
         ],
         registry: { PromoBanner },

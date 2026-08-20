@@ -143,9 +143,9 @@ function quickstartRegistry(onOpenAssets: () => void): ComponentRegistry {
     return DEFAULT_REGISTRY;
   }
   const QuickstartModal: MountedComponent<ReactNode, ReactNode> = function QuickstartModal(mount) {
-    return (
-      <DefaultModal {...mount}>
-        {mount.children}
+    const actions = (
+      <>
+        {mount.slots["actions"]}
         <button
           type="button"
           data-facet-open-assets-from-modal
@@ -154,8 +154,9 @@ function quickstartRegistry(onOpenAssets: () => void): ComponentRegistry {
         >
           Open Assets
         </button>
-      </DefaultModal>
+      </>
     );
+    return <DefaultModal {...mount} slots={Object.freeze({ ...mount.slots, actions })} />;
   };
   return Object.freeze({ ...DEFAULT_REGISTRY, Modal: QuickstartModal });
 }

@@ -37,7 +37,7 @@ function catalogRecord(): Record<string, unknown> {
             guidance: "The route name selected by the Facet entry.",
           },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
       {
         tag: "Text",
@@ -45,7 +45,7 @@ function catalogRecord(): Record<string, unknown> {
         props: {
           value: { type: "string", bindable: true, guidance: "Text to show." },
         },
-        acceptsChildren: false,
+        content: { mode: "none" },
       },
     ],
   };
@@ -271,27 +271,23 @@ describe("applyDataPublish", () => {
     expectUnchanged(b16Session, beforeB16);
   });
 
-  it("rejects affected binding schema mismatches atomically", () => {
+  it("commits data even when an affected binding becomes unavailable", () => {
     const gate = new TurnGate();
     const session = boot({ document: boundDocument(), data: { status: "ready" } });
-    const before = snapshot(session);
 
     const result = applyDataPublish(session, at("status"), 7, 0, turnAuthority(gate), gate);
 
-    expect(result).toEqual({
-      ok: false,
-      code: "binding_schema_mismatch",
-      at: "data:status",
-      detail: "Published data would break a bound Text.value prop.",
-    });
-    expectUnchanged(session, before);
+    expect(result).toMatchObject({ ok: true, data: { status: 7 }, stageRevision: 1 });
   });
 
   it("rejects empty or malformed paths from adversarial JS callers atomically", () => {
+    const inherited = new Array<string>(1);
+    Object.setPrototypeOf(inherited, { 0: "status" });
     const invalidPaths: readonly unknown[] = Object.freeze([
       Object.freeze([]),
       Object.freeze(["status", ""]),
       Object.freeze(["status", "0"]),
+      inherited,
       new Proxy(Object.freeze(["status"]) as readonly string[], {
         get(target, prop, receiver) {
           if (prop === "length") {

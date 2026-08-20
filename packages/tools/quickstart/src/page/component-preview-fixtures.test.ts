@@ -4,6 +4,8 @@ import type { ComponentSpec } from "@facet/core";
 import { describe, expect, it } from "vitest";
 
 import {
+  QUICKSTART_PREVIEW_ASSET_REGISTRY,
+  QUICKSTART_SERVICE_PREVIEW_SOURCES,
   deriveComponentPreviewFixtures,
   previewFixtureForTag,
   previewSpecimensForTag,
@@ -17,7 +19,7 @@ function defaultTags(): readonly string[] {
 const PROMO_BANNER_SPEC = Object.freeze({
   tag: "PromoBanner",
   whenToUse: "Use for active design launch announcements.",
-  acceptsChildren: false,
+  content: Object.freeze({ mode: "none" }),
   props: Object.freeze({
     title: Object.freeze({
       type: "string",
@@ -57,6 +59,24 @@ function resolvedActiveOverlay() {
 }
 
 describe("component preview fixtures", () => {
+  it("assembles and validates the twelve service-family preview sources", () => {
+    expect(QUICKSTART_SERVICE_PREVIEW_SOURCES).toHaveLength(12);
+
+    for (const source of QUICKSTART_SERVICE_PREVIEW_SOURCES) {
+      const parsed = parseMarkup(source.source);
+      expect(parsed.ok, source.id).toBe(true);
+      if (!parsed.ok) continue;
+
+      const validated = validateAuthorMarkup(
+        parsed.ast,
+        DEFAULT_CATALOG,
+        source.data,
+        QUICKSTART_PREVIEW_ASSET_REGISTRY,
+      );
+      expect(validated.ok, source.id).toBe(true);
+    }
+  });
+
   it("validates one preview fixture for every default catalog tag", () => {
     const results = deriveComponentPreviewFixtures(DEFAULT_CATALOG);
 
@@ -80,7 +100,12 @@ describe("component preview fixtures", () => {
         throw new Error(parsed.error.code);
       }
 
-      const validated = validateAuthorMarkup(parsed.ast, DEFAULT_CATALOG, result.fixture.data);
+      const validated = validateAuthorMarkup(
+        parsed.ast,
+        DEFAULT_CATALOG,
+        result.fixture.data,
+        QUICKSTART_PREVIEW_ASSET_REGISTRY,
+      );
       expect(validated.ok).toBe(true);
       if (!validated.ok) {
         throw new Error(validated.error.code);

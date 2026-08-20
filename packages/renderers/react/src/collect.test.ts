@@ -221,6 +221,68 @@ describe("buildCollectPayload", () => {
     expect(validateVisitorEvent(eventAround({ ...built.collect })).ok).toBe(true);
   });
 
+  it("carries booleans and frozen string arrays without coercion", () => {
+    const selected = ["north", "west"];
+    const built = buildCollectPayload(
+      "enabled regions",
+      readerOver({
+        enabled: { kind: "value", value: true },
+        regions: { kind: "value", value: selected },
+      }),
+    );
+
+    selected.push("mutated-after-build");
+
+    expect(built.collect["enabled"]).toEqual({ kind: "value", value: true });
+    expect(built.collect["regions"]).toEqual({ kind: "value", value: ["north", "west"] });
+    const regions = built.collect["regions"];
+    expect(regions?.kind === "value" && Object.isFrozen(regions.value)).toBe(true);
+    expect(validateVisitorEvent(eventAround({ ...built.collect })).ok).toBe(true);
+  });
+
+  it("reads a collected string array by bounded index, not through a hostile iterator", () => {
+    const selected = ["north", "west"];
+    Object.defineProperty(selected, Symbol.iterator, {
+      value: (): never => {
+        throw new Error("hostile iterator");
+      },
+    });
+
+    const built = buildCollectPayload(
+      "regions",
+      readerOver({ regions: { kind: "value", value: selected } }),
+    );
+
+    expect(built.collect["regions"]).toEqual({
+      kind: "value",
+      value: ["north", "west"],
+    });
+  });
+
+  it("states an absence for an over-bound collected string array", () => {
+    const tooMany = Array.from(
+      { length: BOUNDS.dataModelArrayLength + 1 },
+      (_unused, index) => `choice${index}`,
+    );
+    const longItem = ["v".repeat(BOUNDS.collectedValueChars + 1)];
+
+    const built = buildCollectPayload(
+      "many long",
+      readerOver({
+        many: { kind: "value", value: tooMany },
+        long: { kind: "value", value: longItem },
+      }),
+    );
+
+    expect(built.collect["many"]).toEqual({ kind: "collect_source_unavailable" });
+    expect(built.collect["long"]).toEqual({ kind: "collect_source_unavailable" });
+    expect(built.issues.map((item) => item.code).sort()).toEqual([
+      "collected_value_too_long",
+      "too_many_collected_values",
+    ]);
+    expect(validateVisitorEvent(eventAround({ ...built.collect })).ok).toBe(true);
+  });
+
   it("carries B-22 fields and reports the overflow past it", () => {
     const table: Record<string, CollectSource> = {};
     for (const name of names(BOUNDS.collectFieldsPerEvent + 1)) {

@@ -1,4 +1,4 @@
-import { describeDataValue, serializeScreen } from "@facet/core";
+import { deriveComponentContentClass, describeDataValue, serializeScreen } from "@facet/core";
 import type {
   ComponentDocument,
   ComponentNode,
@@ -13,14 +13,7 @@ import type {
   TurnObservation,
 } from "./types.js";
 
-const AUTHORING_GROUPS = [
-  ["Screen root", "screen"],
-  ["Layout", "layout"],
-  ["Surface", "surface"],
-  ["Content", "content"],
-  ["Interaction", "interaction"],
-  ["Unclassified", "unclassified"],
-] as const;
+const CONTENT_CLASSES = ["Leaf", "Container", "Structured"] as const;
 
 function scalarText(prop: ComponentNode["props"][string] | undefined): string | null {
   return prop?.kind === "scalar" ? prop.value : null;
@@ -75,7 +68,7 @@ export function buildTurnObservation(session: FacetToolSession): TurnObservation
         const entry: CatalogIndexEntry = {
           tag: spec.tag,
           whenToUse: spec.whenToUse,
-          ...(spec.authoringRole === undefined ? {} : { authoringRole: spec.authoringRole }),
+          contentClass: deriveComponentContentClass(spec.content),
         };
         return Object.freeze(entry);
       }),
@@ -85,27 +78,20 @@ export function buildTurnObservation(session: FacetToolSession): TurnObservation
   });
 }
 
-/** Formats the compact catalog index by broad authoring role for prompt discovery. */
+/** Formats the compact catalog index by the class derived from each content contract. */
 export function formatCatalogIndex(components: CatalogIndex): string {
   if (components.length === 0) {
     return "- (none)";
   }
 
   const lines: string[] = [];
-  for (const [label, group] of AUTHORING_GROUPS) {
-    const entries = components.filter((component) => componentGroup(component) === group);
+  for (const contentClass of CONTENT_CLASSES) {
+    const entries = components.filter((component) => component.contentClass === contentClass);
     if (entries.length === 0) {
       continue;
     }
-    lines.push(`${label}:`);
+    lines.push(`${contentClass}:`);
     lines.push(...entries.map((component) => `- ${component.tag}: ${component.whenToUse}`));
   }
   return lines.join("\n");
-}
-
-function componentGroup(component: CatalogIndexEntry): (typeof AUTHORING_GROUPS)[number][1] {
-  if (component.tag === "Screen") {
-    return "screen";
-  }
-  return component.authoringRole ?? "unclassified";
 }

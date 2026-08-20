@@ -7,21 +7,21 @@ them.
 
 ## Default component set
 
-The default assets package registers 38 components:
+The default assets package registers 47 components:
 
-`Screen`, `AppShell`, `Stack`, `Row`, `Split`, `Grid`, `Modal`, `Card`, `Empty`,
-`LogoMark`, `Nav`, `SideNav`, `SideNavItem`, `Section`, `Divider`, `Hero`,
-`Avatar`, `ProfileHeader`,
-`ProductShowcase`, `VisualPanel`, `MediaCard`, `LinkList`, `SocialLinks`,
-`FeatureList`, `StatStrip`, `Gallery`, `Testimonial`, `Timeline`, `CTA`,
-`Alert`, `Progress`, `Footer`, `Text`, `Metric`, `Badge`, `Table`, `Button`,
-and `Field`.
+`Screen`, `Stack`, `Row`, `Grid`, `Split`, `AppShell`, `Section`, `Card`,
+`Modal`, `Divider`, `Navigation`, `NavigationItem`, `Button`, `ActionGroup`,
+`ActionBar`, `Header`, `Collection`, `ItemCard`, `Detail`, `PropertyList`,
+`Property`, `Board`, `BoardColumn`, `Calendar`, `Result`, `Empty`, `Alert`,
+`Text`, `Avatar`, `Icon`, `Image`, `Badge`, `Metric`, `MetricGroup`, `Table`,
+`Chart`, `Progress`, `Timeline`, `List`, `Form`, `Field`, `Select`,
+`ChoiceGroup`, `Toggle`, `MessageThread`, `Accordion`, and `AccordionItem`.
 
-Every default spec also declares one broad authoring role: `layout`, `surface`,
-`content`, or `interaction`. Agent integrations use these roles to scan the
-catalog in composition order. They do not change markup validity, placement,
-rendering, theme behavior, or actions. A host's custom component may omit the
-role and remains valid.
+Every component declares one closed content contract. A leaf accepts no child
+components, a container accepts ordinary children, and a structured component
+declares named slots with cardinality and optional allowed-tag rules. Agent
+integrations derive these three discovery classes from the contract; the class
+does not add separate runtime authority.
 
 ```ts check-docs
 import { DEFAULT_CATALOG } from "@facet/assets";
@@ -31,26 +31,17 @@ const tags = DEFAULT_CATALOG.components.map((component) => component.tag);
 console.log(tags.includes("Text"), tags.includes("Modal"));
 ```
 
-The default set is meant to cover service surfaces, not only dashboards:
-personal/bio, marketing/landing, commerce/booking, SaaS/workspace,
-content/editorial, data/report, and support/form-flow screens. `Metric` remains
-available for workspace/report surfaces, but it is not the center of every
-default example. `Table` is a content/data-display component: it can support a
-report, a resume, a booking list, or an order queue without turning the whole
-screen into a dashboard.
-`Badge` is a compact status label, not an action surrogate: its tones map to the
-semantic status tokens and the default React implementation keeps it inline
-width inside stretched stacks.
+The default set covers marketing, profile, commerce, booking, workspace,
+editorial, reporting, support, and form flows without giving authored markup raw
+HTML or CSS. `Screen` is the named root. Flow containers establish spatial
+structure, structured task components provide stable regions, and leaf
+components display data or collect bounded input. `Modal` remains the dedicated
+framework-owned overlap contract.
 
-`Screen` is the root for a named screen. `AppShell`, `Stack`, `Row`, `Split`,
-and `Grid` keep authored layout flow-contained. `Modal` is the dedicated overlap contract. Expression
-components such as `LogoMark`, `Nav`, `SideNav`, `SideNavItem`, `Hero`, `ProfileHeader`,
-`ProductShowcase`, `VisualPanel`, `MediaCard`, `SocialLinks`, `StatStrip`,
-`Gallery`, `Timeline`, `Footer`, `Section`, `CTA`, `Testimonial`, `Avatar`,
-`LinkList`, and `Progress` provide first-impression, editorial, profile,
-commerce, workspace, and service-page structure. Content and interactive
-components expose only their declared scalar, action, collection, and binding
-props.
+`Metric`, `Table`, and `Chart` support analytical views without making every
+screen a dashboard. `Badge` is a compact status label rather than an action.
+`Image` resolves only host-pinned assets, and `Icon` accepts only its declared
+closed name set.
 
 ## Use the default assets
 
@@ -107,10 +98,10 @@ states. They do not decide where a button goes in a screen. Placement is
 authored composition through `Screen`, `AppShell`, `Stack`, `Row`, `Split`,
 `Grid`, `Section`, `Card`, and sibling order. For example, a button's recipe
 controls its fill, border, radius, padding, and focus ring; the surrounding
-`Row`, `Stack`, `Hero` or `CTA` decides whether that button appears under a
-headline, beside another button, or inside a form section. `Stack` also has
-bounded `justify` and `grow` props so equal-height cards can distribute vertical
-space without exposing CSS.
+`Row`, `Stack`, `Header`, or `ActionGroup` decides whether that button appears
+under a heading, beside another button, or inside a form section. `Stack` also
+has bounded `justify` and `grow` props so equal-height cards can distribute
+vertical space without exposing CSS.
 
 ```ts check-docs
 import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
@@ -135,8 +126,15 @@ A custom component set has three required parts:
 2. a catalog containing that spec; and
 3. a trusted React registry entry for the same tag.
 
-A spec may additionally set `authoringRole` to help agents discover it with
-similar components. This metadata is optional and has no runtime authority.
+The spec's content mode determines whether the component is a leaf, container,
+or structured component. `whenToUse` explains the problem the component solves;
+props, slots, structured shapes, asset kinds, and collection metadata define the
+complete authoring contract.
+
+A prop that activates navigation or an agent event is a string prop declaring
+`action: true`. Only that prop may carry `nav:` or `agent:`; ordinary labels and
+other string props cannot become hidden interaction sources. A trusted custom
+component reports that exact prop name through `onAction(prop)`.
 
 Renderer bootstrap rejects mismatched tag sets. Unknown authored tags and
 undeclared props reject at author validation before any React component can
@@ -156,20 +154,19 @@ or combine both in `All`.
 ## Data and actions
 
 Declared props may accept `data:` bindings only when the component spec allows
-that prop to bind. Actions use explicit `nav:` and `agent:` references. `nav:`
+that prop to bind. Action-marked props use explicit `nav:` and `agent:` references. `nav:`
 changes browser-local screen state; `agent:` forwards a validated event with the
 fields named by the component contract.
 
 Facet components do not perform product-domain fetches. The host or agent tools
 fetch data, authorize it, and publish a bounded projection into Facet.
 
-The default assets still defer URL-bearing media, raw external links, pricing
-blocks, and open form composition. `LogoMark` and `Avatar` render trusted marks
-or initials, not image URLs; `MediaCard` provides image-like rhythm without an
-external media prop; and `LinkList`/`SocialLinks` group trusted `Button` actions
-rather than raw anchors. Components such as `Image`, `Logo`, `Pricing`, and
-`Form` need separate safe policy or repeated-use evidence before they become
-default catalog members.
+The default assets still exclude raw external links and arbitrary media URLs.
+`Image` accepts only an `asset:` reference resolved from the host-pinned asset
+registry. `Navigation`, `ActionGroup`, and related components compose trusted
+`Button` actions rather than raw anchors. `Form` groups Facet-owned collectable
+controls and an explicit action region; customer data access remains outside the
+component package.
 
 ## Failure policy
 

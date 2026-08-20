@@ -1,3 +1,8 @@
+import { deriveComponentContentClass } from "@facet/core";
+import type { ComponentSpec, PropSchema } from "@facet/core";
+
+import type { ComponentAuthoringGuide, ComponentSpecDetail } from "./types.js";
+
 export type FacetToolName = (typeof FACET_TOOL_NAMES)[number];
 
 type StringSchema = Readonly<{
@@ -35,6 +40,90 @@ export const FACET_TOOL_NAMES = Object.freeze([
   "read_data",
   "publish_data",
 ] as const);
+
+function quoteExample(value: string): string {
+  if (!value.includes('"')) {
+    return `"${value}"`;
+  }
+  if (!value.includes("'")) {
+    return `'${value}'`;
+  }
+  return '"..."';
+}
+
+function requiredPropExample(
+  name: string,
+  schema: PropSchema,
+  availableAssetKeys: readonly string[],
+): string {
+  if (schema.type === "boolean") {
+    return `${name}="true"`;
+  }
+  if (schema.type === "number") {
+    const example = schema.enum?.[0] ?? schema.minimum ?? schema.maximum ?? 0;
+    return `${name}=${quoteExample(String(example))}`;
+  }
+  if (schema.type === "string") {
+    if (schema.action === true) {
+      return `${name}=${quoteExample("agent:action")}`;
+    }
+    if (schema.assetKind === "image") {
+      const key = availableAssetKeys[0] ?? "HOST_PINNED_IMAGE_KEY";
+      return `${name}=${quoteExample(`asset:${key}`)}`;
+    }
+    return `${name}=${quoteExample(schema.enum?.[0] ?? "...")}`;
+  }
+  return `${name}=${quoteExample(`data:${name}`)}`;
+}
+
+function componentAuthoringGuide(
+  spec: ComponentSpec,
+  availableAssetKeys: readonly string[],
+): ComponentAuthoringGuide {
+  const requiredProps = Object.keys(spec.props)
+    .sort()
+    .filter((name) => spec.props[name]?.required === true)
+    .map((name) => requiredPropExample(name, spec.props[name] as PropSchema, availableAssetKeys))
+    .join(" ");
+  const opening = `<${spec.tag}${requiredProps.length === 0 ? "" : ` ${requiredProps}`}`;
+  if (spec.content.mode === "none") {
+    return Object.freeze({
+      elementSyntax: `${opening} />`,
+      contentMode: "none",
+      directChildRule: "Self-close this element. It accepts no children.",
+      allowedDirectChildSlots: Object.freeze([]),
+    });
+  }
+  if (spec.content.mode === "children") {
+    return Object.freeze({
+      elementSyntax: `${opening}>...</${spec.tag}>`,
+      contentMode: "children",
+      directChildRule: "Use ordinary direct component children without a slot attribute.",
+      allowedDirectChildSlots: Object.freeze([]),
+    });
+  }
+  const slots = Object.keys(spec.content.slots).sort();
+  return Object.freeze({
+    elementSyntax: `${opening}>...</${spec.tag}>`,
+    contentMode: "slots",
+    directChildRule: `Every direct child must include one declared slot attribute: ${slots
+      .map((name) => `slot="${name}"`)
+      .join(" | ")}.`,
+    allowedDirectChildSlots: Object.freeze(slots),
+  });
+}
+
+/** Adds agent-facing class and syntax guidance derived from the validated contract. */
+export function componentSpecDetail(
+  spec: ComponentSpec,
+  availableAssetKeys: readonly string[] = [],
+): ComponentSpecDetail {
+  return Object.freeze({
+    ...spec,
+    contentClass: deriveComponentContentClass(spec.content),
+    authoringGuide: componentAuthoringGuide(spec, availableAssetKeys),
+  });
+}
 
 function stringSchema(description: string): StringSchema {
   return Object.freeze({ type: "string" as const, description });

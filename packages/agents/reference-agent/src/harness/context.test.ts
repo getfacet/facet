@@ -169,7 +169,7 @@ describe("assembleProviderContext", () => {
         budget: {
           maxHistoryTurns: 10,
           maxHistoryChars: 260,
-          maxContextChars: 5_000,
+          maxContextChars: 10_000,
         },
       }),
     });

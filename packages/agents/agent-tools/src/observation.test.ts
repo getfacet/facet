@@ -17,19 +17,18 @@ import type { FacetToolSession } from "./types.js";
 function component(
   tag: string,
   whenToUse = `Use ${tag} when it fits.`,
-  authoringRole?: string,
+  content: Record<string, unknown> = { mode: "none" },
 ): Record<string, unknown> {
   return {
     tag,
     whenToUse,
-    ...(authoringRole === undefined ? {} : { authoringRole }),
     props: {
       value: {
         type: "string",
         guidance: `DO_NOT_LEAK_PROP_SCHEMA_FOR_${tag}`,
       },
     },
-    acceptsChildren: false,
+    content,
   };
 }
 
@@ -37,7 +36,6 @@ function screenSpec(): Record<string, unknown> {
   return {
     tag: "Screen",
     whenToUse: "Root screen container.",
-    authoringRole: "layout",
     props: {
       name: {
         type: "string",
@@ -45,7 +43,7 @@ function screenSpec(): Record<string, unknown> {
         guidance: "Screen name.",
       },
     },
-    acceptsChildren: true,
+    content: { mode: "children" },
   };
 }
 
@@ -66,24 +64,24 @@ function scalar(value: string): { readonly kind: "scalar"; readonly value: strin
 function document(hiddenText = "Hidden"): ComponentDocument {
   return Object.freeze({
     entry: "home",
-    screens: Object.freeze(["s-home", "s-hidden"]),
+    screens: Object.freeze(["n1", "n3"]),
     nodes: Object.freeze({
-      "s-home": Object.freeze({
+      n1: Object.freeze({
         tag: "Screen",
         props: Object.freeze({ name: scalar("home") }),
-        children: Object.freeze(["n-visible"]),
+        children: Object.freeze(["n2"]),
       }),
-      "n-visible": Object.freeze({
+      n2: Object.freeze({
         tag: "Text",
         props: Object.freeze({ value: scalar("Visible") }),
         children: Object.freeze([]),
       }),
-      "s-hidden": Object.freeze({
+      n3: Object.freeze({
         tag: "Screen",
         props: Object.freeze({ name: scalar("hidden") }),
-        children: Object.freeze(["n-hidden"]),
+        children: Object.freeze(["n4"]),
       }),
-      "n-hidden": Object.freeze({
+      n4: Object.freeze({
         tag: "Text",
         props: Object.freeze({ value: scalar(hiddenText) }),
         children: Object.freeze([]),
@@ -140,33 +138,48 @@ describe("buildTurnObservation", () => {
       stageRevision: 7,
       screens: ["home", "hidden"],
       components: [
-        { tag: "Screen", whenToUse: "Root screen container.", authoringRole: "layout" },
-        { tag: "Text", whenToUse: "Use Text when it fits." },
+        { tag: "Screen", whenToUse: "Root screen container.", contentClass: "Container" },
+        { tag: "Text", whenToUse: "Use Text when it fits.", contentClass: "Leaf" },
       ],
       data: [{ path: "rows", shape: "array", fields: ["name", "secret"], count: 1 }],
       issues: [],
     });
     expect(observation.currentScreen?.name).toBe("home");
-    expect(observation.currentScreen?.markup).toContain('<Text value="Visible" id="n-visible" />');
+    expect(observation.currentScreen?.markup).toContain('<Text value="Visible" id="n2" />');
     expect(JSON.stringify(observation)).not.toContain("DO_NOT_LEAK_PROP_SCHEMA");
     expect(JSON.stringify(observation)).not.toContain("Ada");
     expect(JSON.stringify(observation)).not.toContain("do-not-include");
   });
 
-  it("preserves optional authoring roles without adding them to roleless custom components", () => {
+  it("derives leaf, container, and structured classes from the content contract", () => {
     const observation = buildTurnObservation(
-      session({ catalog: catalog([component("Stack", "Arrange a vertical flow.", "layout")]) }),
+      session({
+        catalog: catalog([
+          component("Stack", "Arrange a vertical flow.", { mode: "children" }),
+          component("ItemCard", "Arrange named item regions.", {
+            mode: "slots",
+            slots: {
+              content: {
+                guidance: "Primary item content.",
+                minChildren: 1,
+                maxChildren: 4,
+                allowedTags: ["Text"],
+              },
+            },
+          }),
+        ]),
+      }),
     );
 
     expect(observation.components).toEqual([
-      { tag: "Screen", whenToUse: "Root screen container.", authoringRole: "layout" },
-      { tag: "Text", whenToUse: "Use Text when it fits." },
-      { tag: "Stack", whenToUse: "Arrange a vertical flow.", authoringRole: "layout" },
+      { tag: "Screen", whenToUse: "Root screen container.", contentClass: "Container" },
+      { tag: "Text", whenToUse: "Use Text when it fits.", contentClass: "Leaf" },
+      { tag: "Stack", whenToUse: "Arrange a vertical flow.", contentClass: "Container" },
+      { tag: "ItemCard", whenToUse: "Arrange named item regions.", contentClass: "Structured" },
     ]);
-    expect("authoringRole" in observation.components[1]!).toBe(false);
   });
 
-  it("measures unused component scaling in characters and includes only tag plus when-to-use", () => {
+  it("measures unused component scaling in characters and omits detailed contracts", () => {
     const one = buildTurnObservation(session({ catalog: catalog([component("Card")]) }));
     const many = buildTurnObservation(
       session({
@@ -180,8 +193,9 @@ describe("buildTurnObservation", () => {
     const delta = renderedLength(many) - renderedLength(one);
 
     expect(delta).toBeGreaterThan(0);
-    expect(delta).toBeLessThan(7_000);
+    expect(delta).toBeLessThan(8_000);
     expect(JSON.stringify(many)).not.toContain("props");
+    expect(JSON.stringify(many)).not.toContain('content":');
     expect(JSON.stringify(many)).not.toContain("DO_NOT_LEAK_PROP_SCHEMA");
   });
 
@@ -217,30 +231,27 @@ describe("buildTurnObservation", () => {
 });
 
 describe("formatCatalogIndex", () => {
-  it("groups discovery in a stable authoring order and keeps roleless specs visible", () => {
+  it("groups discovery by derived content class in a stable order", () => {
     expect(
       formatCatalogIndex([
-        { tag: "Button", whenToUse: "Trigger an action.", authoringRole: "interaction" },
-        { tag: "Card", whenToUse: "Frame related content.", authoringRole: "surface" },
-        { tag: "Text", whenToUse: "Show copy.", authoringRole: "content" },
-        { tag: "Custom", whenToUse: "Host-specific component." },
-        { tag: "Grid", whenToUse: "Arrange a grid.", authoringRole: "layout" },
-        { tag: "Screen", whenToUse: "Root screen.", authoringRole: "layout" },
+        { tag: "Button", whenToUse: "Trigger an action.", contentClass: "Leaf" },
+        { tag: "ItemCard", whenToUse: "Arrange named regions.", contentClass: "Structured" },
+        { tag: "Text", whenToUse: "Show copy.", contentClass: "Leaf" },
+        { tag: "Custom", whenToUse: "Host-specific component.", contentClass: "Leaf" },
+        { tag: "Grid", whenToUse: "Arrange a grid.", contentClass: "Container" },
+        { tag: "Screen", whenToUse: "Root screen.", contentClass: "Container" },
       ]),
     ).toBe(
       [
-        "Screen root:",
-        "- Screen: Root screen.",
-        "Layout:",
-        "- Grid: Arrange a grid.",
-        "Surface:",
-        "- Card: Frame related content.",
-        "Content:",
-        "- Text: Show copy.",
-        "Interaction:",
+        "Leaf:",
         "- Button: Trigger an action.",
-        "Unclassified:",
+        "- Text: Show copy.",
         "- Custom: Host-specific component.",
+        "Container:",
+        "- Grid: Arrange a grid.",
+        "- Screen: Root screen.",
+        "Structured:",
+        "- ItemCard: Arrange named regions.",
       ].join("\n"),
     );
   });

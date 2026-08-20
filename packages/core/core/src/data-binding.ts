@@ -36,6 +36,11 @@
 import type { DataModel } from "./data-model.js";
 import { parseDataPath } from "./identifiers.js";
 import { isArrayValue, isPlainObject } from "./json-shape.js";
+import {
+  type StructuredShapeSpec,
+  validateStructuredShapeSpec,
+  validateStructuredValue,
+} from "./structured-shape.js";
 
 /** The authored prefix of a data reference; the bare dotted path is also accepted. */
 const DATA_PREFIX = "data:";
@@ -60,7 +65,13 @@ const STRUCTURED_TYPES: readonly BindableType[] = ["array", "object"];
  * unadmitted keyword would resolve a binding against a contract the author
  * believes is being enforced.
  */
-const STRUCTURED_KEYWORDS: readonly string[] = ["type", "guidance", "required", "bindable"];
+const STRUCTURED_KEYWORDS: readonly string[] = [
+  "type",
+  "guidance",
+  "required",
+  "bindable",
+  "shape",
+];
 
 /**
  * The part of a declared prop schema a binding needs to consult.
@@ -75,6 +86,7 @@ type BindingSchema = {
   readonly enum: readonly unknown[] | null;
   readonly minimum: number | null;
   readonly maximum: number | null;
+  readonly shape: StructuredShapeSpec | null;
 };
 
 /**
@@ -212,8 +224,18 @@ function readSchema(propSchema: unknown): BindingSchema | null {
         return null;
       }
     }
-    // A structured branch declares no domain — no enum and no range to honour.
-    return { type, bindable, enum: null, minimum: null, maximum: null };
+    const rawShape = readKeyword(propSchema, "shape");
+    let shape: StructuredShapeSpec | null = null;
+    if (rawShape !== undefined) {
+      const validation = validateStructuredShapeSpec(rawShape);
+      if (!validation.ok) {
+        return null;
+      }
+      shape = validation.shape;
+    }
+    // A structured branch declares no scalar domain; an optional shape governs
+    // the shallow object or every shallow object item in an array.
+    return { type, bindable, enum: null, minimum: null, maximum: null, shape };
   }
 
   const declaredEnum = readKeyword(propSchema, "enum");
@@ -236,6 +258,7 @@ function readSchema(propSchema: unknown): BindingSchema | null {
     enum: declaredEnum === undefined ? null : declaredEnum,
     minimum,
     maximum,
+    shape: null,
   };
 }
 
@@ -277,6 +300,14 @@ function agreesWithSchema(value: unknown, schema: BindingSchema): SchemaAgreemen
     }
   })();
   if (!typeAgrees) {
+    return "mismatch";
+  }
+
+  if (
+    schema.shape !== null &&
+    (schema.type === "array" || schema.type === "object") &&
+    !validateStructuredValue(value, schema.type, schema.shape)
+  ) {
     return "mismatch";
   }
 

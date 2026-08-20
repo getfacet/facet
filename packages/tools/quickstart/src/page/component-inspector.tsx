@@ -256,7 +256,7 @@ function ComponentDetail({
       <header style={styles.detailHeader}>
         <div style={styles.detailTitleBlock}>
           <div style={styles.detailKickerRow}>
-            <span style={styles.groupBadge}>{row.presentation.label}</span>
+            <span style={styles.groupBadge}>{row.contentClass}</span>
             <span style={styles.componentTagBadge}>{`<${row.tag} />`}</span>
           </div>
           <h3 style={styles.detailTitle}>{row.tag}</h3>
@@ -266,8 +266,9 @@ function ComponentDetail({
 
       <div aria-label={`${row.tag} contract summary`} style={styles.specBar}>
         <SpecBarItem label="tag" value={row.tag} />
-        <SpecBarItem label="group" value={row.presentation.label} />
-        <SpecBarItem label="children" value={row.acceptsChildren ? "accepted" : "none"} />
+        <SpecBarItem label="class" value={row.contentClass} />
+        <SpecBarItem label="mode" value={row.contentMode} />
+        <SpecBarItem label="slots" value={String(row.slots.length)} />
         <SpecBarItem label="props" value={String(row.props.length)} />
         <SpecBarItem label="recipe" value={`${row.themeRecipe?.tokens.length ?? 0} tokens`} />
       </div>
@@ -296,6 +297,47 @@ function ComponentDetail({
             />
           ))}
         </div>
+      </section>
+
+      <section
+        aria-label={`${row.tag} content contract`}
+        data-component-content={row.tag}
+        style={styles.metadataSection}
+      >
+        <header style={styles.sectionHeader}>
+          <div style={styles.sectionTitleBlock}>
+            <h4 style={styles.sectionTitle}>Content</h4>
+            <span style={styles.sectionHint}>
+              {row.contentClass} component using {row.contentMode} mode
+            </span>
+          </div>
+          <span style={styles.sectionCount}>{row.slots.length}</span>
+        </header>
+        {row.slots.length === 0 ? (
+          <p style={styles.mutedText}>No named slots</p>
+        ) : (
+          <div style={styles.propList}>
+            {row.slots.map((slot) => (
+              <article data-component-slot={slot.name} key={slot.name} style={styles.propRow}>
+                <div style={styles.propIdentity}>
+                  <span style={styles.propName}>{slot.name}</span>
+                  <div style={styles.badgeRow}>
+                    <span style={styles.smallBadge}>
+                      {slot.minChildren}-{slot.maxChildren} children
+                    </span>
+                    {slot.allowedTags.map((tag) => (
+                      <span key={tag} style={styles.smallBadge}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <span style={styles.propType}>slot</span>
+                <p style={styles.propGuidance}>{slot.guidance}</p>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section aria-label={`${row.tag} props`} style={styles.metadataSection}>
@@ -329,6 +371,7 @@ function ComponentDetail({
           ) : (
             <div style={styles.inlinePairs}>
               <span>valueProp {row.collect.valueProp}</span>
+              <span>valueKind {row.collect.valueKind}</span>
               <span>sensitiveProp {row.collect.sensitiveProp ?? "none"}</span>
             </div>
           )}
@@ -496,17 +539,25 @@ function filterRowsBySource(
 
 function searchableText(row: ComponentInspectorRow): string {
   const collectParts =
-    row.collect === null ? [] : [row.collect.valueProp, row.collect.sensitiveProp ?? ""];
+    row.collect === null
+      ? []
+      : [row.collect.valueProp, row.collect.valueKind, row.collect.sensitiveProp ?? ""];
   const themeParts =
     row.themeRecipe === null
       ? []
       : row.themeRecipe.tokens.flatMap((token) => [token.name, token.kind]);
   return [
     row.tag,
-    row.presentation.label,
-    row.presentation.section,
     row.whenToUse,
-    String(row.acceptsChildren),
+    row.contentClass,
+    row.contentMode,
+    ...row.slots.flatMap((slot) => [
+      slot.name,
+      slot.guidance,
+      String(slot.minChildren),
+      String(slot.maxChildren),
+      ...slot.allowedTags,
+    ]),
     ...row.props.flatMap((prop) => [
       prop.name,
       prop.type,
@@ -525,24 +576,27 @@ function searchableText(row: ComponentInspectorRow): string {
 function groupRows(rows: readonly ComponentInspectorRow[]): readonly ComponentGroup[] {
   const groups = new Map<string, ComponentGroup>();
   for (const row of rows) {
-    const key = row.presentation.section;
+    const key = row.contentClass.toLowerCase();
     const existing = groups.get(key);
     if (existing === undefined) {
       groups.set(key, {
         key,
-        label: row.presentation.label,
-        order: row.presentation.order,
+        label: row.contentClass,
+        order: contentClassOrder(row.contentClass),
         rows: [row],
       });
     } else {
       groups.set(key, {
         ...existing,
-        order: Math.min(existing.order, row.presentation.order),
         rows: [...existing.rows, row],
       });
     }
   }
   return [...groups.values()].sort((left, right) => left.order - right.order);
+}
+
+function contentClassOrder(contentClass: ComponentInspectorRow["contentClass"]): number {
+  return contentClass === "Leaf" ? 0 : contentClass === "Container" ? 1 : 2;
 }
 
 function openGroupKeySet(rows: readonly ComponentInspectorRow[]): ReadonlySet<string> {

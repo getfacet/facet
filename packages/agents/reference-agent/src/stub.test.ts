@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
 
 import {
+  deriveMessageId,
   parseMarkup,
   serializeDocument,
   validateAuthorMarkup,
@@ -10,6 +11,7 @@ import {
   type AuthorValidationResult,
   type ComponentDocument,
   type ComponentNode,
+  type ConversationMessage,
   type DataModel,
   type DataPath,
   type FacetTargetedMutationInput,
@@ -72,10 +74,21 @@ function event(
   return {
     eventId,
     eventName,
-    sourceNodeId: "submit",
+    sourceNodeId: eventName === "message" ? "visitor" : "submit",
     screen: "home",
     stageRevision: 0,
     collect,
+  };
+}
+
+function visitorMessage(eventId: string): ConversationMessage {
+  return {
+    kind: "conversation",
+    messageId: deriveMessageId(eventId, "visitor"),
+    turnId: eventId,
+    role: "visitor",
+    text: "Start",
+    at: 1,
   };
 }
 
@@ -143,6 +156,8 @@ describe("createStubAgent", () => {
       name: { kind: "value", value: "Ada" },
       token: { kind: "omitted_sensitive" },
       email: { kind: "value", value: "a@b.c" },
+      enabled: { kind: "value", value: true },
+      interests: { kind: "value", value: ["design", "systems"] },
       missing: { kind: "collect_source_unavailable" },
     };
 
@@ -152,7 +167,7 @@ describe("createStubAgent", () => {
     expect(session.appliedMarkup).toEqual([STUB_MARKUP]);
     expect(session.document).toEqual(acceptedDocument(STUB_MARKUP));
     expect(first.text).toBe(
-      "submit: email=a@b.c missing=collect_source_unavailable name=Ada token=omitted_sensitive",
+      'submit: email=a@b.c enabled=true interests=["design","systems"] missing=collect_source_unavailable name=Ada token=omitted_sensitive',
     );
     expect(second).toEqual(first);
   });
@@ -178,7 +193,8 @@ describe("createStubAgent", () => {
 
     const result = await runtime.handle({
       sessionKey: "quickstart:v1",
-      event: event("turn-runtime"),
+      event: event("turn-runtime", {}, "message"),
+      visitorMessage: visitorMessage("turn-runtime"),
     });
     const loaded = await loadSession(store, "quickstart:v1");
     const expectedDocument = acceptedDocument(STUB_MARKUP);

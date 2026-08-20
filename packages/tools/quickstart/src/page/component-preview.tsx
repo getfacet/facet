@@ -5,7 +5,10 @@ import type { RendererBootstrap } from "@facet/react";
 import { Component } from "react";
 import type { ReactNode } from "react";
 
-import type { ComponentPreviewFixtureResult } from "./component-preview-fixtures.js";
+import {
+  QUICKSTART_PREVIEW_ASSET_REGISTRY,
+  type ComponentPreviewFixtureResult,
+} from "./component-preview-fixtures.js";
 
 type AcceptedBootstrap = Extract<RendererBootstrap, { readonly ok: true }>;
 type PreviewFallbackReason = "invalid-fixture" | "bootstrap" | "render";
@@ -24,6 +27,7 @@ const DEFAULT_BOOTSTRAP = bootstrapRenderer({
   catalog: DEFAULT_CATALOG,
   registry: DEFAULT_REGISTRY,
   theme: DEFAULT_THEME,
+  assetRegistry: QUICKSTART_PREVIEW_ASSET_REGISTRY,
 });
 
 function PreviewFallback({
@@ -81,8 +85,8 @@ export function ComponentPreview({
   renderContent,
 }: ComponentPreviewProps): ReactNode {
   const resetKey = result.ok
-    ? `${result.tag}:${result.fixture.targetNodeId}`
-    : `${result.tag}:error`;
+    ? `${result.tag}:${result.fixture.targetNodeId}:${result.fixture.source}`
+    : `${result.tag}:error:${result.error.phase}:${result.error.code}`;
   return (
     <PreviewBoundary resetKey={resetKey} tag={result.tag}>
       <PreviewContentSlot

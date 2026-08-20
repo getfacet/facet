@@ -47,6 +47,55 @@ const SEMANTIC_TOKEN_NAMES = Object.freeze(
     ]),
   ),
 ) as Readonly<Record<string, readonly string[]>>;
+const EXPECTED_RECIPE_NAMES = [
+  "screen",
+  "stack",
+  "row",
+  "grid",
+  "split",
+  "app-shell",
+  "section",
+  "card",
+  "modal",
+  "divider",
+  "navigation",
+  "navigation-item",
+  "button",
+  "action-group",
+  "action-bar",
+  "text",
+  "avatar",
+  "icon",
+  "image",
+  "badge",
+  "metric",
+  "metric-group",
+  "table",
+  "chart",
+  "progress",
+  "timeline",
+  "list",
+  "header",
+  "collection",
+  "item-card",
+  "detail",
+  "property-list",
+  "property",
+  "board",
+  "board-column",
+  "calendar",
+  "result",
+  "empty",
+  "alert",
+  "form",
+  "field",
+  "select",
+  "choice-group",
+  "toggle",
+  "message-thread",
+  "accordion",
+  "accordion-item",
+] as const;
 
 describe("DEFAULT_THEME fills the core token contract exactly", () => {
   it("validates against foundation, semantic, and default catalog recipes", () => {
@@ -75,46 +124,12 @@ describe("DEFAULT_THEME fills the core token contract exactly", () => {
   });
 
   it("fills the Default Recipe Contract v1 for the default service-surface catalog", () => {
-    expect(Object.keys(DEFAULT_THEME.recipes ?? {})).toEqual([
-      "screen",
-      "app-shell",
-      "stack",
-      "row",
-      "split",
-      "grid",
-      "modal",
-      "card",
-      "empty",
-      "logo-mark",
-      "nav",
-      "side-nav",
-      "side-nav-item",
-      "section",
-      "divider",
-      "hero",
-      "avatar",
-      "profile-header",
-      "product-showcase",
-      "visual-panel",
-      "media-card",
-      "link-list",
-      "social-links",
-      "feature-list",
-      "stat-strip",
-      "gallery",
-      "testimonial",
-      "timeline",
-      "cta",
-      "alert",
-      "progress",
-      "footer",
-      "text",
-      "metric",
-      "badge",
-      "button",
-      "field",
-      "table",
-    ]);
+    const recipeNames = Object.keys(DEFAULT_THEME.recipes ?? {}).sort();
+    expect(recipeNames).toHaveLength(47);
+    expect(recipeNames).toEqual([...EXPECTED_RECIPE_NAMES].sort());
+    expect(recipeNames).toEqual(
+      DEFAULT_CATALOG.components.map((spec) => facetThemeToKebabCase(spec.tag)).sort(),
+    );
     for (const spec of DEFAULT_CATALOG.components) {
       const namespace = facetThemeToKebabCase(spec.tag);
       expect(Object.keys(DEFAULT_THEME.recipes?.[namespace] ?? {}), spec.tag).toEqual(
@@ -123,18 +138,18 @@ describe("DEFAULT_THEME fills the core token contract exactly", () => {
     }
   });
 
-  it("fills expressive service-surface recipe tokens", () => {
-    expect(DEFAULT_THEME.recipes?.hero).toEqual(
+  it("fills representative structure, content, task, and interaction recipe tokens", () => {
+    expect(DEFAULT_THEME.recipes?.header).toEqual(
       expect.objectContaining({
-        background: "var(--facet-semantic-surface-muted)",
+        background: "var(--facet-semantic-surface-default)",
         text: "var(--facet-semantic-text-default)",
-        radius: "var(--facet-foundation-radius-xxl)",
+        titleFontSize: "var(--facet-foundation-typography-font-size3xl)",
       }),
     );
-    expect(DEFAULT_THEME.recipes?.cta).toEqual(
+    expect(DEFAULT_THEME.recipes?.["item-card"]).toEqual(
       expect.objectContaining({
-        background: "var(--facet-foundation-palette-brand600)",
-        text: "var(--facet-semantic-text-inverse)",
+        background: "var(--facet-semantic-surface-default)",
+        radius: "var(--facet-foundation-radius-lg)",
       }),
     );
     expect(DEFAULT_THEME.recipes?.progress).toEqual(
@@ -143,23 +158,23 @@ describe("DEFAULT_THEME fills the core token contract exactly", () => {
         fill: "var(--facet-semantic-loading-progress-fill)",
       }),
     );
-    expect(DEFAULT_THEME.recipes?.gallery).toEqual(
+    expect(DEFAULT_THEME.recipes?.chart).toEqual(
       expect.objectContaining({
-        padding: "var(--facet-foundation-space-xl)",
-        gap: "var(--facet-foundation-space-lg)",
+        series: "var(--facet-foundation-palette-brand500)",
+        fill: "var(--facet-foundation-palette-brand100)",
       }),
     );
-    expect(DEFAULT_THEME.recipes?.nav).toEqual(
+    expect(DEFAULT_THEME.recipes?.navigation).toEqual(
       expect.objectContaining({
         paddingBlock: "var(--facet-foundation-space-md)",
         paddingInline: "var(--facet-foundation-space-xl)",
-        radius: "var(--facet-foundation-radius-full)",
+        radius: "var(--facet-foundation-radius-lg)",
       }),
     );
-    expect(DEFAULT_THEME.recipes?.["media-card"]).toEqual(
+    expect(DEFAULT_THEME.recipes?.["message-thread"]).toEqual(
       expect.objectContaining({
-        visualBg: "var(--facet-foundation-palette-brand100)",
-        titleFontSize: "var(--facet-foundation-typography-font-size-lg)",
+        incomingBg: "var(--facet-semantic-surface-muted)",
+        outgoingBg: "var(--facet-semantic-state-selected-bg)",
       }),
     );
   });
@@ -172,6 +187,19 @@ describe("DEFAULT_THEME fills the core token contract exactly", () => {
       "var(--facet-semantic-action-primary-bg)",
     );
     expect(Object.keys(vars).every((name) => name.startsWith("--facet-"))).toBe(true);
+  });
+
+  it("references only custom properties projected by the complete default theme", () => {
+    const vars = themeToCssVars(DEFAULT_THEME, { catalog: DEFAULT_CATALOG });
+    const missing = Object.entries(DEFAULT_THEME.recipes ?? {}).flatMap(([namespace, tokens]) =>
+      Object.entries(tokens).flatMap(([token, value]) =>
+        [...value.matchAll(/var\((--facet-[a-z0-9-]+)\)/gu)]
+          .map((match) => match[1])
+          .filter((name): name is string => name !== undefined && !Object.hasOwn(vars, name))
+          .map((name) => `${namespace}.${token}: ${name}`),
+      ),
+    );
+    expect(missing).toEqual([]);
   });
 });
 

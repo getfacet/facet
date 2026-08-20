@@ -127,7 +127,7 @@ function catalog(): FacetCatalog {
         props: {
           name: { type: "string", required: true, guidance: "Screen name." },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
     ],
   });

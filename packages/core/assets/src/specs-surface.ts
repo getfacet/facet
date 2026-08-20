@@ -1,153 +1,240 @@
-/**
- * The default surface component specs: `Modal`, `Card` and `Empty`.
- *
- * A surface is a bounded region that gives content an edge — a card's border, a
- * modal's frame, the quiet block that stands in for content there isn't any of
- * yet. All three describe **content only**. None of them declares a coordinate,
- * a size in pixels, or any control over what paints in front of what.
- *
- * `Modal` is the one place in Facet where content may overlap the screen, and
- * it earns that by owning none of the mechanism. The framework's Modal frame
- * owns the scrim, the placement, the stacking band, the focus trap, the escape
- * key and the scroll lock; a registered `Modal` supplies flow content and the
- * two strings the frame projects into its own chrome — `triggerLabel` for the
- * control that opens it, `title` for its heading. Both are required, and
- * neither carries a default, because a registration that substituted its own
- * would make the frame's projection depend on the catalog instead of the
- * contract. `validateModalConformance` rejects either drift at registration
- * time, and `specs-surface.test.ts` proves this spec passes it.
- *
- * Every prop is a **scalar** — a string from a closed domain or free text. None
- * is bindable and none is an `array` or `object`, so no prop here can be handed
- * an inline JSON literal: a structured prop is satisfiable only by a
- * `data:path` binding, and the grammar admits no inline structure regardless.
- *
- * These specs are plain serializable data, travelling to the agent as discovery
- * text, to the renderer as a validation table, and to disk with the session.
- *
- * **Visibility: private.** This module is not a package entry point and is not
- * barrel-exported. `catalog.ts` assembles the default catalog from it; nothing
- * outside `@facet/assets` may import it.
- */
-
+/** Default navigation and action specs. Actions remain literal nav: or agent: references. */
 import type { ComponentSpec } from "@facet/core";
 
-/**
- * The one sanctioned overlap. The props below are content; the frame is the
- * framework's, and the schema stays exactly what the frame projects.
- */
-export const MODAL_SPEC: ComponentSpec = {
-  tag: "Modal",
-  authoringRole: "surface",
+export const NAVIGATION_SPEC: ComponentSpec = {
+  tag: "Navigation",
   whenToUse:
-    "Interrupt the screen for one focused decision or a short form. Facet owns the frame; this describes only what goes inside it.",
+    "Use Navigation when persistent destinations or commands must remain discoverable as a bar or rail. Avoid it for one-off next-step actions.",
   props: {
-    triggerLabel: {
+    label: {
       type: "string",
-      guidance:
-        "Label of the control that opens the modal. A short verb phrase reads best, such as 'Edit budget'.",
-      required: true,
+      guidance: "Optional accessible name distinguishing this navigation from others.",
     },
-    title: {
+    orientation: {
       type: "string",
-      guidance: "The modal's heading — one line naming the decision the visitor is about to make.",
-      required: true,
+      guidance: "Whether items form a horizontal bar or vertical rail.",
+      enum: ["horizontal", "vertical"],
+      default: "horizontal",
     },
-    description: {
+    density: {
       type: "string",
-      guidance:
-        "Optional line under the title, for context the visitor needs before deciding. Leave it out when the title is enough.",
-    },
-  },
-  acceptsChildren: true,
-  themeRecipe: {
-    tokens: {
-      triggerBg: "color",
-      triggerText: "color",
-      frameBg: "color",
-      frameText: "color",
-      frameBorder: "color",
-      frameRadius: "length",
-      frameShadow: "shadow",
-      framePadding: "length",
-      titleColor: "color",
-    },
-  },
-};
-
-/** A bounded surface that groups related content and separates it from the rest. */
-export const CARD_SPEC: ComponentSpec = {
-  tag: "Card",
-  authoringRole: "surface",
-  whenToUse:
-    "Group related content into one bounded surface with its own edge and padding — a summary, a record, a settings block.",
-  props: {
-    title: {
-      type: "string",
-      guidance: "Optional heading for the card. Omit it when the content already names itself.",
+      guidance: "How tightly navigation items are spaced.",
+      enum: ["compact", "comfortable"],
+      default: "comfortable",
     },
     tone: {
       type: "string",
-      guidance:
-        "The card's semantic tone, drawn from the theme's colors. Reserve 'danger' and 'warning' for content that genuinely needs them.",
-      enum: ["neutral", "accent", "success", "warning", "danger"],
+      guidance: "Semantic visual emphasis for the navigation surface.",
+      enum: ["neutral", "accent", "inverse"],
       default: "neutral",
     },
-    padding: {
-      type: "string",
-      guidance: "Space between the card's edge and its content, named in theme space tokens.",
-      enum: ["none", "sm", "md", "lg"],
-      default: "md",
+  },
+  content: {
+    mode: "slots",
+    slots: {
+      brand: { guidance: "Optional navigation identity.", minChildren: 0, maxChildren: 1 },
+      items: {
+        guidance: "Navigation destinations and commands.",
+        minChildren: 1,
+        maxChildren: 32,
+      },
+      actions: { guidance: "Optional navigation actions.", minChildren: 0, maxChildren: 4 },
     },
   },
-  acceptsChildren: true,
   themeRecipe: {
     tokens: {
       background: "color",
       text: "color",
+      mutedText: "color",
       border: "color",
       radius: "length",
-      shadow: "shadow",
-      padding: "length",
-      titleColor: "color",
+      paddingBlock: "length",
+      paddingInline: "length",
+      gap: "length",
     },
   },
 };
 
-/**
- * The stand-in for content that isn't there. It takes children so a next step —
- * a button, a line of guidance — can sit inside it rather than being smuggled
- * in as another prop.
- */
-export const EMPTY_SPEC: ComponentSpec = {
-  tag: "Empty",
-  authoringRole: "surface",
+export const NAVIGATION_ITEM_SPEC: ComponentSpec = {
+  tag: "NavigationItem",
   whenToUse:
-    "Stand in for a view with nothing in it yet — a search that matched nothing, a fresh account, a list before its first row.",
+    "Use NavigationItem for one destination or command inside Navigation. Prefer Button for a task action outside persistent navigation.",
   props: {
-    title: {
+    label: {
       type: "string",
-      guidance:
-        "One line naming what is missing, such as 'No invoices yet'. Say what is absent, not that an error occurred.",
+      guidance: "Visible label naming the destination or command.",
       required: true,
     },
-    description: {
+    action: {
       type: "string",
-      guidance: "Optional second line telling the visitor what would put content here.",
+      guidance: "Literal nav: destination or agent: event activated by this item.",
+      required: true,
+      action: true,
+    },
+    arg: {
+      type: "string",
+      guidance: "Optional explicit argument sent with an agent: event.",
+    },
+    mark: { type: "string", guidance: "Optional short leading mark." },
+    meta: { type: "string", guidance: "Optional trailing count, status, or context." },
+    active: {
+      type: "boolean",
+      guidance: "Whether this item denotes the current destination.",
+      default: false,
     },
   },
-  acceptsChildren: true,
+  content: { mode: "none" },
   themeRecipe: {
     tokens: {
       background: "color",
       text: "color",
+      mutedText: "color",
+      border: "color",
+      activeBg: "color",
+      activeText: "color",
+      activeBorder: "color",
+      radius: "length",
+      paddingBlock: "length",
+      paddingInline: "length",
+      gap: "length",
+      focusRing: "shadow",
+    },
+  },
+};
+
+export const BUTTON_SPEC: ComponentSpec = {
+  tag: "Button",
+  whenToUse:
+    "Use Button for one explicit action; for accepted choices, make one Button per offered value and set arg to that exact value. Avoid replacing choices with an argument-free continue Button.",
+  props: {
+    label: { type: "string", guidance: "Visible label naming the action.", required: true },
+    action: {
+      type: "string",
+      guidance: "Literal nav: destination or agent: event activated by this button.",
+      required: true,
+      action: true,
+    },
+    arg: {
+      type: "string",
+      guidance:
+        "Explicit argument sent with an agent: event. Required when the event contract declares accepted choice values; use one exact accepted value for each offered Button.",
+    },
+    collect: {
+      type: "string",
+      guidance: "Space-separated field names included with an agent: event.",
+    },
+    tone: {
+      type: "string",
+      guidance: "Prominence of the action within its surrounding controls.",
+      enum: ["primary", "secondary", "quiet"],
+      default: "secondary",
+    },
+  },
+  content: { mode: "none" },
+  themeRecipe: {
+    tokens: {
+      primaryBg: "color",
+      primaryText: "color",
+      primaryBorder: "color",
+      secondaryBg: "color",
+      secondaryText: "color",
+      secondaryBorder: "color",
+      quietText: "color",
+      radius: "length",
+      paddingInline: "length",
+      paddingBlock: "length",
+      focusRing: "shadow",
+    },
+  },
+};
+
+export const ACTION_GROUP_SPEC: ComponentSpec = {
+  tag: "ActionGroup",
+  whenToUse:
+    "Use ActionGroup when several closely related actions need shared alignment or emphasis. Prefer ActionBar when actions need adjacent status or explanation.",
+  props: {
+    title: { type: "string", guidance: "Optional heading for the action group." },
+    layout: {
+      type: "string",
+      guidance: "Whether actions run across a row or down a stack.",
+      enum: ["row", "stack"],
+      default: "stack",
+    },
+    align: {
+      type: "string",
+      guidance: "How actions align within the available width.",
+      enum: ["start", "center", "end"],
+      default: "start",
+    },
+    density: {
+      type: "string",
+      guidance: "How tightly actions are spaced.",
+      enum: ["compact", "comfortable"],
+      default: "comfortable",
+    },
+    tone: {
+      type: "string",
+      guidance: "Semantic visual emphasis for the group surface.",
+      enum: ["neutral", "accent", "inverse"],
+      default: "neutral",
+    },
+  },
+  content: { mode: "children" },
+  themeRecipe: {
+    tokens: {
+      background: "color",
       border: "color",
       radius: "length",
       padding: "length",
+      gap: "length",
       titleColor: "color",
     },
   },
 };
 
-/** The surface group, in the order the default catalog lists it. */
-export const SURFACE_SPECS: readonly ComponentSpec[] = [MODAL_SPEC, CARD_SPEC, EMPTY_SPEC];
+export const ACTION_BAR_SPEC: ComponentSpec = {
+  tag: "ActionBar",
+  whenToUse:
+    "Use ActionBar when compact context or a current selection must stay beside its available actions. Prefer ActionGroup when no contextual region is needed.",
+  props: {
+    align: {
+      type: "string",
+      guidance: "How context and actions share the band.",
+      enum: ["start", "center", "between"],
+      default: "start",
+    },
+    tone: {
+      type: "string",
+      guidance: "Semantic visual emphasis for the action band.",
+      enum: ["neutral", "accent", "inverse"],
+      default: "neutral",
+    },
+  },
+  content: {
+    mode: "slots",
+    slots: {
+      context: { guidance: "Optional context for the actions.", minChildren: 0, maxChildren: 4 },
+      actions: { guidance: "The available actions.", minChildren: 1, maxChildren: 4 },
+    },
+  },
+  themeRecipe: {
+    tokens: {
+      background: "color",
+      text: "color",
+      mutedText: "color",
+      border: "color",
+      radius: "length",
+      padding: "length",
+      gap: "length",
+    },
+  },
+};
+
+/** The complete navigation/action group in the locked catalog order. */
+export const SURFACE_SPECS: readonly ComponentSpec[] = Object.freeze([
+  NAVIGATION_SPEC,
+  NAVIGATION_ITEM_SPEC,
+  BUTTON_SPEC,
+  ACTION_GROUP_SPEC,
+  ACTION_BAR_SPEC,
+]);

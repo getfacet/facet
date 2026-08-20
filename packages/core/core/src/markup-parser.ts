@@ -3,7 +3,7 @@
  *
  * `parseMarkup` reads a source string into a tree of tags, props and quoted
  * values. It admits component tags, declared props, quoted scalars and the
- * three explicit reference schemes, and nothing else: raw text children, JSX
+ * four explicit reference schemes, and nothing else: raw text children, JSX
  * expressions, spreads, event handlers, `import` statements, raw HTML tags, raw
  * CSS, unquoted values and inline structured JSON are each rejected outright,
  * never sanitized and accepted.
@@ -48,6 +48,8 @@ import {
 
 export interface MarkupNode {
   readonly tag: string;
+  /** The named region this direct child fills. Never part of `props`. */
+  readonly slot?: string;
   /**
    * The element's props, in source order.
    *
@@ -61,13 +63,13 @@ export interface MarkupNode {
    */
   readonly props: readonly {
     readonly name: string;
-    /** A literal quoted scalar, or one of the three explicit references. */
+    /** A literal quoted scalar, or one of the four explicit references. */
     readonly value:
       | { readonly kind: "scalar"; readonly value: string }
       | {
           readonly kind: "reference";
-          /** `data:` reads the data model; `nav:` and `agent:` are actions. */
-          readonly scheme: "data" | "nav" | "agent";
+          /** `data:` reads data, `asset:` names media, and `nav:`/`agent:` are actions. */
+          readonly scheme: "data" | "nav" | "agent" | "asset";
           readonly target: string;
         };
     /** Where the prop name starts. */
@@ -93,7 +95,7 @@ type MarkupValue = MarkupProp["value"];
 type ReferenceScheme = Extract<MarkupValue, { readonly kind: "reference" }>["scheme"];
 
 /**
- * The three explicit reference schemes an author may write, in match order.
+ * The four explicit reference schemes an author may write, in match order.
  *
  * The vocabulary is now written twice — as the literal union inside
  * `MarkupNode` and as this runtime array — so the two are pinned against each
@@ -102,7 +104,12 @@ type ReferenceScheme = Extract<MarkupValue, { readonly kind: "reference" }>["sch
  * `Record` over the union read off `MarkupNode`, which rejects a scheme the
  * union declares but this array does not recognise.
  */
-const REFERENCE_SCHEMES: readonly ReferenceScheme[] = Object.freeze(["data", "nav", "agent"]);
+const REFERENCE_SCHEMES: readonly ReferenceScheme[] = Object.freeze([
+  "data",
+  "nav",
+  "agent",
+  "asset",
+]);
 
 export interface MarkupAst {
   readonly roots: readonly MarkupNode[];
@@ -142,6 +149,9 @@ const STYLE_PROP = "style";
  * reject in document validation, against the catalog.
  */
 const ID_PROP = "id";
+
+/** The reserved direct-child region attribute, extracted from ordinary props. */
+const SLOT_PROP = "slot";
 
 /** How much of an offending fragment is quoted back in a message. */
 const EXCERPT_CHARS = 40;
@@ -210,7 +220,7 @@ type ValueOutcome =
   | { readonly ok: true; readonly value: MarkupValue }
   | { readonly ok: false; readonly error: AuthorError };
 
-/** Classifies a quoted value as a scalar or one of the three references. */
+/** Classifies a quoted value as a scalar or one of the four references. */
 function classifyValue(token: Token): ValueOutcome {
   const raw = token.text;
   const lead = raw.trimStart();
@@ -364,12 +374,18 @@ function propNameFaults(
 interface OpenElement {
   readonly tag: string;
   readonly location: SourceLocation;
+  readonly slot?: string;
   readonly props: readonly MarkupProp[];
   readonly children: MarkupNode[];
 }
 
 type PropsOutcome =
-  | { readonly ok: true; readonly props: readonly MarkupProp[]; readonly selfClosing: boolean }
+  | {
+      readonly ok: true;
+      readonly slot?: string;
+      readonly props: readonly MarkupProp[];
+      readonly selfClosing: boolean;
+    }
   | { readonly ok: false; readonly error: AuthorError };
 
 type TagNameOutcome =
@@ -407,6 +423,8 @@ function parseTokens(tokens: readonly Token[]): ParseMarkupResult {
   const readProps = (open: Token): PropsOutcome => {
     const props: MarkupProp[] = [];
     const seen = new Set<string>();
+    let slot: string | undefined;
+    let attributeCount = 0;
     /** How many reserved `id` attributes were excluded from the `B-04` count: 0 or 1. */
     let excludedIds = 0;
     for (;;) {
@@ -416,7 +434,12 @@ function parseTokens(tokens: readonly Token[]): ParseMarkupResult {
       }
       if (token.kind === "tag-end" || token.kind === "self-close") {
         index += 1;
-        return { ok: true, props: Object.freeze(props), selfClosing: token.kind === "self-close" };
+        return {
+          ok: true,
+          ...(slot === undefined ? {} : { slot }),
+          props: Object.freeze(props),
+          selfClosing: token.kind === "self-close",
+        };
       }
       if (token.kind === "expression") {
         return { ok: false, error: describeExpression(token) };
@@ -435,7 +458,7 @@ function parseTokens(tokens: readonly Token[]): ParseMarkupResult {
       // Only the first `id` is Facet's own; a repeat is an ordinary duplicate
       // and is counted, so `id` can never buy an element extra prop budget.
       const reservedId = token.text === ID_PROP && excludedIds === 0;
-      const authorPropCount = props.length - excludedIds + (reservedId ? 0 : 1);
+      const authorPropCount = attributeCount - excludedIds + (reservedId ? 0 : 1);
       const faults = propNameFaults(token, seen, authorPropCount);
       const [head, ...tail] = faults;
       if (head) {
@@ -463,14 +486,30 @@ function parseTokens(tokens: readonly Token[]): ParseMarkupResult {
         return { ok: false, error: value.error };
       }
       index += 1;
-      props.push(
-        Object.freeze({
-          name: token.text,
-          value: value.value,
-          location: locate(token),
-          valueLocation: locate(valueToken),
-        }),
-      );
+      attributeCount += 1;
+      if (token.text === SLOT_PROP) {
+        if (value.value.kind !== "scalar" || !isFacetIdentifier(value.value.value)) {
+          return {
+            ok: false,
+            error: authorError({
+              code: "invalid-value",
+              location: locate(valueToken),
+              cause: `\`${excerpt(valueToken.text)}\` is not a slot name. A slot must be a literal Facet identifier.`,
+              repair: 'Use a quoted slot name such as `slot="header"`.',
+            }),
+          };
+        }
+        slot = value.value.value;
+      } else {
+        props.push(
+          Object.freeze({
+            name: token.text,
+            value: value.value,
+            location: locate(token),
+            valueLocation: locate(valueToken),
+          }),
+        );
+      }
       seen.add(token.text);
       if (reservedId) {
         excludedIds += 1;
@@ -514,6 +553,10 @@ function parseTokens(tokens: readonly Token[]): ParseMarkupResult {
         location: locate(nameToken),
         cause: `\`${tag}\` is a raw HTML element. Markup admits registered component tags only.`,
         repair: "Use a registered component tag, which starts with a capital letter.",
+        repairContext: {
+          kind: "component_tag",
+          expected: "registered_component",
+        },
       });
     }
     nodeCount += 1;
@@ -540,6 +583,7 @@ function parseTokens(tokens: readonly Token[]): ParseMarkupResult {
     const element: OpenElement = {
       tag,
       location: locate(open),
+      ...(outcome.slot === undefined ? {} : { slot: outcome.slot }),
       props: outcome.props,
       children: [],
     };
@@ -547,6 +591,7 @@ function parseTokens(tokens: readonly Token[]): ParseMarkupResult {
       attach(
         Object.freeze({
           tag,
+          ...(element.slot === undefined ? {} : { slot: element.slot }),
           props: element.props,
           children: Object.freeze([] as readonly MarkupNode[]),
           location: element.location,
@@ -589,6 +634,7 @@ function parseTokens(tokens: readonly Token[]): ParseMarkupResult {
     attach(
       Object.freeze({
         tag: open.tag,
+        ...(open.slot === undefined ? {} : { slot: open.slot }),
         props: open.props,
         children: Object.freeze([...open.children]),
         location: open.location,

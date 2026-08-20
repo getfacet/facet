@@ -64,6 +64,38 @@ function buildRetiredHardCutSymbolsPattern() {
   ].join("|");
 }
 
+function buildRetiredComponentContractPattern() {
+  const joined = (...parts) => parts.join("");
+  const symbols = [
+    joined("accepts", "Children"),
+    joined("authoring", "Role"),
+    joined("Component", "Authoring", "Role"),
+    joined("C", "TA"),
+    joined("Feature", "List"),
+    joined("Foot", "er"),
+    joined("Gall", "ery"),
+    joined("He", "ro"),
+    joined("Link", "List"),
+    joined("Logo", "Mark"),
+    joined("Media", "Card"),
+    joined("N", "av"),
+    joined("Product", "Showcase"),
+    joined("Profile", "Header"),
+    joined("Side", "N", "av"),
+    joined("Side", "N", "av", "Item"),
+    joined("Social", "Links"),
+    joined("Stat", "Strip"),
+    joined("Testi", "monial"),
+    joined("Visual", "Panel"),
+  ];
+  return [
+    ...symbols.map(exactIdentifierPattern),
+    String.raw`\b[Cc]omponent\s+authoring\s+roles?\b`,
+    String.raw`\b[Cc]omposition\s+role\b`,
+    String.raw`\bScreen\s+root,\s+Layout,\s+Surface,\s+Content,\s+Interaction\b`,
+  ].join("|");
+}
+
 function buildRetiredToolNamesPattern() {
   const joined = (left, right, separator = "") => [left, right].join(separator);
   const toolNames = [
@@ -154,6 +186,10 @@ function buildDocsScopePattern() {
 
 const PATTERN_GROUPS = [
   { name: "retired_hard_cut_symbols", pattern: buildRetiredHardCutSymbolsPattern() },
+  {
+    name: "retired_component_contract",
+    pattern: buildRetiredComponentContractPattern(),
+  },
   { name: "retired_tool_names", pattern: buildRetiredToolNamesPattern() },
   { name: "deleted_package_names", pattern: buildDeletedPackagePattern() },
   { name: "deleted_app_paths", pattern: buildDeletedAppPathPattern() },
@@ -204,12 +240,12 @@ function annotationIsEligible(relativePath, lineText) {
 function searchArguments(group, mode, cwd) {
   const args = ["--no-config", "--json", "--pcre2", "--no-ignore", "--hidden", "--text"];
   for (const glob of EXCLUDED_GLOBS) args.push("--glob", glob);
-  if (mode === "production") args.push("--glob", "!**/*.md");
+  if (mode === "production" || group.sourceOnly) args.push("--glob", "!**/*.md");
   if (group.caseInsensitive) args.push("--ignore-case");
   if (group.multiline) args.push("--multiline");
   const roots = group.docsScope
     ? DOCS_SCOPE_ROOTS
-    : mode === "production"
+    : mode === "production" || group.sourceOnly
       ? PRODUCTION_ROOTS
       : ALL_ROOTS;
   const existingRoots = roots.filter((root) => existsSync(path.resolve(cwd, root)));
@@ -415,7 +451,8 @@ function searchMultilineMode({ source, relativePath, group }) {
 function searchGroupPortable({ cwd, group, mode }) {
   const resolvedCwd = path.resolve(cwd);
   const matches = [];
-  for (const relativePath of listScannedFilesPortable({ cwd, mode })) {
+  const effectiveMode = group.sourceOnly ? "production" : mode;
+  for (const relativePath of listScannedFilesPortable({ cwd, mode: effectiveMode })) {
     const absolutePath = path.resolve(resolvedCwd, relativePath);
     if (absolutePath !== resolvedCwd && !absolutePath.startsWith(`${resolvedCwd}${path.sep}`)) {
       throw new Error(`Hard-cut search rejected an out-of-root path: ${relativePath}`);

@@ -5,6 +5,7 @@ import type {
   VisitorEvent,
   CasOutcome,
   ComponentDocument,
+  ConversationMessage,
   DataPath,
   FacetCatalog,
   FacetTheme,
@@ -23,6 +24,9 @@ import { validTestTheme } from "../../../../test-support/theme-fixture.js";
 const MARKUP_READY = `<Facet entry="home">
   <Screen name="home">
     <Text value="Ready" />
+    <ChoiceGroup name="regions" label="Regions" />
+    <Button label="Submit" action="agent:submit" />
+    <Button label="Submit regions" action="agent:selected" collect="regions" />
   </Screen>
 </Facet>`;
 
@@ -45,7 +49,7 @@ function catalogRecord(): Record<string, unknown> {
             guidance: "The route name selected by the Facet entry.",
           },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
       {
         tag: "Text",
@@ -54,7 +58,56 @@ function catalogRecord(): Record<string, unknown> {
           value: { type: "string", bindable: true, guidance: "Text to show." },
           arg: { type: "string", guidance: "Argument emitted with a visitor event." },
         },
-        acceptsChildren: false,
+        content: { mode: "none" },
+      },
+      {
+        tag: "Field",
+        whenToUse: "Collect one short text value.",
+        props: {
+          name: { type: "string", required: true, guidance: "Collection address." },
+          label: { type: "string", required: true, guidance: "Visible field label." },
+          value: { type: "string", default: "", guidance: "Current field value." },
+          secret: { type: "boolean", default: false, guidance: "Withhold the value." },
+        },
+        content: { mode: "none" },
+        collect: {
+          collectable: true,
+          valueProp: "value",
+          valueKind: "string",
+          sensitiveProp: "secret",
+        },
+      },
+      {
+        tag: "ChoiceGroup",
+        whenToUse: "Collect multiple selected values.",
+        props: {
+          name: { type: "string", required: true, guidance: "Collection address." },
+          label: { type: "string", required: true, guidance: "Visible group label." },
+          options: {
+            type: "array",
+            bindable: true,
+            guidance: "Available choices.",
+          },
+          value: { type: "array", bindable: true, guidance: "Selected values." },
+        },
+        content: { mode: "none" },
+        collect: { collectable: true, valueProp: "value", valueKind: "string[]" },
+      },
+      {
+        tag: "Button",
+        whenToUse: "Send one explicit visitor action.",
+        props: {
+          label: { type: "string", required: true, guidance: "Visible action label." },
+          action: {
+            type: "string",
+            required: true,
+            action: true,
+            guidance: "Agent action reference.",
+          },
+          collect: { type: "string", guidance: "Fields sent with the action." },
+          arg: { type: "string", guidance: "Literal argument sent with the action." },
+        },
+        content: { mode: "none" },
       },
     ],
   };
@@ -94,7 +147,18 @@ function visitorEvent(eventId = "event1", stageRevision = 0): VisitorEvent {
   return {
     eventId,
     eventName: "submit",
-    sourceNodeId: "node1",
+    sourceNodeId: "n4",
+    screen: "home",
+    stageRevision,
+    collect: {},
+  };
+}
+
+function messageEvent(eventId: string, stageRevision = 0): VisitorEvent {
+  return {
+    eventId,
+    eventName: "message",
+    sourceNodeId: "visitor",
     screen: "home",
     stageRevision,
     collect: {},
@@ -232,6 +296,457 @@ function diagnostics(): {
 }
 
 describe("FacetRuntime", () => {
+  it("snapshots the session key before awaiting session load", async () => {
+    const seeded = await seededStore();
+    const session = (await seeded.get("session-a")) as Session;
+    const keys: string[] = [];
+    let release: (() => void) | undefined;
+    const store: StageStore = {
+      get: async (key) => {
+        keys.push(key);
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return session;
+      },
+      save: async (key, next) => {
+        keys.push(key);
+        return { ok: true, revision: next.stageRevision };
+      },
+    };
+    const input = { sessionKey: "session-a", event: visitorEvent() };
+    const runtime = new FacetRuntime({
+      store,
+      sink: new RecordingSink(),
+      agent: { run: async () => null },
+    });
+
+    const pending = runtime.handle(input);
+    (input as { sessionKey: string }).sessionKey = "session-b";
+    release?.();
+    await pending;
+
+    expect(keys).toEqual(["session-a"]);
+  });
+
+  it("admits a strict framework visit while the first page is still preparing", async () => {
+    const store = new MemoryStageStore();
+    const boot = bootstrapSession({ catalog: validCatalog(), theme: validTheme() });
+    if (!boot.ok) throw new Error(`expected bootstrap acceptance, got ${boot.code}`);
+    await store.save("session-a", boot.session, 0);
+    let calls = 0;
+    const runtime = new FacetRuntime({
+      store,
+      sink: new RecordingSink(),
+      agent: {
+        run: async () => {
+          calls += 1;
+          return null;
+        },
+      },
+    });
+
+    const result = await runtime.handle({
+      sessionKey: "session-a",
+      event: {
+        eventId: "initial-visit",
+        eventName: "visit",
+        sourceNodeId: "visitor",
+        screen: "home",
+        stageRevision: 0,
+        collect: {},
+      },
+    });
+
+    expect(result.outcome).toBe("accepted");
+    expect(calls).toBe(1);
+  });
+
+  it("snapshots collected arrays before awaiting session load", async () => {
+    const seeded = await seededStore();
+    const session = (await seeded.get("session-a")) as Session;
+    let release: (() => void) | undefined;
+    const store: StageStore = {
+      get: async () => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return session;
+      },
+      save: async (_key, next) => ({ ok: true, revision: next.stageRevision }),
+    };
+    const selections = ["north"];
+    const event: VisitorEvent = {
+      ...visitorEvent(),
+      eventName: "selected",
+      sourceNodeId: "n5",
+      collect: { regions: { kind: "value", value: selections } },
+    };
+    let seen: VisitorEvent | undefined;
+    const runtime = new FacetRuntime({
+      store,
+      sink: new RecordingSink(),
+      agent: {
+        run: async ({ event: accepted }) => {
+          seen = accepted;
+          return null;
+        },
+      },
+    });
+
+    const pending = runtime.handle({ sessionKey: "session-a", event });
+    selections.push("west");
+    release?.();
+    await pending;
+
+    expect(seen?.collect["regions"]).toEqual({ kind: "value", value: ["north"] });
+    expect(Object.isFrozen((seen?.collect["regions"] as { value?: unknown })?.value)).toBe(true);
+  });
+
+  it("rejects a collected value that contradicts the active component spec", async () => {
+    const store = await seededStore(`<Facet entry="home">
+      <Screen name="home">
+        <Field name="email" label="Email" />
+        <Button label="Submit" action="agent:submit" collect="email" />
+      </Screen>
+    </Facet>`);
+    let calls = 0;
+    const runtime = new FacetRuntime({
+      store,
+      sink: new RecordingSink(),
+      agent: {
+        run: async () => {
+          calls += 1;
+          return null;
+        },
+      },
+    });
+
+    const result = await runtime.handle({
+      sessionKey: "session-a",
+      event: {
+        ...visitorEvent(),
+        sourceNodeId: "n3",
+        collect: { email: { kind: "value", value: true } },
+      },
+    });
+
+    expect(result).toMatchObject({
+      outcome: "failed",
+      code: "collect_value_kind_mismatch",
+    });
+    expect(calls).toBe(0);
+  });
+
+  it("rejects a collection address that is absent from the active screen", async () => {
+    const store = await seededStore();
+    let calls = 0;
+    const runtime = new FacetRuntime({
+      store,
+      sink: new RecordingSink(),
+      agent: {
+        run: async () => {
+          calls += 1;
+          return null;
+        },
+      },
+    });
+
+    const result = await runtime.handle({
+      sessionKey: "session-a",
+      event: {
+        ...visitorEvent(),
+        collect: { forged: { kind: "value", value: "value" } },
+      },
+    });
+
+    expect(result).toMatchObject({ outcome: "failed", code: "event_collect_mismatch" });
+    expect(calls).toBe(0);
+  });
+
+  it("never forwards a value forged for a sensitive field", async () => {
+    const store = await seededStore(`<Facet entry="home">
+      <Screen name="home">
+        <Field name="token" label="Token" secret="true" />
+        <Button label="Submit" action="agent:submit" collect="token" />
+      </Screen>
+    </Facet>`);
+    let calls = 0;
+    const runtime = new FacetRuntime({
+      store,
+      sink: new RecordingSink(),
+      agent: {
+        run: async () => {
+          calls += 1;
+          return null;
+        },
+      },
+    });
+
+    const result = await runtime.handle({
+      sessionKey: "session-a",
+      event: {
+        ...visitorEvent(),
+        sourceNodeId: "n3",
+        collect: { token: { kind: "value", value: "TOP-SECRET" } },
+      },
+    });
+
+    expect(result).toMatchObject({ outcome: "failed", code: "sensitive_collect_value" });
+    expect(calls).toBe(0);
+  });
+
+  it("fails closed when a persisted sensitivity prop contradicts its boolean schema", async () => {
+    const seeded = await seededStore(`<Facet entry="home">
+      <Screen name="home">
+        <Field name="token" label="Token" secret="true" />
+        <Button label="Submit" action="agent:submit" collect="token" />
+      </Screen>
+    </Facet>`);
+    const persisted = structuredClone((await seeded.get("session-a")) as Session) as {
+      document: { nodes: Record<string, { props: Record<string, { value?: string }> }> };
+    };
+    const secret = persisted.document.nodes["n2"]?.props["secret"];
+    if (secret === undefined) {
+      throw new Error("expected persisted sensitivity prop");
+    }
+    secret.value = "yes";
+    const store: StageStore = {
+      get: async () => persisted,
+      save: async (_key, next) => ({ ok: true, revision: next.stageRevision }),
+    };
+    let calls = 0;
+    const runtime = new FacetRuntime({
+      store,
+      sink: new RecordingSink(),
+      agent: {
+        run: async () => {
+          calls += 1;
+          return null;
+        },
+      },
+    });
+
+    const result = await runtime.handle({
+      sessionKey: "session-a",
+      event: {
+        ...visitorEvent(),
+        sourceNodeId: "n3",
+        collect: { token: { kind: "value", value: "TOP-SECRET" } },
+      },
+    });
+
+    expect(result).toMatchObject({ outcome: "failed", code: "unknown_collect_source" });
+    expect(calls).toBe(0);
+  });
+
+  it.each([
+    {
+      name: "an event source outside the active screen",
+      markup: MARKUP_READY,
+      event: { ...visitorEvent(), sourceNodeId: "n99" },
+      code: "unknown_event_source",
+    },
+    {
+      name: "an action that the source does not declare",
+      markup: MARKUP_READY,
+      event: { ...visitorEvent(), eventName: "deleteAccount" },
+      code: "event_action_mismatch",
+    },
+    {
+      name: "an argument that differs from the authored source",
+      markup: `<Facet entry="home"><Screen name="home"><Button label="Open" action="agent:open" arg="north" /></Screen></Facet>`,
+      event: {
+        ...visitorEvent(),
+        eventName: "open",
+        sourceNodeId: "n2",
+        arg: "south",
+      },
+      code: "event_arg_mismatch",
+    },
+    {
+      name: "a sensitive omission for an ordinary field",
+      markup: `<Facet entry="home"><Screen name="home"><Field name="email" label="Email" /><Button label="Submit" action="agent:submit" collect="email" /></Screen></Facet>`,
+      event: {
+        ...visitorEvent(),
+        sourceNodeId: "n3",
+        collect: { email: { kind: "omitted_sensitive" as const } },
+      },
+      code: "unexpected_sensitive_omission",
+    },
+  ])("rejects $name before invoking side effects", async ({ markup, event, code }) => {
+    const store = await seededStore(markup);
+    const sink = new RecordingSink();
+    let calls = 0;
+    const runtime = new FacetRuntime({
+      store,
+      sink,
+      agent: {
+        run: async () => {
+          calls += 1;
+          return null;
+        },
+      },
+    });
+
+    const result = await runtime.handle({ sessionKey: "session-a", event });
+
+    expect(result).toMatchObject({ outcome: "failed", code });
+    expect(calls).toBe(0);
+    expect(sink.records).toEqual([]);
+  });
+
+  it("rejects an ambiguous collected field restored from a corrupt store", async () => {
+    const seeded = await seededStore(
+      `<Facet entry="home"><Screen name="home"><Field name="email" label="Primary" /><Field name="backup" label="Backup" /><Button label="Submit" action="agent:submit" collect="email" /></Screen></Facet>`,
+    );
+    const persisted = structuredClone((await seeded.get("session-a")) as Session) as {
+      document: { nodes: Record<string, { props: Record<string, { value?: string }> }> };
+    };
+    const duplicateName = persisted.document.nodes["n3"]?.props["name"];
+    if (duplicateName === undefined) {
+      throw new Error("expected persisted field name");
+    }
+    duplicateName.value = "email";
+    const store: StageStore = {
+      get: async () => persisted,
+      save: async (_key, next) => ({ ok: true, revision: next.stageRevision }),
+    };
+    const sink = new RecordingSink();
+    let calls = 0;
+    const runtime = new FacetRuntime({
+      store,
+      sink,
+      agent: {
+        run: async () => {
+          calls += 1;
+          return null;
+        },
+      },
+    });
+
+    const result = await runtime.handle({
+      sessionKey: "session-a",
+      event: {
+        ...visitorEvent(),
+        sourceNodeId: "n4",
+        collect: { email: { kind: "value", value: "a@b.c" } },
+      },
+    });
+
+    expect(result).toMatchObject({ outcome: "failed", code: "unknown_collect_source" });
+    expect(calls).toBe(0);
+    expect(sink.records).toEqual([]);
+  });
+
+  it("rejects a visitor message paired with a non-message event before side effects", async () => {
+    const store = await seededStore();
+    const sink = new RecordingSink();
+    let calls = 0;
+    const runtime = new FacetRuntime({
+      store,
+      sink,
+      agent: {
+        run: async () => {
+          calls += 1;
+          return null;
+        },
+      },
+    });
+
+    const result = await runtime.handle({
+      sessionKey: "session-a",
+      event: visitorEvent(),
+      visitorMessage: visitorRecord(),
+    });
+
+    expect(result).toMatchObject({ outcome: "failed", code: "invalid_visitor_message_event" });
+    expect(calls).toBe(0);
+    expect(sink.records).toEqual([]);
+  });
+
+  it("rejects an over-bound visitor message before turn admission or side effects", async () => {
+    const store = await seededStore();
+    const sink = new RecordingSink();
+    let calls = 0;
+    const runtime = new FacetRuntime({
+      store,
+      sink,
+      agent: {
+        run: async () => {
+          calls += 1;
+          return null;
+        },
+      },
+    });
+    const event = messageEvent("msg-over-bound");
+
+    const rejected = await runtime.handle({
+      sessionKey: "session-a",
+      event,
+      visitorMessage: visitorRecord(
+        "msg-over-bound",
+        "x".repeat(BOUNDS.conversationMessageChars + 1),
+      ),
+    });
+    const retry = await runtime.handle({
+      sessionKey: "session-a",
+      event,
+      visitorMessage: visitorRecord("msg-over-bound", "valid retry"),
+    });
+
+    expect(rejected).toMatchObject({
+      outcome: "failed",
+      code: "invalid_visitor_message_event",
+    });
+    expect(retry.outcome).toBe("accepted");
+    expect(calls).toBe(1);
+    expect(sink.records.map((record) => record.text)).toEqual(["valid retry"]);
+  });
+
+  it("closes and validates the visitor-message snapshot before turn admission", async () => {
+    const store = await seededStore();
+    const sink = new RecordingSink();
+    let calls = 0;
+    const runtime = new FacetRuntime({
+      store,
+      sink,
+      agent: {
+        run: async () => {
+          calls += 1;
+          return null;
+        },
+      },
+    });
+    const event = messageEvent("closed-message");
+    const revoked = Proxy.revocable(visitorRecord("closed-message"), {});
+    revoked.revoke();
+    const malformed: readonly unknown[] = [
+      { ...visitorRecord("closed-message"), at: Number.POSITIVE_INFINITY },
+      { ...visitorRecord("closed-message"), extraSecret: "must not persist" },
+      revoked.proxy,
+    ];
+
+    for (const visitorMessage of malformed) {
+      await expect(
+        runtime.handle({
+          sessionKey: "session-a",
+          event,
+          visitorMessage: visitorMessage as ConversationMessage,
+        }),
+      ).resolves.toMatchObject({ outcome: "failed", code: "invalid_visitor_message_event" });
+    }
+    const accepted = await runtime.handle({
+      sessionKey: "session-a",
+      event,
+      visitorMessage: visitorRecord("closed-message", "valid"),
+    });
+
+    expect(accepted.outcome).toBe("accepted");
+    expect(calls).toBe(1);
+    expect(sink.records).toEqual([visitorRecord("closed-message", "valid")]);
+  });
+
   it("delivers committed UI patches before the turn's single conversation message", async () => {
     const store = await seededStore();
     const sink = new RecordingSink();
@@ -417,12 +932,12 @@ describe("FacetRuntime", () => {
 
     const result = await runtime.handle({
       sessionKey: "session-a",
-      event: visitorEvent("msg1"),
+      event: messageEvent("msg1"),
       visitorMessage: visitorRecord("msg1"),
     });
     const duplicate = await runtime.handle({
       sessionKey: "session-a",
-      event: visitorEvent("msg1"),
+      event: messageEvent("msg1"),
       visitorMessage: visitorRecord("msg1", "retry"),
     });
 
@@ -463,7 +978,7 @@ describe("FacetRuntime", () => {
     await startedPromise;
     const busy = await runtime.handle({
       sessionKey: "session-a",
-      event: visitorEvent("msg2"),
+      event: messageEvent("msg2"),
       visitorMessage: visitorRecord("msg2"),
     });
     release();
@@ -553,7 +1068,8 @@ describe("FacetRuntime", () => {
 
     const result = await runtime.handle({
       sessionKey: "session-a",
-      event: visitorEvent("event2", 0),
+      event: messageEvent("event2", 0),
+      visitorMessage: visitorRecord("event2"),
     });
 
     expect(result.outcome).toBe("accepted");
@@ -590,6 +1106,168 @@ describe("FacetRuntime", () => {
 
     expect(accepted).toMatchObject({ outcome: "accepted", stageRevision: 1 });
     expect(stale).toEqual({ outcome: "conflict", currentRevision: 1 });
+  });
+
+  it("rejects malformed host paths before iteration, copying, or store access", async () => {
+    const store = await seededStore();
+    let reads = 0;
+    const guardedStore: StageStore = {
+      get: async (key) => {
+        reads += 1;
+        return store.get(key);
+      },
+      save: async (key, session, expectedRevision, guard) =>
+        store.save(key, session, expectedRevision, guard),
+    };
+    const runtime = new FacetRuntime({
+      store: guardedStore,
+      sink: new RecordingSink(),
+      agent: { run: async () => null },
+    });
+    const inherited = new Array<string>(1);
+    Object.setPrototypeOf(inherited, { 0: "forged" });
+    const invalidPaths: readonly unknown[] = [
+      null,
+      Array.from({ length: BOUNDS.dataPathDepth + 1 }, () => "segment"),
+      inherited,
+    ];
+
+    for (const path of invalidPaths) {
+      const result = await runtime.publishData({
+        sessionKey: "session-a",
+        expectedRevision: 0,
+        path: path as DataPath,
+        value: true,
+        operationId: "invalid-host-path",
+      });
+
+      expect(result).toMatchObject({ outcome: "rejected", code: "invalid_data_path" });
+    }
+    expect(reads).toBe(0);
+  });
+
+  it("snapshots a valid host path without invoking its iterator", async () => {
+    const store = await seededStore();
+    const runtime = new FacetRuntime({
+      store,
+      sink: new RecordingSink(),
+      agent: { run: async () => null },
+    });
+    const path = Object.assign(["safe"], {
+      [Symbol.iterator](): never {
+        throw new Error("must not iterate");
+      },
+    });
+
+    const result = await runtime.publishData({
+      sessionKey: "session-a",
+      expectedRevision: 0,
+      path: path as unknown as DataPath,
+      value: true,
+      operationId: "non-iterated-host-path",
+    });
+
+    expect(result).toMatchObject({ outcome: "accepted", stageRevision: 1 });
+    expect(((await store.get("session-a")) as Session).data).toEqual({ safe: true });
+  });
+
+  it("snapshots host publish inputs before awaiting session load", async () => {
+    const seeded = await seededStore();
+    let stored = (await seeded.get("session-a")) as Session;
+    const keys: string[] = [];
+    let release: (() => void) | undefined;
+    const store: StageStore = {
+      get: async (key) => {
+        keys.push(key);
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return stored;
+      },
+      save: async (key, next) => {
+        keys.push(key);
+        stored = next;
+        return { ok: true, revision: next.stageRevision };
+      },
+    };
+    const path = ["trusted"] as [string, ...string[]];
+    const value = { nested: { accepted: true } };
+    const input = {
+      sessionKey: "session-a",
+      expectedRevision: 0,
+      path,
+      value,
+      operationId: "snapshot-host-publish",
+    };
+    const runtime = new FacetRuntime({
+      store,
+      sink: new RecordingSink(),
+      agent: { run: async () => null },
+    });
+
+    const pending = runtime.publishData(input);
+    (input as { sessionKey: string }).sessionKey = "session-b";
+    path[0] = "forged";
+    value.nested.accepted = false;
+    release?.();
+    const result = await pending;
+
+    expect(result).toMatchObject({ outcome: "accepted", stageRevision: 1 });
+    expect(keys).toEqual(["session-a", "session-a"]);
+    expect(stored).toMatchObject({
+      data: { trusted: { nested: { accepted: true } } },
+    });
+  });
+
+  it("rejects exotic host values before snapshotting can turn them into plain data", async () => {
+    class HostRow {
+      constructor(readonly amount: number) {}
+    }
+    const store = await seededStore();
+    const runtime = new FacetRuntime({
+      store,
+      sink: new RecordingSink(),
+      agent: { run: async () => null },
+    });
+
+    const result = await runtime.publishData({
+      sessionKey: "session-a",
+      expectedRevision: 0,
+      path: pathOf("rows"),
+      value: new HostRow(7),
+      operationId: "reject-exotic-host-value",
+    });
+
+    expect(result).toMatchObject({ outcome: "rejected", code: "data_not_serializable" });
+    expect(((await store.get("session-a")) as Session).data).toEqual({});
+  });
+
+  it("does not add artificial key overhead to a host value at the model-size boundary", async () => {
+    const full = "x".repeat(BOUNDS.dataModelStringChars);
+    const fullCount = Math.floor(
+      (BOUNDS.dataModelCanonicalJsonChars - 7) / (BOUNDS.dataModelStringChars + 3),
+    );
+    const value = Array.from({ length: fullCount }, () => full);
+    const remaining = BOUNDS.dataModelCanonicalJsonChars - JSON.stringify({ a: value }).length;
+    if (remaining >= 3) value.push("x".repeat(remaining - 3));
+    expect(JSON.stringify({ a: value })).toHaveLength(BOUNDS.dataModelCanonicalJsonChars);
+    expect(JSON.stringify({ value })).toHaveLength(BOUNDS.dataModelCanonicalJsonChars + 4);
+    const store = await seededStore();
+    const runtime = new FacetRuntime({
+      store,
+      sink: new RecordingSink(),
+      agent: { run: async () => null },
+    });
+
+    const result = await runtime.publishData({
+      sessionKey: "session-a",
+      expectedRevision: 0,
+      path: pathOf("a"),
+      value,
+      operationId: "boundary-host-value",
+    });
+
+    expect(result).toMatchObject({ outcome: "accepted", stageRevision: 1 });
   });
 
   it("rejects a delayed turn mutation at the store commit point without emitting side effects", async () => {

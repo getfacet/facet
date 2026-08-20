@@ -11,7 +11,7 @@ function component(tag: string, overrides: Record<string, unknown> = {}): Record
     tag,
     whenToUse: `Use ${tag} when the page needs it.`,
     props: {},
-    acceptsChildren: false,
+    content: { mode: "none" },
     ...overrides,
   };
 }
@@ -25,7 +25,7 @@ function screen(): Record<string, unknown> {
         guidance: "The screen name the document entry selects.",
       },
     },
-    acceptsChildren: true,
+    content: { mode: "children" },
   });
 }
 

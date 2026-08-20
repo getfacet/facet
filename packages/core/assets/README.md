@@ -50,25 +50,43 @@ console.log(boot.catalog.components.length);
 
 ## Default design system
 
-The default assets cover service surfaces rather than only dashboards:
-personal/bio, marketing/landing, commerce/booking, SaaS/workspace,
-content/editorial, data/report, and support/form-flow screens. Dashboard UI is
-one supported group, not the identity of the whole catalog.
+The default assets cover landing, personal, commerce, booking, SaaS, analytics,
+support, collaboration, education, knowledge, finance, and operations services.
+The default catalog has exactly 47 registered tags:
 
-The default catalog has 38 registered tags:
+`Screen`, `Stack`, `Row`, `Grid`, `Split`, `AppShell`, `Section`, `Card`,
+`Modal`, `Divider`, `Navigation`, `NavigationItem`, `Button`, `ActionGroup`,
+`ActionBar`, `Text`, `Avatar`, `Icon`, `Image`, `Badge`, `Metric`,
+`MetricGroup`, `Table`, `Chart`, `Progress`, `Timeline`, `List`, `Header`,
+`Collection`, `ItemCard`, `Detail`, `PropertyList`, `Property`, `Board`,
+`BoardColumn`, `Calendar`, `Result`, `Empty`, `Alert`, `Form`, `Field`,
+`Select`, `ChoiceGroup`, `Toggle`, `MessageThread`, `Accordion`, and
+`AccordionItem`.
 
-`Screen`, `AppShell`, `Stack`, `Row`, `Split`, `Grid`, `Modal`, `Card`, `Empty`,
-`LogoMark`, `Nav`, `SideNav`, `SideNavItem`, `Section`, `Divider`, `Hero`,
-`Avatar`, `ProfileHeader`,
-`ProductShowcase`, `VisualPanel`, `MediaCard`, `LinkList`, `SocialLinks`,
-`FeatureList`, `StatStrip`, `Gallery`, `Testimonial`, `Timeline`, `CTA`,
-`Alert`, `Progress`, `Footer`, `Text`, `Metric`, `Badge`, `Table`, `Button`,
-and `Field`.
+Every default spec declares one closed content mode. `none`, `children`, and
+`slots` derive the agent-facing classes `Leaf`, `Container`, and `Structured`
+respectively; the class is never separate metadata. Structured components use
+named slots with bounded cardinality. For example, `AppShell` separates
+`navigation`, `header`, and required `main`; `Collection` separates `controls`,
+required `items`, and `actions`; and `Form` requires `fields` and `actions`.
+Trusted implementations receive immutable named slot arrays, while ordinary
+containers receive ordered children.
 
-The default specs classify those tags for agent discovery as `layout`,
-`surface`, `content`, or `interaction`. This optional metadata helps an agent
-plan composition before detail; it does not affect rendering or require every
-custom component to declare a role.
+Structured bound props can declare a closed shallow scalar shape. The default
+option shape is `{ label: string, value: string, disabled?: boolean }`; calendar
+events use `{ id: string, title: string, start: string, end?: string, tone?:
+string }`; and messages use `{ id: string, author: string, body: string,
+timestamp?: string, side?: string, status?: string }`. `Table.rows` and
+`Chart.data` deliberately remain bounded open record arrays because their
+authored key props select display fields. `Table.columns` optionally names a
+comma-separated display order; without it, Table uses the first non-empty
+readable row.
+
+Collected values are typed through the Core contract. `Field` and `Calendar`
+collect strings, `Toggle` collects a boolean, `Select` collects one string, and
+`ChoiceGroup` collects a bounded string array. `Button` can request named field
+values for an `agent:` event, but no default component collects a number,
+object, or file.
 
 The default theme is a coherent baseline for demos, examples, and hosts that do
 not need a custom visual system yet. Foundation and semantic token names remain
@@ -76,22 +94,15 @@ closed by Core, component recipes are declared by the active catalog, extension
 namespaces are declared by the host, and registered React components decide how
 those values render.
 
-Component props still own composition. For example, `AppShell` separates a rail
-from main content, `Split` creates an asymmetric two-column rhythm, and
-`Stack justify="between"` plus `grow="true"` can distribute content inside an
-equal-height card, while the card, button, text, and badge recipes decide how
-those elements look.
-`Badge` is deliberately status-shaped rather than button-shaped: non-neutral
-tones use semantic status background, border, and text tokens, and the default
-React implementation keeps badges to their content width inside stretched
-layouts.
+`Image` accepts only an `asset:key` reference resolved from the immutable image
+registry supplied at renderer bootstrap. The package supplies no remote media
+by default: an omitted registry becomes an empty frozen registry. Arbitrary URL
+literals and Data Model bindings cannot satisfy the image asset prop.
 
-URL-bearing media and raw external-link components are not half-opened in the
-default set. `LogoMark` and `Avatar` are mark/initials-only, `MediaCard`
-provides image-like rhythm without arbitrary media URLs, and `LinkList` plus
-`SocialLinks` compose trusted `Button` actions. Image, logo, pricing, and form
-components need separate safe asset-reference or repeated-use policy before
-becoming default components.
+The catalog defines components, not reusable compositions. A host may replace
+the catalog, registry, and theme together to add its own trusted components. An
+agent still owns each screen tree and composes only registered components;
+neither the media asset registry nor catalog metadata stores authored subtrees.
 
 Use this package unchanged for the built-in component set, or provide your own
 catalog/registry/theme trio when the host has a different trusted component

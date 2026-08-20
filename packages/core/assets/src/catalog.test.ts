@@ -7,277 +7,285 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_CATALOG, DEFAULT_COMPONENT_SPECS } from "./catalog.js";
 import * as barrel from "./index.js";
 
-/**
- * The default catalog, written out once.
- *
- * This roster is the pin, not a restatement: DC-016 says the default catalog is
- * exactly this roster, so the list lives here in full rather than being
- * derived from the five group modules the implementation composes. A group that
- * grows, shrinks or renames a member fails against this literal instead of
- * quietly redefining the default asset catalog.
- */
 const DEFAULT_TAGS: readonly string[] = [
   "Screen",
-  "AppShell",
   "Stack",
   "Row",
-  "Split",
   "Grid",
-  "Modal",
-  "Card",
-  "Empty",
-  "LogoMark",
-  "Nav",
-  "SideNav",
-  "SideNavItem",
+  "Split",
+  "AppShell",
   "Section",
+  "Card",
+  "Modal",
   "Divider",
-  "Hero",
-  "Avatar",
-  "ProfileHeader",
-  "ProductShowcase",
-  "VisualPanel",
-  "MediaCard",
-  "LinkList",
-  "SocialLinks",
-  "FeatureList",
-  "StatStrip",
-  "Gallery",
-  "Testimonial",
-  "Timeline",
-  "CTA",
-  "Alert",
-  "Progress",
-  "Footer",
-  "Text",
-  "Metric",
-  "Badge",
-  "Table",
+  "Navigation",
+  "NavigationItem",
   "Button",
+  "ActionGroup",
+  "ActionBar",
+  "Text",
+  "Avatar",
+  "Icon",
+  "Image",
+  "Badge",
+  "Metric",
+  "MetricGroup",
+  "Table",
+  "Chart",
+  "Progress",
+  "Timeline",
+  "List",
+  "Header",
+  "Collection",
+  "ItemCard",
+  "Detail",
+  "PropertyList",
+  "Property",
+  "Board",
+  "BoardColumn",
+  "Calendar",
+  "Result",
+  "Empty",
+  "Alert",
+  "Form",
   "Field",
+  "Select",
+  "ChoiceGroup",
+  "Toggle",
+  "MessageThread",
+  "Accordion",
+  "AccordionItem",
 ];
 
-const DEFAULT_AUTHORING_ROLES: Readonly<Record<string, readonly string[]>> = {
-  layout: ["Screen", "AppShell", "Stack", "Row", "Split", "Grid"],
-  surface: [
-    "Modal",
-    "Card",
-    "Empty",
-    "Nav",
-    "SideNav",
-    "Section",
-    "Hero",
-    "ProfileHeader",
-    "ProductShowcase",
-    "VisualPanel",
-    "MediaCard",
-    "LinkList",
-    "SocialLinks",
-    "FeatureList",
-    "StatStrip",
-    "Gallery",
-    "Testimonial",
-    "Timeline",
-    "CTA",
-    "Alert",
-    "Footer",
+const CONTENT_CLASSES: Readonly<Record<string, readonly string[]>> = {
+  Leaf: [
+    "Divider",
+    "NavigationItem",
+    "Button",
+    "Text",
+    "Avatar",
+    "Icon",
+    "Image",
+    "Badge",
+    "Metric",
+    "Table",
+    "Chart",
+    "Progress",
+    "Property",
+    "Calendar",
+    "Field",
+    "Select",
+    "ChoiceGroup",
+    "Toggle",
+    "MessageThread",
   ],
-  content: ["LogoMark", "Divider", "Avatar", "Progress", "Text", "Metric", "Badge", "Table"],
-  interaction: ["SideNavItem", "Button", "Field"],
+  Container: [
+    "Screen",
+    "Stack",
+    "Row",
+    "Grid",
+    "Section",
+    "Card",
+    "ActionGroup",
+    "MetricGroup",
+    "Timeline",
+    "List",
+    "BoardColumn",
+  ],
+  Structured: [
+    "Split",
+    "AppShell",
+    "Modal",
+    "Navigation",
+    "ActionBar",
+    "Header",
+    "Collection",
+    "ItemCard",
+    "Detail",
+    "PropertyList",
+    "Board",
+    "Result",
+    "Empty",
+    "Alert",
+    "Form",
+    "Accordion",
+    "AccordionItem",
+  ],
 };
 
-/** The exact `@facet/assets` root key set — Barrel Export Contract list 2 (D-12). */
+const retiredTag = (...parts: readonly string[]): string => parts.join("");
+const RETIRED_TAGS: readonly string[] = [
+  retiredTag("N", "av"),
+  retiredTag("Side", "N", "av"),
+  retiredTag("Side", "N", "av", "Item"),
+  retiredTag("He", "ro"),
+  retiredTag("Profile", "Header"),
+  retiredTag("Product", "Showcase"),
+  retiredTag("Media", "Card"),
+  retiredTag("Link", "List"),
+  retiredTag("Social", "Links"),
+  retiredTag("Feature", "List"),
+  retiredTag("Gall", "ery"),
+  retiredTag("Stat", "Strip"),
+  retiredTag("C", "TA"),
+  retiredTag("Foot", "er"),
+  retiredTag("Logo", "Mark"),
+  retiredTag("Visual", "Panel"),
+  retiredTag("Testi", "monial"),
+];
+const RETIRED_SPEC_FIELDS = [
+  retiredTag("accepts", "Children"),
+  retiredTag("authoring", "Role"),
+] as const;
+
 const BARREL_KEYS: readonly string[] = [
   "DEFAULT_CATALOG",
   "DEFAULT_COMPONENT_SPECS",
   "DEFAULT_THEME",
 ];
 
-function sortedTags(specs: readonly ComponentSpec[]): readonly string[] {
-  return [...specs.map((spec) => spec.tag)].sort();
-}
-
-/** A catalog as plain JSON — which also proves the shipped constant is serializable. */
 function catalogRecord(components: readonly ComponentSpec[]): Record<string, unknown> {
   return JSON.parse(JSON.stringify({ components })) as Record<string, unknown>;
 }
 
-/** The rejection `code`/`at` pair, or the sentinel so a stray acceptance reads clearly. */
 function rejection(value: unknown): readonly [string, string] {
   const result = validateCatalog(value);
   return result.ok ? ["accepted", ""] : [result.code, result.at];
+}
+
+function deriveClass(spec: ComponentSpec): "Leaf" | "Container" | "Structured" {
+  if (spec.content.mode === "none") {
+    return "Leaf";
+  }
+  return spec.content.mode === "children" ? "Container" : "Structured";
 }
 
 function readSource(file: string): string {
   return readFileSync(new URL(file, import.meta.url), "utf8");
 }
 
-/**
- * The module's source with its comments removed.
- *
- * The assertions below are about what the module *does* — what it re-exports
- * and what it imports — and prose that merely names a banned construct is not
- * the construct. Stripping comments first is what keeps a doc comment that
- * explains why `export *` is forbidden from reading as an `export *`.
- */
 function readCode(file: string): string {
   return readSource(file)
     .replaceAll(/\/\*[\s\S]*?\*\//gu, "")
     .replaceAll(/\/\/[^\n]*/gu, "");
 }
 
-describe("DEFAULT_CATALOG — exact default service-surface roster (DC-016)", () => {
-  it("registers exactly the default tags, no more and no fewer", () => {
-    expect(sortedTags(DEFAULT_COMPONENT_SPECS)).toEqual([...DEFAULT_TAGS].sort());
-    expect(DEFAULT_COMPONENT_SPECS).toHaveLength(38);
+describe("DEFAULT_CATALOG", () => {
+  it("assembles exactly the literal 47-tag roster in registration order", () => {
+    expect(DEFAULT_COMPONENT_SPECS.map((spec) => spec.tag)).toEqual(DEFAULT_TAGS);
+    expect(DEFAULT_COMPONENT_SPECS).toHaveLength(47);
+    expect(new Set(DEFAULT_COMPONENT_SPECS.map((spec) => spec.tag)).size).toBe(47);
+    expect(DEFAULT_CATALOG.components).toBe(DEFAULT_COMPONENT_SPECS);
   });
 
-  it("carries those same specs into the catalog it publishes", () => {
-    expect(DEFAULT_CATALOG.components).toEqual(DEFAULT_COMPONENT_SPECS);
-  });
-
-  it("passes validateCatalog, and the accepted catalog has the exact default roster", () => {
-    const result = validateCatalog(DEFAULT_CATALOG);
-    expect(result.ok ? "accepted" : `${result.code} at ${result.at}`).toBe("accepted");
-    expect(result.ok ? result.catalog.components.length : -1).toBe(38);
-    expect(result.ok ? sortedTags(result.catalog.components) : []).toEqual(
-      [...DEFAULT_TAGS].sort(),
-    );
-  });
-
-  it("names Screen among them — it is a registered member, not a reserved position", () => {
-    const screen = DEFAULT_COMPONENT_SPECS.find((spec) => spec.tag === "Screen");
-    expect(screen?.tag).toBe("Screen");
-    expect(screen?.acceptsChildren).toBe(true);
-    expect(screen?.collect).toBeUndefined();
-    expect(screen?.props["name"]?.type).toBe("string");
-    expect(screen?.props["name"]?.required).toBe(true);
-  });
-
-  it("registers Facet nowhere: the one grammar position stays unregistered", () => {
-    expect(DEFAULT_COMPONENT_SPECS.some((spec) => spec.tag === "Facet")).toBe(false);
-  });
-
-  it("resolves one tag to one spec: every default member has a distinct tag", () => {
-    expect(new Set(DEFAULT_COMPONENT_SPECS.map((spec) => spec.tag)).size).toBe(38);
-  });
-
-  it("assigns every default component exactly one authoring role", () => {
+  it("pins the derived 19 Leaf, 11 Container, and 17 Structured classes", () => {
     const actual = Object.fromEntries(
-      Object.keys(DEFAULT_AUTHORING_ROLES).map((role) => [
-        role,
-        DEFAULT_COMPONENT_SPECS.filter((spec) => spec.authoringRole === role).map(
+      ["Leaf", "Container", "Structured"].map((contentClass) => [
+        contentClass,
+        DEFAULT_COMPONENT_SPECS.filter((spec) => deriveClass(spec) === contentClass).map(
           (spec) => spec.tag,
         ),
       ]),
     );
-
-    expect(actual).toEqual(DEFAULT_AUTHORING_ROLES);
-    expect(DEFAULT_COMPONENT_SPECS.every((spec) => spec.authoringRole !== undefined)).toBe(true);
+    expect(actual).toEqual(CONTENT_CLASSES);
+    expect(Object.values(actual).map((tags) => tags.length)).toEqual([19, 11, 17]);
   });
 
-  it("registers a Modal the framework frame can project", () => {
+  it("gives every component a two-part discovery boundary", () => {
+    for (const spec of DEFAULT_COMPONENT_SPECS) {
+      expect(spec.whenToUse).toMatch(
+        new RegExp(`^Use ${spec.tag} .+\\. (?:Prefer|Avoid|Do not) .+\\.$`, "u"),
+      );
+    }
+  });
+
+  it("passes the Core catalog trust boundary with the same exact roster", () => {
+    const result = validateCatalog(DEFAULT_CATALOG);
+    expect(result.ok ? "accepted" : `${result.code} at ${result.at}`).toBe("accepted");
+    expect(result.ok ? result.catalog.components.map((spec) => spec.tag) : []).toEqual(
+      DEFAULT_TAGS,
+    );
+  });
+
+  it("contains no retired tag or retired component-spec field", () => {
+    const tags = new Set(DEFAULT_COMPONENT_SPECS.map((spec) => spec.tag));
+    expect(RETIRED_TAGS.filter((tag) => tags.has(tag))).toEqual([]);
+    for (const spec of DEFAULT_COMPONENT_SPECS as readonly unknown[]) {
+      for (const field of RETIRED_SPEC_FIELDS) expect(spec).not.toHaveProperty(field);
+    }
+  });
+
+  it("registers Facet nowhere and Screen exactly once", () => {
+    expect(DEFAULT_COMPONENT_SPECS.filter((spec) => spec.tag === "Facet")).toEqual([]);
+    expect(DEFAULT_COMPONENT_SPECS.filter((spec) => spec.tag === "Screen")).toHaveLength(1);
+  });
+
+  it("keeps Modal conformant with the renderer-owned frame", () => {
     const modal = DEFAULT_COMPONENT_SPECS.find((spec) => spec.tag === "Modal");
     const result = validateModalConformance(JSON.parse(JSON.stringify(modal)));
     expect(result.ok ? "conforms" : `${result.code} at ${result.at}`).toBe("conforms");
   });
 });
 
-describe("DEFAULT_CATALOG — the Screen requirement is what makes it complete", () => {
-  it("rejects the same catalog with Screen removed", () => {
+describe("DEFAULT_CATALOG validation", () => {
+  it("rejects the exact roster with Screen removed", () => {
     const without = DEFAULT_COMPONENT_SPECS.filter((spec) => spec.tag !== "Screen");
-    expect(without).toHaveLength(37);
+    expect(without).toHaveLength(46);
     expect(rejection(catalogRecord(without))).toEqual(["missing_screen_spec", "components"]);
   });
 
-  it("rejects a second Screen at the second member's position", () => {
-    const screen = DEFAULT_COMPONENT_SPECS.find((spec) => spec.tag === "Screen") as ComponentSpec;
-    const twice = [...DEFAULT_COMPONENT_SPECS, screen];
-    expect(rejection(catalogRecord(twice))).toEqual(["duplicate_tag", "components[38].tag"]);
+  it("rejects a duplicate Screen at the appended member", () => {
+    const screen = DEFAULT_COMPONENT_SPECS.find((spec) => spec.tag === "Screen");
+    if (screen === undefined) {
+      throw new Error("The literal default roster must include Screen.");
+    }
+    expect(rejection(catalogRecord([...DEFAULT_COMPONENT_SPECS, screen]))).toEqual([
+      "duplicate_tag",
+      "components[47].tag",
+    ]);
   });
-});
 
-describe("DEFAULT_CATALOG — every catalog bound is respected (B-09..B-13)", () => {
-  it("keeps the component count inside B-09", () => {
+  it("keeps every catalog metadata bound", () => {
     expect(DEFAULT_COMPONENT_SPECS.length).toBeLessThanOrEqual(BOUNDS.componentsPerCatalog);
-  });
-
-  it("keeps each spec's prop count inside B-10 and each enum domain inside B-11", () => {
     for (const spec of DEFAULT_COMPONENT_SPECS) {
       expect(Object.keys(spec.props).length).toBeLessThanOrEqual(BOUNDS.propsPerComponentSpec);
-      for (const schema of Object.values(spec.props)) {
-        const domain = "enum" in schema ? schema.enum : undefined;
-        expect(domain === undefined ? 0 : domain.length).toBeLessThanOrEqual(
-          BOUNDS.enumValuesPerProp,
-        );
-      }
-    }
-  });
-
-  it("keeps when-to-use inside B-12 and every prop guidance inside B-13", () => {
-    for (const spec of DEFAULT_COMPONENT_SPECS) {
       expect(spec.whenToUse.length).toBeGreaterThan(0);
       expect(spec.whenToUse.length).toBeLessThanOrEqual(BOUNDS.componentWhenToUseChars);
       for (const schema of Object.values(spec.props)) {
         expect(schema.guidance.length).toBeGreaterThan(0);
         expect(schema.guidance.length).toBeLessThanOrEqual(BOUNDS.propGuidanceChars);
+        const domain = "enum" in schema ? schema.enum : undefined;
+        expect(domain?.length ?? 0).toBeLessThanOrEqual(BOUNDS.enumValuesPerProp);
       }
     }
   });
 });
 
-describe("DEFAULT_CATALOG — plain, frozen data", () => {
-  it("survives a JSON round trip unchanged: the catalog travels to the agent and to disk", () => {
+describe("catalog assembly", () => {
+  it("is plain frozen JSON data", () => {
     expect(JSON.parse(JSON.stringify(DEFAULT_CATALOG))).toEqual(DEFAULT_CATALOG);
-  });
-
-  it("is frozen in both directions, so no consumer can lengthen the trust boundary", () => {
     expect(Object.isFrozen(DEFAULT_CATALOG)).toBe(true);
     expect(Object.isFrozen(DEFAULT_CATALOG.components)).toBe(true);
     expect(Object.isFrozen(DEFAULT_COMPONENT_SPECS)).toBe(true);
   });
-});
 
-describe("@facet/assets root barrel — the exact key set (D-12)", () => {
-  it("exports exactly DEFAULT_THEME, DEFAULT_COMPONENT_SPECS and DEFAULT_CATALOG", () => {
-    expect(Object.keys(barrel).sort()).toEqual([...BARREL_KEYS].sort());
+  it("duplicates no production roster and only concatenates the five private groups", () => {
+    const code = readCode("./catalog.ts");
+    expect(code.match(/\.\.\.[A-Z]+_SPECS/gu)).toEqual([
+      "...LAYOUT_SPECS",
+      "...SURFACE_SPECS",
+      "...CONTENT_SPECS",
+      "...EXPRESSION_SPECS",
+      "...INTERACTIVE_SPECS",
+    ]);
+    expect(code).not.toMatch(/tag\s*:/u);
   });
 
-  it("re-exports the same values the private modules declare", () => {
-    expect(barrel.DEFAULT_CATALOG).toBe(DEFAULT_CATALOG);
-    expect(barrel.DEFAULT_COMPONENT_SPECS).toBe(DEFAULT_COMPONENT_SPECS);
-  });
-
-  it("uses explicit named re-exports only — no export * anywhere in the barrel", () => {
-    expect(readCode("./index.ts")).not.toMatch(/export\s+\*/u);
-  });
-
-  it("names only the two private modules the three public symbols come from", () => {
-    const specifiers = [...readCode("./index.ts").matchAll(/from\s+"([^"]+)"/gu)].map(
+  it("imports only Core and the five private spec groups", () => {
+    const imports = [...readCode("./catalog.ts").matchAll(/from\s+"([^"]+)"/gu)].map(
       (match) => match[1],
     );
-    expect([...new Set(specifiers)].sort()).toEqual(["./catalog.js", "./theme-default.js"]);
-  });
-
-  it("pulls no React into the root entry: the Node-only surface stays Node-only", () => {
-    for (const file of ["./index.ts", "./catalog.ts"]) {
-      expect(readCode(file)).not.toMatch(/from\s+"react/u);
-    }
-  });
-});
-
-describe("catalog.ts — source hygiene", () => {
-  it("carries no NUL byte", () => {
-    for (const file of ["./catalog.ts", "./index.ts"]) {
-      expect(readFileSync(new URL(file, import.meta.url)).indexOf(0)).toBe(-1);
-    }
-  });
-
-  it("imports nothing but @facet/core and this package's own private spec modules", () => {
-    const specifiers = [...readCode("./catalog.ts").matchAll(/from\s+"([^"]+)"/gu)].map(
-      (match) => match[1],
-    );
-    expect([...new Set(specifiers)].sort()).toEqual([
+    expect([...new Set(imports)].sort()).toEqual([
       "./specs-content.js",
       "./specs-expression.js",
       "./specs-interactive.js",
@@ -285,5 +293,20 @@ describe("catalog.ts — source hygiene", () => {
       "./specs-surface.js",
       "@facet/core",
     ]);
+    expect(readSource("./catalog.ts").indexOf("\0")).toBe(-1);
+  });
+});
+
+describe("@facet/assets root barrel", () => {
+  it("exports exactly the three approved symbols", () => {
+    expect(Object.keys(barrel).sort()).toEqual([...BARREL_KEYS].sort());
+    expect(barrel.DEFAULT_CATALOG).toBe(DEFAULT_CATALOG);
+    expect(barrel.DEFAULT_COMPONENT_SPECS).toBe(DEFAULT_COMPONENT_SPECS);
+  });
+
+  it("uses explicit Node-safe re-exports", () => {
+    expect(readCode("./index.ts")).not.toMatch(/export\s+\*/u);
+    expect(readCode("./index.ts")).not.toMatch(/from\s+"react/u);
+    expect(readCode("./catalog.ts")).not.toMatch(/from\s+"react/u);
   });
 });

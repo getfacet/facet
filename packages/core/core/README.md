@@ -1,9 +1,9 @@
 # @facet/core
 
 Dependency-free Facet contract package. It defines the component-markup grammar,
-component catalog validation, bounded data model, document serialization,
-conversation/event protocol, revision helpers, and authorized RFC 6902 patch
-folding used by every other Facet package.
+component content and prop contracts, catalog validation, bounded data and asset
+models, document serialization, conversation/event protocol, revision helpers,
+and authorized RFC 6902 patch folding used by every other Facet package.
 
 Role: **Core**.
 
@@ -21,8 +21,9 @@ Agents author one declarative markup envelope:
 - `<Facet entry="...">` wraps the document.
 - `<Screen name="...">` declares each screen root.
 - Registered component tags describe UI through declared scalar props.
-- `data:path`, `nav:screen`, and `agent:action` references are the only
-  reference forms.
+- `data:path`, `asset:key`, `nav:screen`, and `agent:action` are the only
+  reference forms. `asset:key` is restricted to image-asset props backed by the
+  host-pinned registry.
 
 The parser rejects executable or host-escape syntax before catalog validation:
 raw HTML, JavaScript or JSX expressions, event-handler props, imports, spreads,
@@ -63,9 +64,27 @@ author against. A catalog declares:
 - tag names;
 - accepted props and scalar domains;
 - which props may bind to data paths;
-- which components collect visitor input; and
-- which component-owned theme recipe tokens the active theme must fill; and
-- whether a component may contain children.
+- optional shallow shapes for structured bound props;
+- a closed content mode and any named slot contracts;
+- which components collect each bounded visitor value kind; and
+- which component-owned theme recipe tokens the active theme must fill.
+
+Every component declares exactly one `content` branch:
+
+- `{ mode: "none" }` accepts no child nodes and derives the discovery class
+  `Leaf`.
+- `{ mode: "children" }` accepts ordered, unslotted child nodes and derives
+  `Container`.
+- `{ mode: "slots", slots: { ... } }` requires direct children to use a
+  declared `slot="name"` and derives `Structured`. Each slot declares bounded
+  guidance, minimum and maximum child counts, and an optional registered-tag
+  allowlist. Every allowlisted tag must be registered in the same catalog.
+
+`deriveComponentContentClass` computes those agent-facing classes from content;
+they are not independent catalog policy. The parser stores a direct child's
+literal slot as `ComponentNode.slot`, separate from ordinary props, and document
+validation enforces the parent contract before a mutation can commit. The exact
+`slot` name is therefore reserved from component prop declarations.
 
 `validateCatalog`, `buildCatalogIndex`, `validateComponentSpec`, and
 `validateModalConformance` keep that catalog closed and deterministic. `Facet`
@@ -75,6 +94,62 @@ frame contract.
 
 Core does not ship React components. It only defines what a valid host catalog
 means; renderer packages close that catalog against a trusted registry.
+
+The default catalog is supplied by `@facet/assets` and contains exactly 47 tags:
+
+`Screen`, `Stack`, `Row`, `Grid`, `Split`, `AppShell`, `Section`, `Card`,
+`Modal`, `Divider`, `Navigation`, `NavigationItem`, `Button`, `ActionGroup`,
+`ActionBar`, `Text`, `Avatar`, `Icon`, `Image`, `Badge`, `Metric`,
+`MetricGroup`, `Table`, `Chart`, `Progress`, `Timeline`, `List`, `Header`,
+`Collection`, `ItemCard`, `Detail`, `PropertyList`, `Property`, `Board`,
+`BoardColumn`, `Calendar`, `Result`, `Empty`, `Alert`, `Form`, `Field`,
+`Select`, `ChoiceGroup`, `Toggle`, `MessageThread`, `Accordion`, and
+`AccordionItem`.
+
+## Structured props and assets
+
+An `array` or `object` prop is binding-only. It may declare a `shape` containing
+one closed, shallow field map whose values are `string`, `number`, or `boolean`,
+with bounded guidance and optional required flags. Shapes do not nest and do not
+admit unions or arbitrary schema keywords. A bound object must match the field
+map exactly; every item of a shaped array must match independently. Structured
+props without a shape remain bounded open records for components that select
+their own display fields.
+
+Core also defines `FacetAssetRegistry`, an immutable host-pinned map of bounded
+keys to V1 image descriptors. `validateFacetAssetRegistry` snapshots descriptors
+of the form `{ kind: "image", src, width?, height? }`, where `src` is a safe
+HTTPS URL or image data URI supplied by the host. Author markup can refer to one
+only as `asset:key` on a string prop declaring `assetKind: "image"`. Literal
+URLs, data bindings, unknown keys, wrong kinds, and malformed registries fail
+closed. `resolveFacetAsset` performs the same checked lookup for rendering.
+
+## Action props
+
+A string prop that can activate navigation or an agent event declares
+`action: true`. Only action-marked props admit `nav:<screen>` or
+`agent:<event>` references; scalar text, data bindings, defaults, enums, and
+asset references are rejected for that prop. The renderer and runtime both
+re-check the same marker before dispatching an interaction.
+
+## Typed collection
+
+`CollectedValue` is exactly `string | boolean | readonly string[]`. A
+collectable component declares its injected value prop and one `valueKind`:
+`string`, `boolean`, or `string[]`. Facet owns the field address, validates the
+runtime value against that declaration, freezes string arrays, and applies the
+existing scalar size and array-count bounds before an event is forwarded.
+Numbers, objects, and files are not collected values.
+
+## Components and composition
+
+A component is a host-owned catalog spec paired with trusted registered render
+code. A composition is the agent-authored tree of those registered components
+inside a screen. Content modes and slots constrain that tree, but they do not
+turn a subtree into another catalog entry. Asset registries contain host-pinned
+media descriptors, not component trees or reusable compositions. Hosts extend
+the component vocabulary by supplying a matching catalog and registry; agents
+compose only the immutable vocabulary active for their session.
 
 ## Theme contract
 
@@ -93,7 +168,7 @@ contract.
 ## Documents, data, and patches
 
 Validated author markup becomes a `ComponentDocument`: named screens,
-component nodes, and bounded data. Core provides:
+component nodes with optional slot assignment, and bounded data. Core provides:
 
 - `buildDocument` for constructing a document from parsed markup;
 - `serializeDocument` and `serializeScreen` for safe prompt/readback text;

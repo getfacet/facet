@@ -1,5 +1,5 @@
 /**
- * The Facet bounds table (B-01..B-25).
+ * The Facet bounds table (B-01..B-28).
  *
  * `BOUNDS` is the single source every layer imports — core validation, the
  * runtime, the renderer, the agent tools, and the transports. Nothing may
@@ -73,6 +73,12 @@ export const BOUNDS = Object.freeze({
   frameworkCopyChars: 500,
   /** B-25 — conversation message text, visitor or assistant, in characters. */
   conversationMessageChars: 20_000,
+  /** B-26 — records rendered by one data-backed component. */
+  renderedCollectionItems: 100,
+  /** B-27 — one normalized visitor event as UTF-8 JSON bytes. */
+  visitorEventJsonBytes: 4_000_000,
+  /** B-28 — one visitor HTTP request body as UTF-8 bytes. */
+  visitorRequestBodyBytes: 5 * 1024 * 1024,
 } as const);
 
 /** The shape of the frozen bounds table. */

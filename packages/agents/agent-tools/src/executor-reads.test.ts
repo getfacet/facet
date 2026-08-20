@@ -28,13 +28,27 @@ function catalog(): FacetCatalog {
         props: {
           name: { type: "string", required: true, guidance: "Screen name." },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
       {
         tag: "Text",
         whenToUse: "Short text.",
         props: { value: { type: "string", guidance: "Visible text." } },
-        acceptsChildren: false,
+        content: { mode: "none" },
+      },
+      {
+        tag: "Image",
+        whenToUse: "A host-pinned image.",
+        props: {
+          alt: { type: "string", required: true, guidance: "Alternative text." },
+          asset: {
+            type: "string",
+            required: true,
+            assetKind: "image",
+            guidance: "Host-pinned image key.",
+          },
+        },
+        content: { mode: "none" },
       },
     ],
   });
@@ -47,14 +61,14 @@ function catalog(): FacetCatalog {
 function document(): ComponentDocument {
   return Object.freeze({
     entry: "home",
-    screens: Object.freeze(["screen"]),
+    screens: Object.freeze(["n1"]),
     nodes: Object.freeze({
-      screen: Object.freeze({
+      n1: Object.freeze({
         tag: "Screen",
         props: Object.freeze({ name: scalar("home") }),
-        children: Object.freeze(["text"]),
+        children: Object.freeze(["n2"]),
       }),
-      text: Object.freeze({
+      n2: Object.freeze({
         tag: "Text",
         props: Object.freeze({ value: scalar("Ready") }),
         children: Object.freeze([]),
@@ -65,6 +79,9 @@ function document(): ComponentDocument {
 
 class StubSession implements FacetToolSession {
   readonly catalog = catalog();
+  readonly assetRegistry = Object.freeze({
+    hero: Object.freeze({ kind: "image" as const, src: "https://cdn.example.test/hero.png" }),
+  });
   readonly document = document();
   stageRevision = 3;
 
@@ -126,13 +143,34 @@ describe("read executors", () => {
 
     await expect(executeReadComponentSpec({ tag: "Text" }, session)).resolves.toMatchObject({
       ok: true,
-      spec: { tag: "Text", props: { value: { guidance: "Visible text." } } },
+      spec: {
+        tag: "Text",
+        contentClass: "Leaf",
+        authoringGuide: {
+          elementSyntax: "<Text />",
+          contentMode: "none",
+          directChildRule: "Self-close this element. It accepts no children.",
+          allowedDirectChildSlots: [],
+        },
+        content: { mode: "none" },
+        props: { value: { guidance: "Visible text." } },
+      },
+      availableAssets: [{ key: "hero", kind: "image" }],
       stageRevision: 3,
+    });
+    await expect(executeReadComponentSpec({ tag: "Image" }, session)).resolves.toMatchObject({
+      ok: true,
+      spec: {
+        authoringGuide: {
+          elementSyntax: '<Image alt="..." asset="asset:hero" />',
+        },
+      },
+      availableAssets: [{ key: "hero", kind: "image" }],
     });
     await expect(executeReadComponentSpec({ tag: "Missing" }, session)).resolves.toEqual({
       ok: false,
       code: "component_not_found",
-      available: ["Screen", "Text"],
+      available: ["Image", "Screen", "Text"],
     });
   });
 
@@ -148,7 +186,7 @@ describe("read executors", () => {
       stageRevision: 3,
       issues: [],
     });
-    expect(result.ok ? result.markup : "").toContain('<Text value="Ready" id="text" />');
+    expect(result.ok ? result.markup : "").toContain('<Text value="Ready" id="n2" />');
     expect(snapshot(session)).toBe(before);
   });
 

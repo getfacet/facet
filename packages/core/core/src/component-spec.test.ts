@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { BOUNDS } from "./bounds.js";
 import type {
-  ComponentAuthoringRole,
   ComponentSpec,
   ComponentSpecValidationResult,
   PropSchema,
@@ -16,7 +15,7 @@ function minimalSpec(): Record<string, unknown> {
     tag: "Card",
     whenToUse: "Group related content in one bounded surface.",
     props: {},
-    acceptsChildren: true,
+    content: { mode: "children" },
   };
 }
 
@@ -67,10 +66,10 @@ function rejectionAt(value: unknown): string {
 }
 
 describe("validateComponentSpec — the accepted spec form", () => {
-  it("accepts the minimal spec: tag, when-to-use, prop contract, acceptsChildren", () => {
+  it("accepts the minimal spec: tag, when-to-use, prop contract, and content", () => {
     const spec = accept(minimalSpec());
     expect(spec.tag).toBe("Card");
-    expect(spec.acceptsChildren).toBe(true);
+    expect(spec.content).toEqual({ mode: "children" });
     expect(spec.props).toEqual({});
   });
 
@@ -86,12 +85,18 @@ describe("validateComponentSpec — the accepted spec form", () => {
         rows: numberProp({ minimum: 1, maximum: 8, default: 1, guidance: "Visible rows." }),
         secret: { type: "boolean", guidance: "Hide the value.", default: false },
       },
-      acceptsChildren: false,
-      collect: { collectable: true, valueProp: "value", sensitiveProp: "secret" },
+      content: { mode: "none" },
+      collect: {
+        collectable: true,
+        valueProp: "value",
+        valueKind: "string",
+        sensitiveProp: "secret",
+      },
     });
     expect(spec.collect).toEqual({
       collectable: true,
       valueProp: "value",
+      valueKind: "string",
       sensitiveProp: "secret",
     });
     expect(Object.keys(spec.props)).toHaveLength(6);
@@ -148,32 +153,31 @@ describe("validateComponentSpec — the accepted spec form", () => {
   });
 });
 
-describe("validateComponentSpec — optional authoring role", () => {
-  const roles: readonly ComponentAuthoringRole[] = ["layout", "surface", "content", "interaction"];
+describe("validateComponentSpec — legacy content keys", () => {
+  const retiredChildrenKey = ["accepts", "Children"].join("");
+  const retiredRoleKey = ["authoring", "Role"].join("");
 
-  it("keeps an existing roleless spec valid and does not invent metadata", () => {
-    const spec = accept(minimalSpec());
+  it.each([retiredChildrenKey, retiredRoleKey])(
+    "rejects the retired %s key through the closed top-level form",
+    (key) => {
+      const value = { ...minimalSpec(), [key]: key === retiredChildrenKey ? true : "surface" };
 
-    expect(spec.authoringRole).toBeUndefined();
-    expect("authoringRole" in spec).toBe(false);
-  });
-
-  it.each(roles)("accepts and preserves the %s authoring role", (authoringRole) => {
-    const spec = accept({ ...minimalSpec(), authoringRole });
-
-    expect(spec.authoringRole).toBe(authoringRole);
-    expect(Object.isFrozen(spec)).toBe(true);
-  });
-
-  it.each(["", "task", undefined, null, 1, false])(
-    "rejects the unknown authoring role %j at the metadata field",
-    (authoringRole) => {
-      const value = { ...minimalSpec(), authoringRole };
-
-      expect(rejectionCode(value)).toBe("invalid_authoring_role");
-      expect(rejectionAt(value)).toBe("authoringRole");
+      expect(rejectionCode(value)).toBe("unknown_spec_key");
+      expect(rejectionAt(value)).toBe(key);
+      expect(validateComponentSpec(value)).toEqual(validateComponentSpec(value));
     },
   );
+
+  it("reports the retired children key first when both retired keys are present", () => {
+    const value = {
+      ...minimalSpec(),
+      [retiredChildrenKey]: true,
+      [retiredRoleKey]: "surface",
+    };
+
+    expect(rejectionCode(value)).toBe("unknown_spec_key");
+    expect(rejectionAt(value)).toBe(retiredChildrenKey);
+  });
 });
 
 describe("validateComponentSpec — a spec missing a required part is rejected", () => {
@@ -181,7 +185,7 @@ describe("validateComponentSpec — a spec missing a required part is rejected",
     { field: "tag", code: "invalid_tag" },
     { field: "whenToUse", code: "invalid_when_to_use" },
     { field: "props", code: "invalid_props" },
-    { field: "acceptsChildren", code: "invalid_accepts_children" },
+    { field: "content", code: "content_not_an_object" },
   ];
 
   it.each(missing)("rejects a spec missing $field", ({ field, code }) => {
@@ -280,6 +284,7 @@ describe("validateComponentSpec — tag and prop names use the one identifier gr
   it("accepts a prop name the identifier grammar admits", () => {
     expect(validateComponentSpec(withProps({ "data-id": stringProp() })).ok).toBe(true);
     expect(validateComponentSpec(withProps({ maxHeight: stringProp() })).ok).toBe(true);
+    expect(validateComponentSpec(withProps({ Slot: stringProp() })).ok).toBe(true);
   });
 
   it("rejects a prop name outside the identifier grammar", () => {
@@ -291,6 +296,12 @@ describe("validateComponentSpec — tag and prop names use the one identifier gr
   it("rejects a prototype-shaped own prop name", () => {
     // A computed key makes `__proto__` a real own property rather than a prototype write.
     expect(rejectionCode(withProps({ ["__proto__"]: stringProp() }))).toBe("invalid_prop_name");
+  });
+
+  it("rejects the exact structural slot attribute as a component prop", () => {
+    const value = withProps({ slot: stringProp() });
+    expect(rejectionCode(value)).toBe("reserved_prop_name");
+    expect(rejectionAt(value)).toBe("props.slot");
   });
 });
 
@@ -373,10 +384,11 @@ describe("validateComponentSpec — PropSchema is a closed JSON-Schema subset", 
     );
   });
 
-  it("rejects a non-boolean acceptsChildren", () => {
-    expect(rejectionCode({ ...minimalSpec(), acceptsChildren: "true" })).toBe(
-      "invalid_accepts_children",
+  it("rejects malformed content through the content validator", () => {
+    expect(rejectionCode({ ...minimalSpec(), content: { mode: "container" } })).toBe(
+      "invalid_content_mode",
     );
+    expect(rejectionAt({ ...minimalSpec(), content: { mode: "container" } })).toBe("content.mode");
   });
 });
 
@@ -435,6 +447,15 @@ describe("validateComponentSpec — domain and default coherence", () => {
     );
   });
 
+  it("rejects string enum values that authored markup cannot represent", () => {
+    expect(rejectionCode(withProps({ p: stringProp({ enum: ['He said "it\'s ready"'] }) }))).toBe(
+      "unrepresentable_enum_value",
+    );
+    expect(rejectionCode(withProps({ p: stringProp({ enum: ["data:status"] }) }))).toBe(
+      "unrepresentable_enum_value",
+    );
+  });
+
   it("rejects an enum value whose type contradicts the prop type", () => {
     expect(rejectionCode(withProps({ p: stringProp({ enum: ["sm", 2] }) }))).toBe(
       "invalid_enum_value",
@@ -477,6 +498,38 @@ describe("validateComponentSpec — structured props are shallow, closed and bin
     });
   });
 
+  it.each(structuredTypes)("accepts a shallow closed shape on a %s prop", (type) => {
+    const spec = accept(
+      withProps({
+        rows: structuredProp(type, {
+          shape: {
+            fields: {
+              label: { type: "string", guidance: "The visible label.", required: true },
+              rank: { type: "number", guidance: "The display rank." },
+            },
+          },
+        }),
+      }),
+    );
+    const rows = spec.props["rows"];
+    expect(rows?.type).toBe(type);
+    if (rows?.type !== "array" && rows?.type !== "object") {
+      throw new Error("expected a structured prop");
+    }
+    expect(rows.shape?.fields["label"]?.required).toBe(true);
+    expect(Object.isFrozen(rows.shape)).toBe(true);
+  });
+
+  it("rejects a malformed structured shape at its nested location", () => {
+    const bad = withProps({
+      rows: structuredProp("array", {
+        shape: { fields: { label: { type: "object", guidance: "Not scalar." } } },
+      }),
+    });
+    expect(rejectionCode(bad)).toBe("invalid_structured_field_type");
+    expect(rejectionAt(bad)).toBe("props.rows.shape.fields.label.type");
+  });
+
   it.each(structuredTypes)("freezes an accepted %s prop schema", (type) => {
     expect(Object.isFrozen(accept(withProps({ rows: structuredProp(type) })).props["rows"])).toBe(
       true,
@@ -513,7 +566,6 @@ describe("validateComponentSpec — structured props are shallow, closed and bin
     "items",
     "properties",
     "additionalProperties",
-    "shape",
   ];
 
   const forbidden = structuredTypes.flatMap((type) => forbiddenKeys.map((key) => ({ type, key })));
@@ -566,6 +618,75 @@ describe("validateComponentSpec — structured props are shallow, closed and bin
   });
 });
 
+describe("validateComponentSpec — image asset props", () => {
+  it("accepts a required image asset reference prop", () => {
+    const spec = accept(
+      withProps({
+        source: stringProp({
+          required: true,
+          assetKind: "image",
+          guidance: "The host-pinned image asset key.",
+        }),
+      }),
+    );
+    expect(spec.props["source"]).toEqual({
+      type: "string",
+      guidance: "The host-pinned image asset key.",
+      required: true,
+      assetKind: "image",
+    });
+  });
+
+  it.each([
+    { assetKind: "video" },
+    { assetKind: "image", bindable: true },
+    { assetKind: "image", default: "hero" },
+    { assetKind: "image", enum: ["hero"] },
+  ])("rejects an unsafe image asset declaration %#", (overrides) => {
+    expect(rejectionCode(withProps({ source: stringProp(overrides) }))).not.toBe("accepted");
+  });
+
+  it("rejects assetKind on non-string props through the closed schema", () => {
+    expect(rejectionCode(withProps({ source: numberProp({ assetKind: "image" }) }))).toBe(
+      "unknown_prop_key",
+    );
+  });
+});
+
+describe("validateComponentSpec — action props", () => {
+  it("accepts one literal action marker and preserves it", () => {
+    const spec = accept(
+      withProps({
+        action: stringProp({ required: true, action: true, guidance: "The action to run." }),
+      }),
+    );
+
+    expect(spec.props["action"]).toEqual({
+      type: "string",
+      guidance: "The action to run.",
+      required: true,
+      action: true,
+    });
+  });
+
+  it.each([
+    { action: false },
+    { action: "true" },
+    { action: true, bindable: true },
+    { action: true, default: "agent:submit" },
+    { action: true, enum: ["agent:submit"] },
+    { action: true, assetKind: "image" },
+  ])("rejects a non-literal or ambiguous action declaration %#", (overrides) => {
+    expect(rejectionCode(withProps({ action: stringProp(overrides) }))).not.toBe("accepted");
+  });
+
+  it("rejects action on a non-string prop through the closed schema", () => {
+    expect(rejectionCode(withProps({ action: numberProp({ action: true }) }))).toBe(
+      "unknown_prop_key",
+    );
+  });
+});
+
 describe("validateComponentSpec — the optional collect block (D-08)", () => {
   /**
    * A collectable spec carries the framework's collection address as well as
@@ -585,13 +706,47 @@ describe("validateComponentSpec — the optional collect block (D-08)", () => {
   }
 
   it("accepts a collect block naming a declared value prop", () => {
-    const spec = accept(collectSpec({ collectable: true, valueProp: "value" }));
+    const spec = accept(
+      collectSpec({ collectable: true, valueProp: "value", valueKind: "string" }),
+    );
     expect(spec.collect?.valueProp).toBe("value");
+    expect(spec.collect?.valueKind).toBe("string");
     expect(spec.collect?.sensitiveProp).toBeUndefined();
   });
 
+  it.each([
+    { valueKind: "boolean", prop: { type: "boolean", guidance: "The current value." } },
+    {
+      valueKind: "string[]",
+      prop: { type: "array", guidance: "The selected values.", bindable: true },
+    },
+  ] as const)(
+    "accepts a $valueKind collect contract matching its value prop",
+    ({ valueKind, prop }) => {
+      const spec = accept({
+        ...withProps({ name: collectNameProp(), value: prop }),
+        collect: { collectable: true, valueProp: "value", valueKind },
+      });
+      expect(spec.collect?.valueKind).toBe(valueKind);
+    },
+  );
+
+  it("requires a supported valueKind matching the value prop type", () => {
+    expect(rejectionCode(collectSpec({ collectable: true, valueProp: "value" }))).toBe(
+      "invalid_collect_value_kind",
+    );
+    expect(
+      rejectionCode(collectSpec({ collectable: true, valueProp: "value", valueKind: "boolean" })),
+    ).toBe("collect_value_kind_mismatch");
+    expect(
+      rejectionCode(collectSpec({ collectable: true, valueProp: "value", valueKind: "number" })),
+    ).toBe("invalid_collect_value_kind");
+  });
+
   it("freezes the collect block", () => {
-    const spec = accept(collectSpec({ collectable: true, valueProp: "value" }));
+    const spec = accept(
+      collectSpec({ collectable: true, valueProp: "value", valueKind: "string" }),
+    );
     expect(Object.isFrozen(spec.collect)).toBe(true);
   });
 
@@ -603,11 +758,23 @@ describe("validateComponentSpec — the optional collect block (D-08)", () => {
 
   it("rejects a sensitiveProp that is not a declared boolean prop", () => {
     expect(
-      rejectionCode(collectSpec({ collectable: true, valueProp: "value", sensitiveProp: "value" })),
+      rejectionCode(
+        collectSpec({
+          collectable: true,
+          valueProp: "value",
+          valueKind: "string",
+          sensitiveProp: "value",
+        }),
+      ),
     ).toBe("invalid_sensitive_prop");
     expect(
       rejectionCode(
-        collectSpec({ collectable: true, valueProp: "value", sensitiveProp: "missing" }),
+        collectSpec({
+          collectable: true,
+          valueProp: "value",
+          valueKind: "string",
+          sensitiveProp: "missing",
+        }),
       ),
     ).toBe("invalid_sensitive_prop");
   });
@@ -620,7 +787,9 @@ describe("validateComponentSpec — the optional collect block (D-08)", () => {
 
   it("rejects an unknown key inside the collect block", () => {
     expect(
-      rejectionCode(collectSpec({ collectable: true, valueProp: "value", writable: true })),
+      rejectionCode(
+        collectSpec({ collectable: true, valueProp: "value", valueKind: "string", writable: true }),
+      ),
     ).toBe("unknown_collect_key");
   });
 
@@ -649,7 +818,7 @@ describe("validateComponentSpec — the framework collection address (D-08)", ()
   /** A collectable spec over the given prop contract. */
   function collectable(
     props: Record<string, unknown>,
-    collect: unknown = { collectable: true, valueProp: "value" },
+    collect: unknown = { collectable: true, valueProp: "value", valueKind: "string" },
   ): Record<string, unknown> {
     return { ...withProps(props), collect };
   }
@@ -676,14 +845,18 @@ describe("validateComponentSpec — the framework collection address (D-08)", ()
   it("keeps `CollectSpec` closed — the address is a prop, not a `nameProp` key", () => {
     const spec = collectable(
       { ...valueProps, name: collectNameProp() },
-      { collectable: true, valueProp: "value", nameProp: "name" },
+      { collectable: true, valueProp: "value", valueKind: "string", nameProp: "name" },
     );
     expect(rejectionCode(spec)).toBe("unknown_collect_key");
     expect(rejectionAt(spec)).toBe("collect.nameProp");
   });
 
   it("accepts the address without widening the collect block itself", () => {
-    expect(Object.keys(accept(addressed({})).collect ?? {})).toEqual(["collectable", "valueProp"]);
+    expect(Object.keys(accept(addressed({})).collect ?? {})).toEqual([
+      "collectable",
+      "valueProp",
+      "valueKind",
+    ]);
   });
 
   it("rejects a collectable spec that declares no `name` prop at all", () => {
@@ -752,7 +925,7 @@ describe("validateComponentSpec — the framework collection address (D-08)", ()
       addressed({ bindable: false }),
       collectable(
         { ...valueProps, name: collectNameProp() },
-        { collectable: true, valueProp: "name" },
+        { collectable: true, valueProp: "name", valueKind: "string" },
       ),
     ];
     expect(nonconforming.map(rejectionCode)).toEqual(
@@ -773,9 +946,11 @@ describe("validateComponentSpec — the framework collection address (D-08)", ()
   it("reports the collect block's own faults before the missing address", () => {
     const bare = (collect: unknown): Record<string, unknown> => collectable(valueProps, collect);
     expect(rejectionCode(bare("value"))).toBe("invalid_collect");
-    expect(rejectionCode(bare({ collectable: true, valueProp: "value", writable: true }))).toBe(
-      "unknown_collect_key",
-    );
+    expect(
+      rejectionCode(
+        bare({ collectable: true, valueProp: "value", valueKind: "string", writable: true }),
+      ),
+    ).toBe("unknown_collect_key");
     expect(rejectionCode(bare({ collectable: false, valueProp: "value" }))).toBe(
       "invalid_collectable",
     );
@@ -783,11 +958,18 @@ describe("validateComponentSpec — the framework collection address (D-08)", ()
       "unknown_value_prop",
     );
     expect(
-      rejectionCode(bare({ collectable: true, valueProp: "value", sensitiveProp: "value" })),
+      rejectionCode(
+        bare({
+          collectable: true,
+          valueProp: "value",
+          valueKind: "string",
+          sensitiveProp: "value",
+        }),
+      ),
     ).toBe("invalid_sensitive_prop");
     // An undeclared `valueProp` keeps its own earlier code even when the name it
     // spells is the address — the collision branch below is never reached.
-    expect(rejectionCode(bare({ collectable: true, valueProp: "name" }))).toBe(
+    expect(rejectionCode(bare({ collectable: true, valueProp: "name", valueKind: "string" }))).toBe(
       "unknown_value_prop",
     );
   });
@@ -795,7 +977,7 @@ describe("validateComponentSpec — the framework collection address (D-08)", ()
   it("rejects a `valueProp` that names the address itself", () => {
     const collided = collectable(
       { ...valueProps, name: collectNameProp() },
-      { collectable: true, valueProp: "name" },
+      { collectable: true, valueProp: "name", valueKind: "string" },
     );
     expect(rejectionCode(collided)).toBe("nonconforming_collect_name");
     expect(rejectionAt(collided)).toBe("collect.valueProp");
@@ -806,7 +988,7 @@ describe("validateComponentSpec — the framework collection address (D-08)", ()
     // spec that is wrong in both ways reports the address fault it has.
     const both = collectable(
       { ...valueProps, name: collectNameProp({ bindable: true }) },
-      { collectable: true, valueProp: "name" },
+      { collectable: true, valueProp: "name", valueKind: "string" },
     );
     expect(rejectionCode(both)).toBe("nonconforming_collect_name");
     expect(rejectionAt(both)).toBe("props.name.bindable");
@@ -817,7 +999,7 @@ describe("validateComponentSpec — the framework collection address (D-08)", ()
     // type mismatch the pre-existing check catches, ahead of the address rule.
     const collided = collectable(
       { ...valueProps, name: collectNameProp() },
-      { collectable: true, valueProp: "value", sensitiveProp: "name" },
+      { collectable: true, valueProp: "value", valueKind: "string", sensitiveProp: "name" },
     );
     expect(rejectionCode(collided)).toBe("invalid_sensitive_prop");
     expect(rejectionAt(collided)).toBe("collect.sensitiveProp");
@@ -886,7 +1068,7 @@ describe("validateComponentSpec — the framework collection request list (D-08)
   function collectingRequester(
     request: unknown,
     name: unknown = collectNameProp(),
-    block: unknown = { collectable: true, valueProp: "value" },
+    block: unknown = { collectable: true, valueProp: "value", valueKind: "string" },
   ): Record<string, unknown> {
     const props: Record<string, unknown> = { value: collectedValueProp, collect: request };
     if (name !== NO_ADDRESS) {
@@ -979,7 +1161,7 @@ describe("validateComponentSpec — the framework collection request list (D-08)
   it("obliges nobody to declare it — a collectable spec with no list is accepted", () => {
     const field = {
       ...withProps({ value: collectedValueProp, name: collectNameProp() }),
-      collect: { collectable: true, valueProp: "value" },
+      collect: { collectable: true, valueProp: "value", valueKind: "string" },
     };
     expect(validateComponentSpec(field).ok).toBe(true);
   });
@@ -1025,11 +1207,11 @@ describe("validateComponentSpec — the framework collection request list (D-08)
   it("runs ahead of every fault inside the collect block, because it reads props", () => {
     const blocks: readonly unknown[] = [
       "value",
-      { collectable: true, valueProp: "value", writable: true },
+      { collectable: true, valueProp: "value", valueKind: "string", writable: true },
       { collectable: false, valueProp: "value" },
       { collectable: true, valueProp: "missing" },
-      { collectable: true, valueProp: "value", sensitiveProp: "value" },
-      { collectable: true, valueProp: "name" },
+      { collectable: true, valueProp: "value", valueKind: "string", sensitiveProp: "value" },
+      { collectable: true, valueProp: "name", valueKind: "string" },
     ];
     for (const block of blocks) {
       const spec = collectingRequester(requestProp({ bindable: true }), collectNameProp(), block);
@@ -1236,7 +1418,7 @@ describe("validateComponentSpec — the framework event argument (D-07)", () => 
         name: collectNameProp(),
         value: stringProp({ guidance: "The current value." }),
       }),
-      collect: { collectable: true, valueProp: "value" },
+      collect: { collectable: true, valueProp: "value", valueKind: "string" },
     };
     expect(rejectionCode(field)).toBe("nonconforming_event_arg");
     expect(rejectionAt(field)).toBe("props.arg.bindable");
@@ -1265,7 +1447,7 @@ describe("validateComponentSpec — the framework event argument (D-07)", () => 
         name: collectNameProp({ bindable: true }),
         value: stringProp({ guidance: "The current value." }),
       }),
-      collect: { collectable: true, valueProp: "value" },
+      collect: { collectable: true, valueProp: "value", valueKind: "string" },
     };
     expect([rejectionCode(arg), rejectionAt(arg)]).toEqual([
       "nonconforming_event_arg",

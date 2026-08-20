@@ -134,7 +134,12 @@ function validateNextDocument(
   if (!parsed.ok) {
     return authorReject(parsed.error);
   }
-  const validated = validateAuthorMarkup(parsed.ast, session.catalog, session.data);
+  const validated = validateAuthorMarkup(
+    parsed.ast,
+    session.catalog,
+    session.data,
+    session.assetRegistry,
+  );
   if (!validated.ok) {
     return authorReject(validated.error);
   }
@@ -190,6 +195,16 @@ function cloneNode(
     ...node,
     props: Object.freeze([...props]),
     children: Object.freeze([...children]),
+  });
+}
+
+function withSlot(node: MarkupNode, slot: string | undefined): MarkupNode {
+  return Object.freeze({
+    tag: node.tag,
+    ...(slot === undefined ? {} : { slot }),
+    props: node.props,
+    children: node.children,
+    location: node.location,
   });
 }
 
@@ -427,7 +442,12 @@ function validateCandidate(
 ):
   | { readonly ok: true; readonly document: ComponentDocument }
   | Extract<AuthorMutationResult, { ok: false }> {
-  const validated = validateAuthorMarkup(stripIds(candidateAst), session.catalog, session.data);
+  const validated = validateAuthorMarkup(
+    stripIds(candidateAst),
+    session.catalog,
+    session.data,
+    session.assetRegistry,
+  );
   if (!validated.ok) {
     return authorReject(validated.error);
   }
@@ -507,22 +527,27 @@ function targetedDocument(
   }
 
   if (kind === "replace_subtree") {
-    const boundary = checkReplaceBoundary(document, target.targetId, located.node, freshFragment);
+    const replacement =
+      freshFragment.slot === undefined ? withSlot(freshFragment, located.node.slot) : freshFragment;
+    const boundary = checkReplaceBoundary(document, target.targetId, located.node, replacement);
     if (boundary !== null) {
       return boundary;
     }
-    return validateCandidate(session, rewriteTarget(current.ast, target.targetId, freshFragment));
+    return validateCandidate(session, rewriteTarget(current.ast, target.targetId, replacement));
   }
 
   if (freshFragment.children.length > 0) {
     return invalidFragment("update_node markup must be one childless component declaration.");
+  }
+  if (freshFragment.slot !== undefined && freshFragment.slot !== located.node.slot) {
+    return invalidFragment("update_node markup must preserve the target slot.");
   }
   const boundary = checkUpdateBoundary(document, target.targetId, located.node, freshFragment);
   if (boundary !== null) {
     return boundary;
   }
   const updated = cloneNode(
-    freshFragment,
+    withSlot(freshFragment, located.node.slot),
     [
       ...freshFragment.props.filter((prop) => prop.name !== ID_PROP),
       scalarIdProp(target.targetId, located.node),

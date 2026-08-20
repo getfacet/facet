@@ -76,19 +76,19 @@ const SPECS: readonly ComponentSpec[] = [
     tag: "Screen",
     whenToUse: "A screen root.",
     props: { name: { type: "string", required: true, guidance: "The screen name." } },
-    acceptsChildren: true,
+    content: { mode: "children" },
   },
   {
     tag: "Stack",
     whenToUse: "A layout container.",
     props: {},
-    acceptsChildren: true,
+    content: { mode: "children" },
   },
   {
     tag: "Rogue",
     whenToUse: "A registered component that tries to escape its stacking context.",
     props: {},
-    acceptsChildren: false,
+    content: { mode: "none" },
   },
 ];
 
@@ -132,6 +132,7 @@ function context(): MountContext {
     document: DOCUMENT,
     index: INDEX,
     registry: REGISTRY,
+    assetRegistry: Object.freeze(Object.create(null)),
     themeVars: {},
     copy: NEUTRAL_COPY_DEFAULTS,
     store: createFieldStore(),

@@ -33,7 +33,7 @@ const PROMO_BANNER_SPEC: ComponentSpec = Object.freeze({
   tag: "PromoBanner",
   whenToUse: "Use for a branded promotional callout.",
   props: Object.freeze({}),
-  acceptsChildren: false,
+  content: Object.freeze({ mode: "none" }),
   themeRecipe: Object.freeze({
     tokens: Object.freeze({
       accent: "color",

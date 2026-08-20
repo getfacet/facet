@@ -86,6 +86,7 @@ import type {
   ComponentNode,
   ComponentSpec,
   DataModel,
+  FacetAssetRegistry,
 } from "@facet/core";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { readFileSync } from "node:fs";
@@ -118,6 +119,8 @@ const THEME_VARS: Readonly<Record<string, string>> = Object.freeze({
   "--facet-semantic-text-default": "#101010",
 });
 
+const ASSET_REGISTRY: FacetAssetRegistry = Object.freeze(Object.create(null));
+
 /** The internal detail a deliberately crashing component carries. */
 const CRASH_MESSAGE = "boom: internal detail 0xfeedface";
 
@@ -133,7 +136,7 @@ const SPECS: readonly ComponentSpec[] = [
     tag: "Screen",
     whenToUse: "A screen root.",
     props: { name: { type: "string", required: true, guidance: "The screen name." } },
-    acceptsChildren: true,
+    content: { mode: "children" },
   },
   {
     tag: "Stack",
@@ -141,7 +144,7 @@ const SPECS: readonly ComponentSpec[] = [
     props: {
       gap: { type: "string", enum: ["tight", "loose"], default: "tight", guidance: "Spacing." },
     },
-    acceptsChildren: true,
+    content: { mode: "children" },
   },
   {
     tag: "Text",
@@ -149,10 +152,10 @@ const SPECS: readonly ComponentSpec[] = [
     props: {
       value: { type: "string", required: true, guidance: "What it says." },
       total: { type: "number", bindable: true, guidance: "A bound number." },
-      action: { type: "string", guidance: "May carry an action reference." },
+      action: { type: "string", action: true, guidance: "May carry an action reference." },
       arg: { type: "string", guidance: "The event argument." },
     },
-    acceptsChildren: false,
+    content: { mode: "none" },
   },
   {
     tag: "Field",
@@ -162,20 +165,25 @@ const SPECS: readonly ComponentSpec[] = [
       value: { type: "string", default: "", guidance: "The value shown." },
       secret: { type: "boolean", default: false, guidance: "Whether it is withheld." },
     },
-    acceptsChildren: false,
-    collect: { collectable: true, valueProp: "value", sensitiveProp: "secret" },
+    content: { mode: "none" },
+    collect: {
+      collectable: true,
+      valueProp: "value",
+      valueKind: "string",
+      sensitiveProp: "secret",
+    },
   },
   {
     tag: "Rogue",
     whenToUse: "A registered component that tries to escape its stacking context.",
     props: {},
-    acceptsChildren: false,
+    content: { mode: "none" },
   },
   {
     tag: "Flaky",
     whenToUse: "A registered component that throws for one authored value.",
     props: { value: { type: "string", required: true, guidance: "What it says, or `boom`." } },
-    acceptsChildren: false,
+    content: { mode: "none" },
   },
   {
     tag: "Modal",
@@ -185,7 +193,35 @@ const SPECS: readonly ComponentSpec[] = [
       title: { type: "string", default: "Details", guidance: "The dialog's name." },
       total: { type: "number", bindable: true, guidance: "A bound number." },
     },
-    acceptsChildren: true,
+    content: {
+      mode: "slots",
+      slots: {
+        body: { guidance: "Content shown in the frame.", minChildren: 1, maxChildren: 16 },
+        actions: { guidance: "Actions shown in the footer.", minChildren: 0, maxChildren: 4 },
+      },
+    },
+  },
+  {
+    tag: "Structured",
+    whenToUse: "A fixture with named regions.",
+    props: {},
+    content: {
+      mode: "slots",
+      slots: {
+        heading: {
+          guidance: "One heading.",
+          minChildren: 1,
+          maxChildren: 1,
+          allowedTags: ["Text"],
+        },
+        body: {
+          guidance: "Ordered body content.",
+          minChildren: 1,
+          maxChildren: 2,
+          allowedTags: ["Text"],
+        },
+      },
+    },
   },
   // Two near misses, registered and mounted beside the real one. They exist so
   // "the exact tag" is a claim the suite can falsify: a prefix test and a
@@ -194,13 +230,13 @@ const SPECS: readonly ComponentSpec[] = [
     tag: "ModalPanel",
     whenToUse: "A tag whose name begins with the reserved one.",
     props: {},
-    acceptsChildren: false,
+    content: { mode: "none" },
   },
   {
     tag: "modal",
     whenToUse: "A tag that differs from the reserved one only in case.",
     props: {},
-    acceptsChildren: false,
+    content: { mode: "none" },
   },
 ];
 
@@ -208,6 +244,10 @@ const INDEX: ReadonlyMap<string, ComponentSpec> = new Map(SPECS.map((spec) => [s
 
 /** Every mount this suite observed, in order, so a remount is visible. */
 const mounts: string[] = [];
+
+const stackContracts: ComponentMountProps<ReactNode>[] = [];
+
+const textContracts: ComponentMountProps<ReactNode>[] = [];
 
 function ScreenImpl({ props, children }: ComponentMountProps<ReactNode>): ReactNode {
   return (
@@ -217,16 +257,18 @@ function ScreenImpl({ props, children }: ComponentMountProps<ReactNode>): ReactN
   );
 }
 
-function StackImpl({ props, children }: ComponentMountProps<ReactNode>): ReactNode {
+function StackImpl(contract: ComponentMountProps<ReactNode>): ReactNode {
+  stackContracts.push(contract);
   return (
-    <div data-testid="stack" data-gap={String(props["gap"] ?? "")}>
-      {children}
+    <div data-testid="stack" data-gap={String(contract.props["gap"] ?? "")}>
+      {contract.children}
     </div>
   );
 }
 
-function TextImpl({ props, themeVars, onAction }: ComponentMountProps<ReactNode>): ReactNode {
-  const label = String(props["value"] ?? "");
+function TextImpl(contract: ComponentMountProps<ReactNode>): ReactNode {
+  textContracts.push(contract);
+  const label = String(contract.props["value"] ?? "");
   // Deliberately mount-only: a dependency list would re-fire on every render and
   // the question this records is whether the subtree was *remounted*.
   useEffect(() => {
@@ -236,10 +278,12 @@ function TextImpl({ props, themeVars, onAction }: ComponentMountProps<ReactNode>
     <button
       type="button"
       data-testid="text"
-      data-total={props["total"] === undefined ? "absent" : String(props["total"])}
-      data-theme={themeVars["--facet-semantic-text-default"] ?? ""}
+      data-total={
+        contract.props["total"] === undefined ? "absent" : String(contract.props["total"])
+      }
+      data-theme={contract.themeVars["--facet-semantic-text-default"] ?? ""}
       onClick={() => {
-        onAction("action");
+        contract.onAction("action");
       }}
     >
       {label}
@@ -297,6 +341,8 @@ function FlakyImpl({ props }: ComponentMountProps<ReactNode>): ReactNode {
 /** Every mount contract the registered `Modal` was handed, in order. */
 const modalContracts: ComponentMountProps<ReactNode>[] = [];
 
+const structuredContracts: ComponentMountProps<ReactNode>[] = [];
+
 /**
  * The trusted registered `Modal`: flow content, and nothing else.
  *
@@ -312,8 +358,19 @@ function ModalImpl(contract: ComponentMountProps<ReactNode>): ReactNode {
   }
   return (
     <div data-testid="modal-content" data-title={String(contract.props["title"] ?? "")}>
-      {contract.children}
+      {contract.slots["body"]}
+      {contract.slots["actions"]}
     </div>
+  );
+}
+
+function StructuredImpl(contract: ComponentMountProps<ReactNode>): ReactNode {
+  structuredContracts.push(contract);
+  return (
+    <article data-testid="structured">
+      <header data-testid="structured-heading">{contract.slots["heading"]}</header>
+      <section data-testid="structured-body">{contract.slots["body"]}</section>
+    </article>
   );
 }
 
@@ -329,6 +386,7 @@ const REGISTRY: ComponentRegistry = Object.freeze({
   Rogue: RogueImpl,
   Flaky: FlakyImpl,
   Modal: ModalImpl,
+  Structured: StructuredImpl,
   ModalPanel: NearMissImpl,
   modal: NearMissImpl,
 });
@@ -371,8 +429,9 @@ function node(
   tag: string,
   props: Readonly<Record<string, StoredValue>> = {},
   children: readonly string[] = [],
+  slot?: string,
 ): ComponentNode {
-  return { tag, props, children };
+  return { tag, props, children, ...(slot === undefined ? {} : { slot }) };
 }
 
 /** A screen root carrying the fixture name every document below lands on. */
@@ -392,6 +451,7 @@ function context(document: ComponentDocument, overrides: Partial<MountContext> =
     document,
     index: INDEX,
     registry: REGISTRY,
+    assetRegistry: ASSET_REGISTRY,
     themeVars: THEME_VARS,
     copy: COPY,
     store: createFieldStore(),
@@ -572,6 +632,130 @@ describe("MountNode — mounting a registered implementation", () => {
   });
 });
 
+describe("MountNode — content modes and named slots", () => {
+  beforeEach(() => {
+    structuredContracts.length = 0;
+    stackContracts.length = 0;
+    textContracts.length = 0;
+  });
+
+  it("passes structured children only through a frozen named slots map", () => {
+    const { container } = mount(
+      document_({
+        n1: screen(["n2"]),
+        n2: node("Structured", {}, ["n3", "n4", "n5"]),
+        n3: node("Text", { value: scalar("Heading") }, [], "heading"),
+        n4: node("Text", { value: scalar("First") }, [], "body"),
+        n5: node("Text", { value: scalar("Second") }, [], "body"),
+      }),
+    );
+
+    expect(container.querySelector('[data-testid="structured-heading"]')?.textContent).toBe(
+      "Heading",
+    );
+    expect(container.querySelector('[data-testid="structured-body"]')?.textContent).toBe(
+      "FirstSecond",
+    );
+    const contract = structuredContracts[0];
+    expect(contract?.children).toEqual([]);
+    expect(Object.isFrozen(contract?.slots)).toBe(true);
+    expect(Object.isFrozen(contract?.slots["heading"])).toBe(true);
+    expect(Object.isFrozen(contract?.slots["body"])).toBe(true);
+    expect(Object.keys(contract?.slots ?? {}).sort()).toEqual(["body", "heading"]);
+  });
+
+  it("passes ordinary children with an immutable empty slots map", () => {
+    const { container } = mount(
+      document_({
+        n1: screen(["n2"]),
+        n2: node("Stack", {}, ["n3"]),
+        n3: node("Text", { value: scalar("ordinary") }),
+      }),
+    );
+
+    expect(container.querySelector('[data-testid="text"]')?.textContent).toBe("ordinary");
+    expect(stackContracts[0]?.slots).toEqual({});
+    expect(Object.isFrozen(stackContracts[0]?.slots)).toBe(true);
+  });
+
+  it("passes a leaf immutable empty children and slots values", () => {
+    mount(document_({ n1: screen(["n2"]), n2: node("Text", { value: scalar("leaf") }) }));
+
+    const leaf = textContracts.find((contract) => contract.props["value"] === "leaf");
+    expect(leaf?.children).toEqual([]);
+    expect(leaf?.slots).toEqual({});
+    expect(Object.isFrozen(leaf?.children)).toBe(true);
+    expect(Object.isFrozen(leaf?.slots)).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "missing slot",
+      children: {
+        n3: node("Text", { value: scalar("Unassigned") }),
+        n4: node("Text", { value: scalar("Heading") }, [], "heading"),
+        n5: node("Text", { value: scalar("Body") }, [], "body"),
+      },
+    },
+    {
+      name: "unknown slot",
+      children: {
+        n3: node("Text", { value: scalar("Unknown") }, [], "unknown"),
+        n4: node("Text", { value: scalar("Heading") }, [], "heading"),
+        n5: node("Text", { value: scalar("Body") }, [], "body"),
+      },
+    },
+    {
+      name: "disallowed tag",
+      children: {
+        n3: node("Stack", {}, [], "heading"),
+        n4: node("Text", { value: scalar("Body") }, [], "body"),
+      },
+    },
+    {
+      name: "missing required slot content",
+      children: {
+        n3: node("Text", { value: scalar("Heading") }, [], "heading"),
+      },
+    },
+    {
+      name: "excess slot content",
+      children: {
+        n3: node("Text", { value: scalar("Heading one") }, [], "heading"),
+        n4: node("Text", { value: scalar("Heading two") }, [], "heading"),
+        n5: node("Text", { value: scalar("Body") }, [], "body"),
+      },
+    },
+  ])("degrades a structured subtree with a $name and preserves its sibling", ({ children }) => {
+    const { container } = mount(
+      document_({
+        n1: screen(["n2", "n9"]),
+        n2: node("Structured", {}, Object.keys(children)),
+        ...children,
+        n9: SIBLING,
+      }),
+    );
+
+    expect(container.querySelectorAll(CORRUPT)).toHaveLength(1);
+    expect(container.querySelector('[data-testid="structured"]')).toBeNull();
+    expect(container.querySelector('[data-testid="text"]')?.textContent).toBe("sibling");
+  });
+
+  it("degrades ordinary children that carry a named slot", () => {
+    const { container } = mount(
+      document_({
+        n1: screen(["n2", "n9"]),
+        n2: node("Stack", {}, ["n3"]),
+        n3: node("Text", { value: scalar("misplaced") }, [], "body"),
+        n9: SIBLING,
+      }),
+    );
+
+    expect(container.querySelectorAll(CORRUPT)).toHaveLength(1);
+    expect(container.querySelector('[data-testid="text"]')?.textContent).toBe("sibling");
+  });
+});
+
 /**
  * The seam that keeps the one overlap primitive out of the flow it is declared
  * in.
@@ -596,12 +780,21 @@ describe("Mounted — the Modal insertion seam", () => {
   const MODEL: DataModel = { sales: { total: 7 } };
 
   /** The Modal node every fixture below mounts, with a valid sibling beside it. */
-  const MODAL_NODE = node("Modal", {
-    triggerLabel: scalar("Open"),
-    total: reference("data", "sales.total"),
-  });
+  const MODAL_NODE = node(
+    "Modal",
+    {
+      triggerLabel: scalar("Open"),
+      total: reference("data", "sales.total"),
+    },
+    ["n4"],
+  );
 
-  const DOCUMENT = document_({ n1: screen(["n2", "n3"]), n2: MODAL_NODE, n3: SIBLING });
+  const DOCUMENT = document_({
+    n1: screen(["n2", "n3"]),
+    n2: MODAL_NODE,
+    n3: SIBLING,
+    n4: node("Text", { value: scalar("body") }, [], "body"),
+  });
 
   beforeEach(() => {
     seamRequests.length = 0;
@@ -645,6 +838,8 @@ describe("Mounted — the Modal insertion seam", () => {
     // twice, and the count is what says so.
     expect(content.length).toBe(1);
     expect(modalContracts.length).toBe(1);
+    expect(Object.keys(modalContracts[0]?.slots ?? {})).toEqual(["body"]);
+    expect(modalContracts[0]?.slots["actions"]).toBeUndefined();
     const frame = container.querySelector('[data-testid="frame"]');
     expect(frame).not.toBeNull();
     expect(frame?.contains(content[0] as Node)).toBe(true);
@@ -670,7 +865,7 @@ describe("Mounted — the Modal insertion seam", () => {
       n1: screen(["n2", "n3"]),
       n2: node("Modal", { triggerLabel: scalar("Open") }, ["n4"]),
       n3: SIBLING,
-      n4: node("Text", { value: scalar("inside") }),
+      n4: node("Text", { value: scalar("inside") }, [], "body"),
     });
 
     const opened = mount(withChild, { overrides: { renderModal: openFrame } });
@@ -716,8 +911,9 @@ describe("Mounted — the Modal insertion seam", () => {
     const { container } = mount(
       document_({
         n1: screen(["n2", "n3"]),
-        n2: node("Dialog", { triggerLabel: scalar("Open") }),
+        n2: node("Dialog", { triggerLabel: scalar("Open") }, ["n4"]),
         n3: SIBLING,
+        n4: node("Text", { value: scalar("inside") }, [], "body"),
       }),
       { overrides: { index, registry } },
     );
@@ -759,8 +955,9 @@ describe("Mounted — the Modal insertion seam", () => {
   it("keeps the routed content under this node's own subtree boundary", () => {
     const crashing = document_({
       n1: screen(["n2", "n3"]),
-      n2: node("Modal", { triggerLabel: scalar("Open"), title: scalar("boom") }),
+      n2: node("Modal", { triggerLabel: scalar("Open"), title: scalar("boom") }, ["n4"]),
       n3: SIBLING,
+      n4: node("Text", { value: scalar("inside") }, [], "body"),
     });
 
     // If the routed content were rendered outside this node's boundary, the
@@ -791,7 +988,7 @@ describe("Mounted — the Modal insertion seam", () => {
     // put a dialog in the page, which is the failure the seam exists to stop.
     const collectable: ComponentSpec = {
       ...MODAL_SPEC,
-      collect: { collectable: true, valueProp: "title" },
+      collect: { collectable: true, valueProp: "title", valueKind: "string" },
     };
     const { container } = mount(DOCUMENT, {
       model: MODEL,
@@ -1278,7 +1475,7 @@ describe("mountOrFallback — a node-scoped resolution issue", () => {
   it("is degraded through the corrupt path, not caught as a crash by the parent", () => {
     // The distinction is the whole point, and it is invisible if you only ask
     // whether an error escaped. Mounting reads a spec *before* `resolveProps`
-    // runs — `acceptsChildren` — and an unguarded read there throws from inside
+    // runs — `content` — and an unguarded read there throws from inside
     // the **parent's** render, where the parent's own `SubtreeBoundary` catches
     // it. Nothing escapes, so a "did anything throw" assertion passes happily
     // while the blast radius has silently grown from this node's subtree to its
@@ -1317,6 +1514,23 @@ describe("deriveResetToken — the node-local derivation (D3)", () => {
     // Deterministic, so a node holding an unserialisable value does not remount
     // on every render.
     expect(deriveResetToken("Text", { rows: hostile.rows }, [])).toBe(token);
+  });
+
+  it("keeps large shared structured values out of retained reset tokens", () => {
+    let serializations = 0;
+    const shared = {
+      toJSON() {
+        serializations += 1;
+        return { payload: "x".repeat(BOUNDS.dataModelStringChars) };
+      },
+    };
+
+    const first = deriveResetToken("Table", { rows: shared }, []);
+    const second = deriveResetToken("Table", { rows: shared }, []);
+
+    expect(first).toBe(second);
+    expect(first.length).toBeLessThan(256);
+    expect(serializations).toBe(1);
   });
 
   it("is byte-identical when an unrelated node changes and when an unrelated publish lands", () => {

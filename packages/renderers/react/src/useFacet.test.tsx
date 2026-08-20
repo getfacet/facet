@@ -55,7 +55,7 @@ const SCREEN_SPEC: ComponentSpec = {
   props: {
     name: { type: "string", required: true, guidance: "The screen name." },
   },
-  acceptsChildren: true,
+  content: { mode: "children" },
 };
 
 const TEXT_SPEC: ComponentSpec = {
@@ -64,7 +64,7 @@ const TEXT_SPEC: ComponentSpec = {
   props: {
     value: { type: "string", required: true, bindable: true, guidance: "The words to show." },
   },
-  acceptsChildren: false,
+  content: { mode: "none" },
 };
 
 const FIELD_SPEC: ComponentSpec = {
@@ -75,8 +75,8 @@ const FIELD_SPEC: ComponentSpec = {
     label: { type: "string", required: true, guidance: "The field label." },
     value: { type: "string", default: "", guidance: "The value shown." },
   },
-  acceptsChildren: false,
-  collect: { collectable: true, valueProp: "value" },
+  content: { mode: "none" },
+  collect: { collectable: true, valueProp: "value", valueKind: "string" },
 };
 
 const MODAL_SPEC: ComponentSpec = {
@@ -86,7 +86,13 @@ const MODAL_SPEC: ComponentSpec = {
     triggerLabel: { type: "string", required: true, guidance: "The trigger label." },
     title: { type: "string", required: true, guidance: "The dialog title." },
   },
-  acceptsChildren: true,
+  content: {
+    mode: "slots",
+    slots: {
+      body: { guidance: "Content shown in the frame.", minChildren: 1, maxChildren: 16 },
+      actions: { guidance: "Actions shown in the footer.", minChildren: 0, maxChildren: 4 },
+    },
+  },
 };
 
 const EXPLODER_SPEC: ComponentSpec = {
@@ -95,7 +101,7 @@ const EXPLODER_SPEC: ComponentSpec = {
   props: {
     mode: { type: "string", required: true, enum: ["boom", "safe"], guidance: "Throw or render." },
   },
-  acceptsChildren: false,
+  content: { mode: "none" },
 };
 
 function screenImpl({ props, children }: ComponentMountProps<ReactNode>): ReactNode {
@@ -123,10 +129,11 @@ function fieldImpl({ props, onValueChange }: ComponentMountProps<ReactNode>): Re
   );
 }
 
-function modalImpl({ props, children }: ComponentMountProps<ReactNode>): ReactNode {
+function modalImpl({ props, slots }: ComponentMountProps<ReactNode>): ReactNode {
   return (
     <div data-testid="modal-content" data-title={String(props["title"] ?? "")}>
-      {children}
+      {slots["body"]}
+      {slots["actions"]}
     </div>
   );
 }
@@ -186,8 +193,9 @@ const INTERACTIVE_DOCUMENT: ComponentDocument = {
     m1: {
       tag: "Modal",
       props: { triggerLabel: scalar("Filter"), title: scalar("Filter") },
-      children: [],
+      children: ["mt1"],
     },
+    mt1: { tag: "Text", slot: "body", props: { value: scalar("Modal body") }, children: [] },
     e1: { tag: "Exploder", props: { mode: scalar("boom") }, children: [] },
   },
 };

@@ -1,205 +1,749 @@
-/**
- * The trusted React implementations of the two interactive components:
- * `Button` and `Field`.
- *
- * These three are where the mount contract earns its shape, because they are the
- * only default components that do anything.
- *
- * **`Button` reports; it does not act.** Activating it calls `onAction("action")`
- * and stops there. The renderer holds the node, parses the `nav:` or `agent:`
- * reference and decides what happens next, so this file contains no router, no
- * anchor, no history call and no idea what a screen is. That is also why the
- * control is an explicit `type="button"`: the HTML default is `submit`, which
- * would navigate on its own the moment a host wrapped the page in a form —
- * exactly the local action path the invariants refuse.
- *
- * **`Field` is controlled by Facet (D-08).** The value arrives as a prop and the
- * visitor's edit leaves through `onValueChange`; the component never keeps state,
- * never writes the value into an attribute, and never stamps its collect name
- * into the DOM. The catalog declares which prop is the value and which flags it
- * sensitive, so collectable identity is spec-owned — a component cannot opt
- * itself in or quietly yield nothing. A secret field masks its value and keeps it
- * out of everything but the masked control it belongs to.
- *
- * Styling is token names and nothing else — no raw CSS, no `position`, no
- * `z-index`. Each root carries the active theme's custom properties and every
- * declaration references a token by name, so a control resolves the theme that
- * is active now rather than the one that was active when it first rendered.
- *
- * The module is **private**: it is not barrel-exported and is not a package
- * entry point. `react.tsx` composes these into the one default registry.
- */
+/** Trusted React implementations for inputs, communication, and disclosure. */
 
+import { BOUNDS } from "@facet/core";
 import type { ComponentMountProps, MountedComponent } from "@facet/core";
-import type { ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 import type { FlowStyle } from "./style.js";
-import { flowStyle, foundation, mountStyle, recipe } from "./style.js";
+import {
+  enumProp,
+  flagProp,
+  flowStyle,
+  foundation,
+  mountStyle,
+  recipe,
+  textProp,
+} from "./style.js";
 
-/** What one of these components is handed. React supplies both element types. */
 type Mount = ComponentMountProps<ReactNode>;
 
-/** Reads a declared string prop, falling back when the value is anything else. */
-function readString(mount: Mount, name: string, fallback: string): string {
-  const value = mount.props[name];
-  return typeof value === "string" ? value : fallback;
-}
+const FORM_LAYOUTS = ["stacked", "inline"] as const;
+const CHOICE_LAYOUTS = ["stacked", "inline"] as const;
 
-/** Reads a declared boolean prop, falling back when the value is anything else. */
-function readBoolean(mount: Mount, name: string, fallback: boolean): boolean {
-  const value = mount.props[name];
-  return typeof value === "boolean" ? value : fallback;
-}
+const ROOT_BOUNDS: FlowStyle = Object.freeze({
+  boxSizing: "border-box",
+  width: "100%",
+  minWidth: 0,
+  maxWidth: "100%",
+});
 
-/** Reads a declared enum prop, folding a value outside the domain to the default. */
-function readEnum<Value extends string>(
-  mount: Mount,
-  name: string,
-  allowed: readonly Value[],
-  fallback: Value,
-): Value {
-  const value = mount.props[name];
-  return allowed.find((candidate) => candidate === value) ?? fallback;
-}
-
-/**
- * How prominent each `Button` tone is, as the pair of token references it paints
- * with. `quiet` carries no fill and no border at all, which is what makes it
- * read as the least of three controls without needing a token of its own — its
- * `transparent` is a CSS keyword rather than a token, because "no paint" is not
- * a value a host reskins.
- */
-const BUTTON_TONES = {
-  primary: {
-    background: recipe("button", "primaryBg"),
-    color: recipe("button", "primaryText"),
-    border: recipe("button", "primaryBorder"),
-    bordered: true,
-  },
-  secondary: {
-    background: recipe("button", "secondaryBg"),
-    color: recipe("button", "secondaryText"),
-    border: recipe("button", "secondaryBorder"),
-    bordered: true,
-  },
-  quiet: {
-    background: "transparent",
-    color: recipe("button", "quietText"),
-    border: "transparent",
-    bordered: false,
-  },
-} as const;
-
-const BUTTON_TONE_NAMES = Object.keys(BUTTON_TONES) as readonly (keyof typeof BUTTON_TONES)[];
-
-/**
- * One control that reports an activation and nothing more.
- *
- * `onAction` is handed the name of this component's own declared action prop.
- * Passing the prop name rather than the resolved reference is what keeps the
- * decision on the renderer's side: this file never learns whether `action` said
- * `nav:` or `agent:`, so it cannot grow a shortcut for either.
- */
-export const Button: MountedComponent<ReactNode, ReactNode> = (mount) => {
-  const label = readString(mount, "label", "");
-  const tone = BUTTON_TONES[readEnum(mount, "tone", BUTTON_TONE_NAMES, "secondary")];
-  const onAction = mount.onAction;
-
-  const style: FlowStyle = {
+function regionStyle(extra: FlowStyle = {}): ReturnType<typeof flowStyle> {
+  return flowStyle({
     boxSizing: "border-box",
     minWidth: 0,
     maxWidth: "100%",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: foundation("space", "xs"),
-    padding: `${recipe("button", "paddingBlock")} ${recipe("button", "paddingInline")}`,
-    borderRadius: recipe("button", "radius"),
-    border: tone.bordered ? `${foundation("borderWidth", "thin")} solid ${tone.border}` : "none",
-    background: tone.background,
-    color: tone.color,
-    boxShadow: recipe("button", "focusRing"),
+    ...extra,
+  });
+}
+
+function stringProp(mount: Mount, name: string, fallback = ""): string {
+  try {
+    const value = mount.props[name];
+    return typeof value === "string" ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function stringArrayProp(mount: Mount, name: string): readonly string[] {
+  let value: unknown;
+  try {
+    value = mount.props[name];
+  } catch {
+    return [];
+  }
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function arrayProp(mount: Mount, name: string): readonly unknown[] {
+  try {
+    const value = mount.props[name];
+    return Array.isArray(value) ? value.slice(0, BOUNDS.renderedCollectionItems) : [];
+  } catch {
+    return [];
+  }
+}
+
+function ownString(record: unknown, name: string): string | undefined {
+  try {
+    if (typeof record !== "object" || record === null || Array.isArray(record)) return undefined;
+    if (!Object.hasOwn(record, name)) return undefined;
+    const value = (record as Readonly<Record<string, unknown>>)[name];
+    return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function ownBoolean(record: unknown, name: string): boolean | undefined {
+  try {
+    if (typeof record !== "object" || record === null || Array.isArray(record)) return undefined;
+    if (!Object.hasOwn(record, name)) return undefined;
+    const value = (record as Readonly<Record<string, unknown>>)[name];
+    return typeof value === "boolean" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function labelStyle(namespace: string): ReturnType<typeof flowStyle> {
+  return flowStyle({
+    minWidth: 0,
+    maxWidth: "100%",
+    overflowWrap: "anywhere",
+    color: recipe(namespace, "labelText"),
     fontFamily: foundation("typography", "fontFamilySans"),
     fontSize: foundation("typography", "fontSizeSm"),
     fontWeight: foundation("typography", "fontWeightMedium"),
     lineHeight: foundation("typography", "lineHeightTight"),
-    whiteSpace: "normal",
-    overflowWrap: "anywhere",
-    cursor: "pointer",
-  };
+  });
+}
 
-  return (
-    <button
-      type="button"
-      style={mountStyle(mount.themeVars, style)}
-      onClick={() => {
-        onAction("action");
-      }}
-    >
-      {label}
-    </button>
-  );
-};
-
-/**
- * One value the visitor supplies, owned by Facet.
- *
- * The label wraps the control rather than pointing at it with `htmlFor`, so the
- * association needs no generated `id` — and therefore cannot collide with a host
- * page's ids or become a second identity for the field.
- *
- * The declared `name` deliberately does **not** become a DOM `name` attribute.
- * `name` is the identity a `Button` writes in its `collect` list, and Facet reads
- * the value through the callback it injected; putting the same identity on the
- * element would create a second, DOM-side channel for a value the framework
- * already owns, which is the stamp D-08 exists to forbid.
- *
- * `onValueChange` is present exactly when the catalog declares the component
- * collectable, so it is called optionally: a `Field` mounted without it simply
- * shows its value and reports nothing, rather than throwing on the first
- * keystroke.
- */
-export const Field: MountedComponent<ReactNode, ReactNode> = (mount) => {
-  const label = readString(mount, "label", "");
-  const value = readString(mount, "value", "");
-  const placeholder = readString(mount, "placeholder", "");
-  const secret = readBoolean(mount, "secret", false);
-  const onValueChange = mount.onValueChange;
-
-  const rootStyle: FlowStyle = {
-    display: "flex",
-    flexDirection: "column",
-    gap: foundation("space", "xs"),
-    fontFamily: foundation("typography", "fontFamilySans"),
-  };
-  const labelStyle: FlowStyle = {
-    fontSize: foundation("typography", "fontSizeSm"),
-    fontWeight: foundation("typography", "fontWeightMedium"),
-    color: recipe("field", "labelText"),
-  };
-  const inputStyle: FlowStyle = {
-    padding: recipe("field", "inputPadding"),
-    borderRadius: recipe("field", "inputRadius"),
-    border: `${foundation("borderWidth", "thin")} solid ${recipe("field", "inputBorder")}`,
-    background: recipe("field", "inputBg"),
-    color: recipe("field", "inputText"),
+function inputStyle(namespace: "field" | "select"): FlowStyle {
+  return {
+    boxSizing: "border-box",
+    width: "100%",
+    minWidth: 0,
+    maxWidth: "100%",
+    minHeight: foundation("size", "touchTarget"),
+    padding: recipe(namespace, "inputPadding"),
+    border: `${foundation("borderWidth", "thin")} solid ${recipe(namespace, "inputBorder")}`,
+    borderRadius: recipe(namespace, "inputRadius"),
+    background: recipe(namespace, "inputBg"),
+    color: recipe(namespace, "inputText"),
+    boxShadow: recipe(namespace, "focusRing"),
     fontFamily: foundation("typography", "fontFamilySans"),
     fontSize: foundation("typography", "fontSizeMd"),
     lineHeight: foundation("typography", "lineHeightNormal"),
   };
+}
+
+/** A semantic form grouping named field and action regions without a native submit path. */
+export const Form: MountedComponent<ReactNode, ReactNode> = ({
+  props,
+  slots,
+  themeVars,
+}: Mount): ReactNode => {
+  const layout = enumProp(props, "layout", FORM_LAYOUTS, "stacked");
 
   return (
-    <label style={mountStyle(mount.themeVars, rootStyle)}>
-      <span style={flowStyle(labelStyle)}>{label}</span>
+    <form
+      data-facet-component="Form"
+      data-facet-form-layout={layout}
+      style={mountStyle(themeVars, {
+        ...ROOT_BOUNDS,
+        display: "flex",
+        flexDirection: "column",
+        gap: recipe("form", "gap"),
+        margin: 0,
+      })}
+      onSubmit={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <div
+        data-facet-slot="fields"
+        style={regionStyle({
+          display: layout === "inline" ? "grid" : "flex",
+          gridTemplateColumns:
+            layout === "inline"
+              ? `repeat(auto-fit, minmax(min(${foundation("size", "containerXs")}, 100%), 1fr))`
+              : undefined,
+          flexDirection: layout === "stacked" ? "column" : undefined,
+          alignItems: layout === "inline" ? "end" : "stretch",
+          gap: layout === "inline" ? recipe("form", "inlineGap") : recipe("form", "gap"),
+        })}
+      >
+        {slots["fields"] ?? null}
+      </div>
+      <div
+        data-facet-slot="actions"
+        style={regionStyle({
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: recipe("form", "inlineGap"),
+        })}
+      >
+        {slots["actions"] ?? null}
+      </div>
+    </form>
+  );
+};
+
+/** One controlled short-text input. */
+export const Field: MountedComponent<ReactNode, ReactNode> = (mount): ReactNode => {
+  const label = textProp(mount.props, "label") ?? "";
+  const value = stringProp(mount, "value");
+  const placeholder = textProp(mount.props, "placeholder");
+  const secret = flagProp(mount.props, "secret", false);
+
+  return (
+    <label
+      data-facet-component="Field"
+      style={mountStyle(mount.themeVars, {
+        ...ROOT_BOUNDS,
+        display: "flex",
+        flexDirection: "column",
+        gap: foundation("space", "xs"),
+      })}
+    >
+      <span style={labelStyle("field")}>{label}</span>
       <input
         type={secret ? "password" : "text"}
         value={value}
-        placeholder={placeholder === "" ? undefined : placeholder}
-        style={flowStyle(inputStyle)}
+        maxLength={BOUNDS.collectedValueChars}
+        placeholder={placeholder}
+        style={flowStyle(inputStyle("field"))}
         onChange={(event) => {
-          onValueChange?.(event.target.value);
+          mount.onValueChange?.(event.target.value);
         }}
       />
     </label>
+  );
+};
+
+interface OptionRecord {
+  readonly label: string;
+  readonly value: string;
+  readonly disabled: boolean;
+}
+
+function optionsFrom(mount: Mount): readonly OptionRecord[] {
+  const options: OptionRecord[] = [];
+  const seen = new Set<string>();
+  for (const candidate of arrayProp(mount, "options")) {
+    const label = ownString(candidate, "label");
+    const value = ownString(candidate, "value");
+    if (
+      label === undefined ||
+      value === undefined ||
+      value.length > BOUNDS.collectedValueChars ||
+      seen.has(value)
+    ) {
+      continue;
+    }
+    seen.add(value);
+    options.push({ label, value, disabled: ownBoolean(candidate, "disabled") ?? false });
+  }
+  return Object.freeze(options);
+}
+
+/** One controlled native select over a closed shaped option collection. */
+export const Select: MountedComponent<ReactNode, ReactNode> = (mount): ReactNode => {
+  const label = textProp(mount.props, "label") ?? "";
+  const value = stringProp(mount, "value");
+  const placeholder = textProp(mount.props, "placeholder");
+  const options = optionsFrom(mount);
+  const valueIsAvailable = value === "" || options.some((option) => option.value === value);
+  const displayedValue = valueIsAvailable ? value : "";
+
+  useEffect(() => {
+    if (!valueIsAvailable) {
+      mount.onValueChange?.("");
+    }
+  }, [mount.onValueChange, value, valueIsAvailable]);
+
+  return (
+    <label
+      data-facet-component="Select"
+      style={mountStyle(mount.themeVars, {
+        ...ROOT_BOUNDS,
+        display: "flex",
+        flexDirection: "column",
+        gap: foundation("space", "xs"),
+      })}
+    >
+      <span style={labelStyle("select")}>{label}</span>
+      <select
+        value={displayedValue}
+        style={flowStyle(inputStyle("select"))}
+        onChange={(event) => {
+          mount.onValueChange?.(event.target.value);
+        }}
+      >
+        {placeholder === undefined && displayedValue !== "" ? null : (
+          <option value="" disabled hidden={placeholder === undefined}>
+            {placeholder ?? ""}
+          </option>
+        )}
+        {options.map((option, index) => (
+          <option key={`${option.value}-${index}`} value={option.value} disabled={option.disabled}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+};
+
+function nextChoiceValues(
+  options: readonly OptionRecord[],
+  selected: ReadonlySet<string>,
+  changedValue: string,
+  checked: boolean,
+): readonly string[] {
+  const next: string[] = [];
+  for (const option of options) {
+    const included = option.value === changedValue ? checked : selected.has(option.value);
+    if (included && !next.includes(option.value)) next.push(option.value);
+  }
+  return Object.freeze(next);
+}
+
+/** A controlled multi-select fieldset that emits a string array. */
+export const ChoiceGroup: MountedComponent<ReactNode, ReactNode> = (mount): ReactNode => {
+  const label = textProp(mount.props, "label") ?? "";
+  const options = optionsFrom(mount);
+  const authoredSelection = stringArrayProp(mount, "value");
+  const selectedValues = Object.freeze(
+    options
+      .filter((option) => authoredSelection.includes(option.value))
+      .map((option) => option.value),
+  );
+  const selectionIsCanonical =
+    authoredSelection.length === selectedValues.length &&
+    authoredSelection.every((value, index) => value === selectedValues[index]);
+  const selected = new Set(selectedValues);
+  const authoredSelectionKey = JSON.stringify(authoredSelection);
+  const selectedValuesKey = JSON.stringify(selectedValues);
+  const layout = enumProp(mount.props, "layout", CHOICE_LAYOUTS, "stacked");
+
+  useEffect(() => {
+    if (!selectionIsCanonical) {
+      mount.onValueChange?.(selectedValues);
+    }
+  }, [authoredSelectionKey, mount.onValueChange, selectedValuesKey, selectionIsCanonical]);
+
+  return (
+    <fieldset
+      data-facet-component="ChoiceGroup"
+      data-facet-choice-group-layout={layout}
+      style={mountStyle(mount.themeVars, {
+        ...ROOT_BOUNDS,
+        display: "flex",
+        flexDirection: "column",
+        gap: recipe("choice-group", "gap"),
+        margin: 0,
+        padding: 0,
+        border: 0,
+      })}
+    >
+      <legend style={labelStyle("choice-group")}>{label}</legend>
+      <div
+        data-facet-choice-group="options"
+        style={regionStyle({
+          display: "flex",
+          flexDirection: layout === "inline" ? "row" : "column",
+          flexWrap: layout === "inline" ? "wrap" : "nowrap",
+          gap: recipe("choice-group", "gap"),
+        })}
+      >
+        {options.map((option, index) => {
+          const checked = selected.has(option.value);
+          return (
+            <label
+              key={`${option.value}-${index}`}
+              data-facet-choice-selected={checked ? "true" : "false"}
+              style={regionStyle({
+                display: "inline-flex",
+                alignItems: "center",
+                width: layout === "stacked" ? "100%" : "auto",
+                minHeight: foundation("size", "touchTarget"),
+                gap: foundation("space", "xs"),
+                padding: foundation("space", "xs"),
+                border: `${foundation("borderWidth", "thin")} solid ${
+                  checked
+                    ? recipe("choice-group", "selectedBorder")
+                    : recipe("choice-group", "optionBorder")
+                }`,
+                borderRadius: recipe("choice-group", "radius"),
+                background: checked ? recipe("choice-group", "selectedBg") : "transparent",
+                color: recipe("choice-group", "optionText"),
+                boxShadow: recipe("choice-group", "focusRing"),
+                overflowWrap: "anywhere",
+                cursor: option.disabled ? "not-allowed" : "pointer",
+              })}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={option.disabled}
+                onChange={(event) => {
+                  mount.onValueChange?.(
+                    nextChoiceValues(options, selected, option.value, event.target.checked),
+                  );
+                }}
+              />
+              <span>{option.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+};
+
+/** One controlled boolean switch. */
+export const Toggle: MountedComponent<ReactNode, ReactNode> = (mount): ReactNode => {
+  const label = textProp(mount.props, "label") ?? "";
+  const value = flagProp(mount.props, "value", false);
+
+  return (
+    <label
+      data-facet-component="Toggle"
+      data-facet-toggle-state={value ? "on" : "off"}
+      style={mountStyle(mount.themeVars, {
+        ...ROOT_BOUNDS,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: foundation("space", "sm"),
+        minHeight: foundation("size", "touchTarget"),
+        color: recipe("toggle", "labelText"),
+        fontFamily: foundation("typography", "fontFamilySans"),
+        fontSize: foundation("typography", "fontSizeSm"),
+        fontWeight: foundation("typography", "fontWeightMedium"),
+        overflowWrap: "anywhere",
+      })}
+    >
+      <input
+        type="checkbox"
+        role="switch"
+        checked={value}
+        style={flowStyle({
+          flex: "0 0 auto",
+          width: foundation("size", "iconLg"),
+          height: foundation("size", "iconLg"),
+          accentColor: value ? recipe("toggle", "trackOn") : recipe("toggle", "trackOff"),
+          boxShadow: recipe("toggle", "focusRing"),
+          cursor: "pointer",
+        })}
+        onChange={(event) => {
+          mount.onValueChange?.(event.target.checked);
+        }}
+      />
+      <span>{label}</span>
+    </label>
+  );
+};
+
+interface MessageRecord {
+  readonly id: string;
+  readonly author: string;
+  readonly body: string;
+  readonly timestamp?: string;
+  readonly side: "incoming" | "outgoing";
+  readonly status?: string;
+}
+
+function messagesFrom(mount: Mount): readonly MessageRecord[] {
+  return arrayProp(mount, "messages").flatMap((candidate): readonly MessageRecord[] => {
+    const id = ownString(candidate, "id");
+    const author = ownString(candidate, "author");
+    const body = ownString(candidate, "body");
+    if (id === undefined || author === undefined || body === undefined) return [];
+    const timestamp = ownString(candidate, "timestamp");
+    const status = ownString(candidate, "status");
+    const side = ownString(candidate, "side") === "outgoing" ? "outgoing" : "incoming";
+    return [
+      {
+        id,
+        author,
+        body,
+        side,
+        ...(timestamp === undefined ? {} : { timestamp }),
+        ...(status === undefined ? {} : { status }),
+      },
+    ];
+  });
+}
+
+/** A chronological, data-backed conversation. */
+export const MessageThread: MountedComponent<ReactNode, ReactNode> = (mount): ReactNode => {
+  const messages = messagesFrom(mount);
+
+  return (
+    <ol
+      data-facet-component="MessageThread"
+      aria-label="Messages"
+      style={mountStyle(mount.themeVars, {
+        ...ROOT_BOUNDS,
+        display: "flex",
+        flexDirection: "column",
+        gap: recipe("message-thread", "gap"),
+        margin: 0,
+        padding: 0,
+        listStyle: "none",
+        overflowX: "hidden",
+      })}
+    >
+      {messages.map((message, index) => {
+        const outgoing = message.side === "outgoing";
+        const background = outgoing
+          ? recipe("message-thread", "outgoingBg")
+          : recipe("message-thread", "incomingBg");
+        const color = outgoing
+          ? recipe("message-thread", "outgoingText")
+          : recipe("message-thread", "incomingText");
+        return (
+          <li
+            key={`${message.id}-${index}`}
+            data-facet-message-side={message.side}
+            style={regionStyle({
+              alignSelf: outgoing ? "flex-end" : "flex-start",
+              width: "fit-content",
+              maxWidth: `min(100%, ${foundation("size", "contentMeasureSm")})`,
+            })}
+          >
+            <article
+              style={regionStyle({
+                display: "flex",
+                flexDirection: "column",
+                gap: foundation("space", "xs"),
+                padding: foundation("space", "sm"),
+                borderRadius: recipe("message-thread", "radius"),
+                background,
+                color,
+                fontFamily: foundation("typography", "fontFamilySans"),
+              })}
+            >
+              <div
+                style={regionStyle({
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "baseline",
+                  gap: foundation("space", "xs"),
+                  fontSize: foundation("typography", "fontSizeXs"),
+                })}
+              >
+                <strong>{message.author}</strong>
+                {message.timestamp === undefined ? null : (
+                  <time style={flowStyle({ color: recipe("message-thread", "mutedText") })}>
+                    {message.timestamp}
+                  </time>
+                )}
+              </div>
+              <p
+                style={flowStyle({
+                  margin: 0,
+                  maxWidth: "100%",
+                  overflowWrap: "anywhere",
+                  whiteSpace: "pre-wrap",
+                  fontSize: foundation("typography", "fontSizeSm"),
+                  lineHeight: foundation("typography", "lineHeightNormal"),
+                })}
+              >
+                {message.body}
+              </p>
+              {message.status === undefined ? null : (
+                <span
+                  style={flowStyle({
+                    color: recipe("message-thread", "mutedText"),
+                    fontSize: foundation("typography", "fontSizeXs"),
+                    overflowWrap: "anywhere",
+                  })}
+                >
+                  {message.status}
+                </span>
+              )}
+            </article>
+          </li>
+        );
+      })}
+    </ol>
+  );
+};
+
+interface AccordionState {
+  readonly openIds: readonly string[];
+  readonly registerItem: (id: string, defaultOpen: boolean) => () => void;
+  readonly toggleItem: (id: string) => void;
+}
+
+const AccordionContext = createContext<AccordionState | undefined>(undefined);
+
+/** A browser-local disclosure group. Its state never leaves this React subtree. */
+export const Accordion: MountedComponent<ReactNode, ReactNode> = ({
+  props,
+  slots,
+  themeVars,
+}: Mount): ReactNode => {
+  const multiple = flagProp(props, "multiple", false);
+  const [openIds, setOpenIds] = useState<readonly string[]>([]);
+
+  const registerItem = useCallback(
+    (id: string, defaultOpen: boolean): (() => void) => {
+      if (defaultOpen) {
+        setOpenIds((current) => {
+          if (current.includes(id)) return current;
+          if (!multiple && current.length > 0) return current;
+          return Object.freeze([...current, id]);
+        });
+      }
+      return () => {
+        setOpenIds((current) =>
+          current.includes(id)
+            ? Object.freeze(current.filter((candidate) => candidate !== id))
+            : current,
+        );
+      };
+    },
+    [multiple],
+  );
+
+  const toggleItem = useCallback(
+    (id: string): void => {
+      setOpenIds((current) => {
+        if (current.includes(id)) {
+          return Object.freeze(current.filter((candidate) => candidate !== id));
+        }
+        return Object.freeze(multiple ? [...current, id] : [id]);
+      });
+    },
+    [multiple],
+  );
+
+  useEffect(() => {
+    if (!multiple) setOpenIds((current) => (current.length > 1 ? current.slice(0, 1) : current));
+  }, [multiple]);
+
+  const context = useMemo<AccordionState>(
+    () => ({ openIds, registerItem, toggleItem }),
+    [openIds, registerItem, toggleItem],
+  );
+
+  return (
+    <AccordionContext.Provider value={context}>
+      <div
+        data-facet-component="Accordion"
+        data-facet-accordion-multiple={multiple ? "true" : "false"}
+        style={mountStyle(themeVars, {
+          ...ROOT_BOUNDS,
+          display: "flex",
+          flexDirection: "column",
+          border: `${foundation("borderWidth", "thin")} solid ${recipe("accordion", "border")}`,
+          borderRadius: recipe("accordion", "radius"),
+          overflow: "hidden",
+        })}
+      >
+        <div
+          data-facet-slot="items"
+          style={regionStyle({ display: "flex", flexDirection: "column" })}
+        >
+          {slots["items"] ?? null}
+        </div>
+      </div>
+    </AccordionContext.Provider>
+  );
+};
+
+/** One accessible disclosure controlled by its nearest Accordion. */
+export const AccordionItem: MountedComponent<ReactNode, ReactNode> = (mount): ReactNode => {
+  const title = textProp(mount.props, "title") ?? "";
+  const [initiallyOpen] = useState(() => flagProp(mount.props, "defaultOpen", false));
+  const [localOpen, setLocalOpen] = useState(initiallyOpen);
+  const context = useContext(AccordionContext);
+  const reactId = useId();
+  const triggerId = `facet-accordion-trigger-${reactId}`;
+  const regionId = `facet-accordion-region-${reactId}`;
+  const registerItem = context?.registerItem;
+
+  useEffect(() => {
+    if (registerItem === undefined) return undefined;
+    return registerItem(reactId, initiallyOpen);
+  }, [initiallyOpen, reactId, registerItem]);
+
+  const open = context === undefined ? localOpen : context.openIds.includes(reactId);
+  const toggle = useCallback((): void => {
+    if (context === undefined) setLocalOpen((current) => !current);
+    else context.toggleItem(reactId);
+  }, [context, reactId]);
+  const activateFromKeyboard = (event: KeyboardEvent<HTMLButtonElement>): void => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    toggle();
+  };
+
+  return (
+    <section
+      data-facet-component="AccordionItem"
+      style={mountStyle(mount.themeVars, {
+        ...ROOT_BOUNDS,
+        display: "flex",
+        flexDirection: "column",
+        borderBottom: `${foundation("borderWidth", "thin")} solid ${recipe(
+          "accordion",
+          "divider",
+        )}`,
+      })}
+    >
+      <h3 style={flowStyle({ margin: 0, minWidth: 0, maxWidth: "100%" })}>
+        <button
+          id={triggerId}
+          type="button"
+          aria-expanded={open}
+          aria-controls={regionId}
+          style={flowStyle({
+            ...ROOT_BOUNDS,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: recipe("accordion-item", "gap"),
+            minHeight: foundation("size", "touchTarget"),
+            padding: foundation("space", "sm"),
+            border: 0,
+            background: "transparent",
+            color: recipe("accordion-item", "summaryText"),
+            boxShadow: recipe("accordion-item", "focusRing"),
+            fontFamily: foundation("typography", "fontFamilySans"),
+            fontSize: foundation("typography", "fontSizeMd"),
+            fontWeight: foundation("typography", "fontWeightMedium"),
+            textAlign: "left",
+            overflowWrap: "anywhere",
+            cursor: "pointer",
+          })}
+          onClick={toggle}
+          onKeyDown={activateFromKeyboard}
+        >
+          <span>{title}</span>
+          <span aria-hidden="true">{open ? "-" : "+"}</span>
+        </button>
+      </h3>
+      <div
+        id={regionId}
+        role="region"
+        aria-labelledby={triggerId}
+        hidden={!open}
+        style={regionStyle({
+          display: open ? "flex" : undefined,
+          flexDirection: "column",
+          gap: recipe("accordion-item", "gap"),
+          padding: open ? foundation("space", "sm") : 0,
+          color: recipe("accordion-item", "bodyText"),
+          fontFamily: foundation("typography", "fontFamilySans"),
+          overflowWrap: "anywhere",
+        })}
+      >
+        <div data-facet-slot="body" style={regionStyle()}>
+          {mount.slots["body"] ?? null}
+        </div>
+        {mount.slots["actions"] === undefined || mount.slots["actions"] === null ? null : (
+          <div
+            data-facet-slot="actions"
+            style={regionStyle({
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: recipe("accordion-item", "gap"),
+            })}
+          >
+            {mount.slots["actions"]}
+          </div>
+        )}
+      </div>
+    </section>
   );
 };

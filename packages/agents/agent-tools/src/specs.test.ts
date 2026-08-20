@@ -1,8 +1,20 @@
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
+import {
+  parseMarkup,
+  validateAuthorMarkup,
+  validateCatalog,
+  validateComponentSpec,
+} from "@facet/core";
+import type { ComponentSpec } from "@facet/core";
 
-import { FACET_TOOL_NAMES, FACET_TOOL_SPECS, facetToolInputKeys } from "./specs.js";
+import {
+  FACET_TOOL_NAMES,
+  FACET_TOOL_SPECS,
+  componentSpecDetail,
+  facetToolInputKeys,
+} from "./specs.js";
 
 const EXPECTED_TOOL_NAMES = [
   "render_page",
@@ -82,5 +94,197 @@ describe("FACET_TOOL_SPECS", () => {
     expect(source).toContain('export type { FacetToolSession } from "@facet/core";');
     expect(source).not.toMatch(/interface\s+FacetToolSession|type\s+FacetToolSession/u);
     expect(source).not.toContain("@facet/runtime");
+  });
+
+  it("describes the complete structured component contract with a derived class", () => {
+    const validated = validateComponentSpec({
+      tag: "Collection",
+      whenToUse: "Present repeated records with named content and action regions.",
+      props: {
+        name: {
+          type: "string",
+          required: true,
+          guidance: "The field name used by collection requests.",
+        },
+        value: {
+          type: "boolean",
+          default: false,
+          guidance: "Whether this collection is selected.",
+        },
+        rows: {
+          type: "array",
+          bindable: true,
+          guidance: "Records published through the data model.",
+          shape: {
+            fields: {
+              label: { type: "string", required: true, guidance: "Visible row label." },
+              count: { type: "number", guidance: "Optional row count." },
+              active: { type: "boolean", guidance: "Whether the row is active." },
+            },
+          },
+        },
+        image: {
+          type: "string",
+          assetKind: "image",
+          guidance: "Host-pinned collection image.",
+        },
+      },
+      content: {
+        mode: "slots",
+        slots: {
+          items: {
+            guidance: "Repeated visible items.",
+            minChildren: 1,
+            maxChildren: 8,
+            allowedTags: ["Text", "Image"],
+          },
+          actions: {
+            guidance: "Optional collection actions.",
+            minChildren: 0,
+            maxChildren: 2,
+          },
+        },
+      },
+      collect: { collectable: true, valueProp: "value", valueKind: "boolean" },
+    });
+    if (!validated.ok) {
+      throw new Error(`expected component acceptance, got ${validated.code} at ${validated.at}`);
+    }
+
+    const detail = componentSpecDetail(validated.spec);
+
+    expect(detail.contentClass).toBe("Structured");
+    expect(detail.authoringGuide).toEqual({
+      elementSyntax: '<Collection name="...">...</Collection>',
+      contentMode: "slots",
+      directChildRule:
+        'Every direct child must include one declared slot attribute: slot="actions" | slot="items".',
+      allowedDirectChildSlots: ["actions", "items"],
+    });
+    expect(detail.content).toEqual({
+      mode: "slots",
+      slots: {
+        actions: {
+          guidance: "Optional collection actions.",
+          minChildren: 0,
+          maxChildren: 2,
+        },
+        items: {
+          guidance: "Repeated visible items.",
+          minChildren: 1,
+          maxChildren: 8,
+          allowedTags: ["Text", "Image"],
+        },
+      },
+    });
+    expect(detail.props["rows"]).toMatchObject({
+      type: "array",
+      shape: {
+        fields: {
+          label: { type: "string", required: true },
+          count: { type: "number" },
+          active: { type: "boolean" },
+        },
+      },
+    });
+    expect(detail.props["image"]).toMatchObject({ type: "string", assetKind: "image" });
+    expect(detail.collect).toMatchObject({ valueProp: "value", valueKind: "boolean" });
+    expect(Object.isFrozen(detail)).toBe(true);
+    expect(Object.isFrozen(detail.authoringGuide)).toBe(true);
+    expect(Object.isFrozen(detail.authoringGuide.allowedDirectChildSlots)).toBe(true);
+  });
+
+  it("derives self-closing and ordinary-child syntax without hand-authored examples", () => {
+    const leaf = validateComponentSpec({
+      tag: "Label",
+      whenToUse: "Use a label.",
+      props: { value: { type: "string", required: true, guidance: "Visible value." } },
+      content: { mode: "none" },
+    });
+    const container = validateComponentSpec({
+      tag: "Flow",
+      whenToUse: "Arrange a flow.",
+      props: {},
+      content: { mode: "children" },
+    });
+    if (!leaf.ok || !container.ok) throw new Error("expected component acceptance");
+
+    expect(componentSpecDetail(leaf.spec).authoringGuide).toEqual({
+      elementSyntax: '<Label value="..." />',
+      contentMode: "none",
+      directChildRule: "Self-close this element. It accepts no children.",
+      allowedDirectChildSlots: [],
+    });
+    expect(componentSpecDetail(container.spec).authoringGuide).toEqual({
+      elementSyntax: "<Flow>...</Flow>",
+      contentMode: "children",
+      directChildRule: "Use ordinary direct component children without a slot attribute.",
+      allowedDirectChildSlots: [],
+    });
+  });
+
+  it("uses valid examples for required numbers, structured data, and assets", () => {
+    const validated = validateComponentSpec({
+      tag: "Summary",
+      whenToUse: "Show a bounded data summary with one image.",
+      props: {
+        rank: {
+          type: "number",
+          required: true,
+          minimum: 1,
+          guidance: "Visible ranking position.",
+        },
+        rows: {
+          type: "array",
+          required: true,
+          bindable: true,
+          guidance: "Summary rows from the data model.",
+        },
+        image: {
+          type: "string",
+          required: true,
+          assetKind: "image",
+          guidance: "Host-approved summary image.",
+        },
+      },
+      content: { mode: "none" },
+    });
+    if (!validated.ok) throw new Error(`expected component acceptance, got ${validated.code}`);
+
+    expect(componentSpecDetail(validated.spec, ["hero"]).authoringGuide.elementSyntax).toBe(
+      '<Summary image="asset:hero" rank="1" rows="data:rows" />',
+    );
+  });
+
+  it("generates a required action example that passes the authoring contract", () => {
+    const screen = {
+      tag: "Screen",
+      whenToUse: "Root screen.",
+      props: { name: { type: "string", required: true, guidance: "Screen name." } },
+      content: { mode: "children" },
+    } as const;
+    const button = {
+      tag: "Button",
+      whenToUse: "Send one action.",
+      props: {
+        action: {
+          type: "string",
+          required: true,
+          action: true,
+          guidance: "Agent or navigation action.",
+        },
+        label: { type: "string", required: true, guidance: "Visible label." },
+      },
+      content: { mode: "none" },
+    } as const;
+    const catalog = validateCatalog({ components: [screen, button] });
+    if (!catalog.ok) throw new Error(`expected catalog acceptance, got ${catalog.code}`);
+    const detail = componentSpecDetail(catalog.catalog.components[1] as ComponentSpec);
+    const markup = `<Facet entry="home"><Screen name="home">${detail.authoringGuide.elementSyntax}</Screen></Facet>`;
+    const parsed = parseMarkup(markup);
+    if (!parsed.ok) throw new Error(`generated example did not parse: ${parsed.error.code}`);
+
+    expect(detail.authoringGuide.elementSyntax).toContain('action="agent:action"');
+    expect(validateAuthorMarkup(parsed.ast, catalog.catalog, {}).ok).toBe(true);
   });
 });

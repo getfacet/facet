@@ -70,7 +70,7 @@ export type JsonPatchOperation =
 /**
  * The most operations one batch may carry.
  *
- * This is **not** one of the `B-01..B-25` bounds — those bound what an author or
+ * This is **not** one of the `B-01..B-28` bounds — those bound what an author or
  * a publish may say, and this bounds the mechanical batch that carries the
  * result. It exists because the count itself has to be bounded before the loop
  * runs: a runaway batch of hundreds of thousands of operations would occupy the

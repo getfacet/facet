@@ -233,6 +233,37 @@ describe("ComponentPreview", () => {
     expect(previews()[0]?.textContent).toContain("Healthy");
   });
 
+  it("recovers when two Screen patterns share the same tag and target node id", () => {
+    const first = previewFor("Screen");
+    if (!first.ok) throw new Error("Expected a valid Screen preview.");
+    const second: ComponentPreviewFixtureResult = Object.freeze({
+      ...first,
+      fixture: Object.freeze({
+        ...first.fixture,
+        source: `${first.fixture.source}\n`,
+      }),
+    });
+    expect(first.fixture.targetNodeId).toBe(second.fixture.targetNodeId);
+    expect(first.fixture.source).not.toBe(second.fixture.source);
+
+    const root = withSilencedReactReport(() =>
+      renderIntoRoot(
+        <ComponentPreview
+          result={first}
+          renderContent={() => {
+            throw new Error("preview wrapper exploded");
+          }}
+        />,
+      ),
+    );
+    expect(previews()[0]?.getAttribute("data-facet-component-preview-fallback")).toBe("render");
+
+    act(() => root.render(<ComponentPreview result={second} />));
+
+    expect(previews()[0]?.getAttribute("data-facet-component-preview")).toBe("Screen");
+    expect(previews()[0]?.getAttribute("data-facet-component-preview-state")).toBe("ready");
+  });
+
   it("does not wire preview actions to transport or live facet events", () => {
     withFetchSpy((fetchSpy) => {
       renderView(<ComponentPreview result={previewFor("Empty")} />);

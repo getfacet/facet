@@ -17,11 +17,13 @@ plane.
 
 ## Bootstrap
 
-`bootstrapRenderer({ catalog, registry, theme, themeExtensions? })` closes the browser trust
-boundary before a session renders. The catalog is what an agent may author; the
-registry is the trusted React code that mounts those tags. The two tag sets must
-match exactly, the catalog must pass Core validation, and the returned boundary
-is frozen for the session.
+`bootstrapRenderer({ catalog, registry, theme, themeExtensions?, assetRegistry? })`
+closes the browser trust boundary before a session renders. The catalog is what
+an agent may author; the registry is the trusted React code that mounts those
+tags. The optional asset registry is the validated, host-pinned image set that
+`asset:key` references may resolve. The catalog and registry tag sets must match
+exactly, every input must pass Core validation, and the returned boundary is
+frozen for the session.
 
 `createRegistry` is a helper for hosts assembling a custom registry. The default
 catalog/registry/theme trio is available from `@facet/assets` and

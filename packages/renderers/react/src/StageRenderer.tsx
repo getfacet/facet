@@ -249,11 +249,15 @@ export function StageRenderer({
         if (spec === undefined) {
           return;
         }
+        const actionSchema = spec.props[prop];
+        if (actionSchema?.type !== "string" || actionSchema.action !== true) {
+          return;
+        }
         // Resolved again rather than remembered: the props a component was
         // mounted with are the props of the document and model in force, and
         // re-deriving them from those two is what keeps a captured handler from
         // acting on a superseded reference.
-        const resolved = resolveProps(node, spec, data);
+        const resolved = resolveProps(node, spec, data, bootstrap.assetRegistry);
         const reference = resolved.props[prop];
         if (typeof reference !== "string") {
           // A prop that carries no action reference is a no-op, never an error:
@@ -302,7 +306,7 @@ export function StageRenderer({
         // depends on a caller's discipline is not a property.
       }
     },
-    [active, bootstrap.index, data, navigate, onEvent, screen, store],
+    [active, bootstrap.assetRegistry, bootstrap.index, data, navigate, onEvent, screen, store],
   );
 
   // Memo-stable across everything but the theme itself. A new identity on each
@@ -323,6 +327,7 @@ export function StageRenderer({
       document: active,
       index: bootstrap.index,
       registry: bootstrap.registry,
+      assetRegistry: bootstrap.assetRegistry,
       themeVars,
       copy: bootstrap.copy,
       store,
@@ -333,6 +338,7 @@ export function StageRenderer({
       active,
       bootstrap.index,
       bootstrap.registry,
+      bootstrap.assetRegistry,
       bootstrap.copy,
       themeVars,
       store,

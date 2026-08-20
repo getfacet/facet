@@ -13,9 +13,9 @@
  * clamped to `B-24` the same way every time. Nothing here reads a clock, a
  * random source, or a locale.
  *
- * **Surface.** `AuthorError`, `AuthorErrorCode` and `SourceLocation` are the
- * public contract — a consumer names them, and every layer that can reject an
- * authored mutation reports in exactly these terms. `AUTHOR_ERROR_CODES`,
+ * **Surface.** `AuthorError`, `AuthorErrorCode`, `AuthorRepairContext`, and
+ * `SourceLocation` are the public contract — a consumer names them, and every
+ * layer that can reject an authored mutation reports in exactly these terms. `AUTHOR_ERROR_CODES`,
  * `truncate`, `authorError` and `firstError` are package-internal: they are
  * exported only so the lexer, the parser and document validation can raise a
  * failure through the one builder that applies the `B-24` clamp, and they are
@@ -88,6 +88,12 @@ export const AUTHOR_ERROR_CODES: readonly AuthorErrorCode[] = Object.freeze([
   "too-many-screens",
   "unknown-tag",
   "children-not-accepted",
+  "slot-not-accepted",
+  "missing-child-slot",
+  "unknown-slot",
+  "slot-tag-not-allowed",
+  "missing-slot-children",
+  "too-many-slot-children",
   "reserved-attribute",
   "undeclared-prop",
   "missing-required-prop",
@@ -153,6 +159,12 @@ export type AuthorErrorCode =
   | "too-many-screens"
   | "unknown-tag"
   | "children-not-accepted"
+  | "slot-not-accepted"
+  | "missing-child-slot"
+  | "unknown-slot"
+  | "slot-tag-not-allowed"
+  | "missing-slot-children"
+  | "too-many-slot-children"
   | "reserved-attribute"
   | "undeclared-prop"
   | "missing-required-prop"
@@ -172,6 +184,27 @@ export interface SourceLocation {
 }
 
 /**
+ * Catalog-derived repair coordinates that are safe for a host to return to an
+ * author without echoing rejected markup or an invalid authored value.
+ */
+export type AuthorRepairContext =
+  | {
+      readonly kind: "child_slot";
+      readonly parentTag: string;
+      readonly allowedSlots: readonly string[];
+    }
+  | {
+      readonly kind: "prop_value";
+      readonly componentTag: string;
+      readonly propName: string;
+      readonly allowedValues: readonly (string | number)[];
+    }
+  | {
+      readonly kind: "component_tag";
+      readonly expected: "registered_component";
+    };
+
+/**
  * The single structured failure returned for a rejected authored mutation:
  * where it happened, what is wrong, and what to do about it. Both copy fields
  * are bounded by `B-24`.
@@ -181,6 +214,7 @@ export interface AuthorError {
   readonly location: SourceLocation;
   readonly cause: string;
   readonly repair: string;
+  readonly repairContext?: AuthorRepairContext;
 }
 
 /**
@@ -225,7 +259,22 @@ export function authorError(input: {
   readonly location: SourceLocation;
   readonly cause: string;
   readonly repair: string;
+  readonly repairContext?: AuthorRepairContext;
 }): AuthorError {
+  const repairContext =
+    input.repairContext?.kind === "child_slot"
+      ? Object.freeze({
+          ...input.repairContext,
+          allowedSlots: Object.freeze([...input.repairContext.allowedSlots]),
+        })
+      : input.repairContext?.kind === "prop_value"
+        ? Object.freeze({
+            ...input.repairContext,
+            allowedValues: Object.freeze([...input.repairContext.allowedValues]),
+          })
+        : input.repairContext === undefined
+          ? undefined
+          : Object.freeze({ ...input.repairContext });
   return Object.freeze({
     code: input.code,
     location: Object.freeze({
@@ -235,6 +284,7 @@ export function authorError(input: {
     }),
     cause: truncate(input.cause, BOUNDS.frameworkCopyChars),
     repair: truncate(input.repair, BOUNDS.frameworkCopyChars),
+    ...(repairContext === undefined ? {} : { repairContext }),
   });
 }
 

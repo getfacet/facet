@@ -2,8 +2,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { BOUNDS, deriveMessageId } from "@facet/core";
 import type { ConversationMessage } from "@facet/core";
 import type { ConversationRecord, Sink } from "@facet/runtime";
+import type { IncomingMessage } from "node:http";
+import { Readable } from "node:stream";
 import { visitorEvent, postEvent, postMessage, start } from "./server.test-support.js";
-import { isControlBody, normalizeEventBody, normalizeMessageBody } from "./server-validation.js";
+import {
+  isControlBody,
+  normalizeEventBody,
+  normalizeMessageBody,
+  readJson,
+} from "./server-validation.js";
 
 class RecordingSink implements Sink {
   readonly records: ConversationMessage[] = [];
@@ -20,12 +27,35 @@ class RecordingSink implements Sink {
 
 let active: { readonly close: () => Promise<void> } | undefined;
 
+function incomingBody(body: string): IncomingMessage {
+  const bytes = Buffer.from(body, "utf8");
+  return Readable.from([
+    bytes.subarray(0, 4),
+    bytes.subarray(4, 7),
+    bytes.subarray(7, Math.floor(bytes.length / 2)),
+    bytes.subarray(Math.floor(bytes.length / 2)),
+  ]) as unknown as IncomingMessage;
+}
+
 afterEach(async () => {
   await active?.close();
   active = undefined;
 });
 
 describe("server VisitorEvent validation", () => {
+  it("accepts B-28 UTF-8 bytes at the limit and rejects one byte over across chunks", async () => {
+    const prefix = "\\n🙂";
+    const fixedBytes = Buffer.byteLength(`"${prefix}"`, "utf8");
+    const fill = "x".repeat(BOUNDS.visitorRequestBodyBytes - fixedBytes);
+    const atLimit = `"${prefix}${fill}"`;
+    const overLimit = `"${prefix}${fill}x"`;
+
+    await expect(readJson(incomingBody(atLimit))).resolves.toBe(`\n🙂${fill}`);
+    await expect(readJson(incomingBody(overLimit))).rejects.toThrow(
+      "request body exceeds size cap",
+    );
+  });
+
   it("accepts an event without arg and preserves exact absence", () => {
     const result = normalizeEventBody({ sessionKey: "s1", event: visitorEvent() });
 
@@ -101,6 +131,23 @@ describe("server VisitorEvent validation", () => {
     expect(
       normalizeEventBody({ sessionKey: "s1", event: { ...visitorEvent(), arg: 1 } }),
     ).toBeUndefined();
+  });
+
+  it("preserves typed collected values accepted by @facet/core", () => {
+    const result = normalizeEventBody({
+      sessionKey: "s1",
+      event: visitorEvent({
+        collect: {
+          enabled: { kind: "value", value: true },
+          choices: { kind: "value", value: ["one", "two"] },
+        },
+      }),
+    });
+
+    expect(result?.event.collect).toEqual({
+      enabled: { kind: "value", value: true },
+      choices: { kind: "value", value: ["one", "two"] },
+    });
   });
 });
 

@@ -2,10 +2,7 @@ import { DEFAULT_CATALOG } from "@facet/assets";
 import type { ComponentSpec } from "@facet/core";
 import { describe, expect, it } from "vitest";
 
-import {
-  DEFAULT_COMPONENT_PRESENTATION_BY_TAG,
-  deriveComponentInspectorRows,
-} from "./component-inspector-model.js";
+import { deriveComponentInspectorRows } from "./component-inspector-model.js";
 
 function defaultTags(): readonly string[] {
   return DEFAULT_CATALOG.components.map((spec) => spec.tag);
@@ -31,7 +28,6 @@ describe("component inspector model", () => {
     const tags = defaultTags();
 
     expect(rows.map((row) => row.tag)).toEqual(tags);
-    expect(Object.keys(DEFAULT_COMPONENT_PRESENTATION_BY_TAG).sort()).toEqual([...tags].sort());
 
     for (const spec of DEFAULT_CATALOG.components) {
       const row = rowByTag(spec.tag);
@@ -41,8 +37,8 @@ describe("component inspector model", () => {
       expect(row).not.toHaveProperty("category");
       expect(row).not.toHaveProperty("group");
       expect(row.whenToUse).toBe(spec.whenToUse);
-      expect(row.acceptsChildren).toBe(spec.acceptsChildren);
-      expect(row.presentation.section).not.toBe("other");
+      expect(row.contentMode).toBe(spec.content.mode);
+      expect(row.contentClass).toMatch(/^(Leaf|Container|Structured)$/u);
       expect(row.props.map((prop) => prop.name)).toEqual(Object.keys(spec.props));
     }
   });
@@ -63,10 +59,7 @@ describe("component inspector model", () => {
     expect(badgeTone?.defaultValue).toBe("neutral");
 
     const tableRows = rowByTag("Table").props.find((prop) => prop.name === "rows");
-    expect(rowByTag("Table").presentation).toMatchObject({
-      section: "content",
-      label: "Content",
-    });
+    expect(rowByTag("Table").contentClass).toBe("Leaf");
     expect(tableRows).toMatchObject({
       name: "rows",
       type: "array",
@@ -77,8 +70,18 @@ describe("component inspector model", () => {
 
     expect(rowByTag("Field").collect).toEqual({
       valueProp: "value",
+      valueKind: "string",
       sensitiveProp: "secret",
     });
+
+    expect(rowByTag("Form")).toMatchObject({
+      contentClass: "Structured",
+      contentMode: "slots",
+    });
+    expect(rowByTag("Form").slots).toEqual([
+      expect.objectContaining({ name: "fields", minChildren: 1, maxChildren: 20 }),
+      expect.objectContaining({ name: "actions", minChildren: 1, maxChildren: 4 }),
+    ]);
 
     expect(rowByTag("Screen").themeRecipe?.tokens).toContainEqual({
       name: "background",
@@ -91,7 +94,7 @@ describe("component inspector model", () => {
       tag: "PromoBanner",
       whenToUse: "Use for active design announcements.",
       props: {},
-      acceptsChildren: false,
+      content: { mode: "none" },
     };
     const rows = deriveComponentInspectorRows({
       components: [...DEFAULT_CATALOG.components, importedSpec],
@@ -99,6 +102,6 @@ describe("component inspector model", () => {
 
     expect(rows.find((row) => row.tag === "Screen")?.source).toBe("default");
     expect(rows.find((row) => row.tag === "PromoBanner")?.source).toBe("imported");
-    expect(rows.find((row) => row.tag === "PromoBanner")?.presentation.section).toBe("other");
+    expect(rows.find((row) => row.tag === "PromoBanner")?.contentClass).toBe("Leaf");
   });
 });

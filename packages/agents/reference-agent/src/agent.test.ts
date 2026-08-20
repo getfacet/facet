@@ -273,7 +273,7 @@ describe("createReferenceAgentWithDependencies", () => {
         agentId: "quickstart",
         summaryStore,
         budget: {
-          maxContextChars: 4_000,
+          maxContextChars: 6_000,
           maxHistoryTurns: 2,
           maxHistoryChars: 10_000,
           compactionTriggerRatio: 0.01,
@@ -419,7 +419,7 @@ function catalog(): FacetCatalog {
         props: {
           name: { type: "string", required: true, guidance: "Screen name." },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
       {
         tag: "Text",
@@ -427,7 +427,7 @@ function catalog(): FacetCatalog {
         props: {
           value: { type: "string", required: true, guidance: "Text value." },
         },
-        acceptsChildren: false,
+        content: { mode: "none" },
       },
     ],
   });

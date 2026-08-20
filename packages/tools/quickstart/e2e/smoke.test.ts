@@ -136,7 +136,7 @@ for (const { name, envVar } of PROVIDERS) {
         const event: VisitorEvent = {
           eventId: `visit-${name}`,
           eventName: "visit",
-          sourceNodeId: "smoke",
+          sourceNodeId: "visitor",
           screen: "home",
           stageRevision: 0,
           collect: {},

@@ -28,7 +28,8 @@ secrets, billing, quotas, and operations remain outside Facet.
 The author grammar admits one `<Facet entry="...">` envelope with named
 `<Screen name="...">` children. Inside screens, the agent may use only registered
 component tags, declared props, quoted scalar values, and explicit `data:path`,
-`nav:screen`, and `agent:event` references.
+`asset:key`, `nav:screen`, and `agent:event` references. `asset:key` is valid
+only for an image-asset prop backed by the host-pinned registry.
 
 The parser rejects raw HTML, JavaScript/JSX expressions, event-handler props,
 imports, spreads, inline JSON, raw CSS, arbitrary style keys, and unsupported
@@ -37,9 +38,35 @@ not executable code.
 
 Catalog validation is the second gate. The host supplies a `FacetCatalog` whose
 component specs declare tags, props, scalar domains, data-bindable props,
-collection addresses, and child support. `validateAuthorMarkup` rejects unknown
-tags, undeclared props, invalid values, unauthorized bindings, and unresolved
-action/collection contracts atomically with one deterministic author error.
+optional shallow structured shapes, typed collection addresses, asset props,
+explicit `action: true` props, and one closed content mode. `validateAuthorMarkup` rejects unknown tags,
+undeclared props, invalid values, unauthorized bindings, invalid slot placement,
+unresolved assets, and action/collection contract failures atomically with one
+deterministic author error.
+
+## Component content and composition
+
+Every component spec declares exactly one content branch:
+
+- `none` accepts no children and derives the discovery class `Leaf`;
+- `children` accepts ordered direct children and derives `Container`; and
+- `slots` declares named regions and derives `Structured`.
+
+A component declares at most B-18 slots. Each slot carries bounded guidance,
+minimum and maximum child counts, and an optional allowlist whose tags must all
+exist in the same catalog. Author markup assigns a direct child with one literal
+`slot="name"`; Core stores that value as `ComponentNode.slot` rather than an
+ordinary prop, and component specs cannot redeclare `slot` as a prop. Document
+validation uses own-property slot lookup and checks unknown, missing,
+disallowed, and over-capacity slots before state changes. The renderer then
+supplies frozen named slot arrays to the trusted component.
+
+These classes are derived discovery labels, not another policy axis. A
+component is the host-owned unit of catalog metadata and trusted render code; a
+composition is the agent-authored component tree in a screen. Facet does not
+promote composed subtrees into catalog entries or media assets. The default
+design system is a 47-component catalog, while custom hosts may supply a
+different bounded catalog and exact matching registry.
 
 ## Catalog and registry trust boundary
 
@@ -47,8 +74,9 @@ The catalog is what an agent may author. The registry is trusted React code that
 mounts those tags. `bootstrapRenderer` validates the catalog, validates any
 host theme extension declarations, validates the theme against the fixed
 foundation/semantic contract plus active catalog recipes and declared
-extensions, snapshots the registry, and requires exact tag-set equality before a
-session can render.
+extensions, validates and snapshots the optional host asset registry, snapshots
+the component registry, and requires exact catalog/registry tag-set equality
+before a session can render.
 
 Registration is pre-session only. There is no mid-session component
 registration, compatibility adapter, alias table, or fallback that makes an
@@ -80,6 +108,34 @@ intra-segment dot, and colon.
 Arrays may be published only as bounded values. Rows past B-21 are unreachable
 by design: they are not addressable by data paths and cannot be selected by an
 agent-authored binding.
+
+Structured `object` and `array` props are binding-only. A prop may declare one
+closed shallow shape whose named fields are scalar `string`, `number`, or
+`boolean` values with optional required flags. Objects and each array item must
+match that shape; nesting, unions, and arbitrary schema keywords are not part of
+the authoring contract. A structured prop with no shape remains a bounded open
+record for trusted components that select fields through separately declared
+scalar props.
+
+Assets are a separate host trust input, not Data Model values. V1 admits an
+immutable map of bounded keys to image descriptors containing a safe HTTPS or
+image data URI and optional positive dimensions. Author markup can use only an
+`asset:key` reference on a prop declared for image assets. URL literals, data
+bindings, unknown keys, and kind mismatches reject before mount. Omitting the
+registry produces an empty frozen registry.
+
+Agent tools may read the registry's bounded key and kind index through the tool
+session. They never receive asset bytes or a new asset-writing authority.
+
+## Collected values
+
+Facet-collected visitor values are exactly `string | boolean | readonly
+string[]`. Each collectable component declares its framework-injected value prop
+and matching value kind. The browser field store and event validator enforce the
+same type, freeze array values, and apply scalar-size and array-count bounds
+before an event enters the runtime. Numbers, objects, and files are outside this
+contract. Collection remains UI-IN only: a forwarded `agent:` event carries the
+validated values, and customer business actions remain behind agent tools.
 
 ## Stage, patches, and revisions
 

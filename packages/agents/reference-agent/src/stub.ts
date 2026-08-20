@@ -52,7 +52,7 @@ export const STUB_MARKUP = `<Facet entry="home">
 function describeCollectedEntry(entry: CollectedEntry): string {
   switch (entry.kind) {
     case "value":
-      return entry.value;
+      return typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value);
     case "omitted_sensitive":
       return "omitted_sensitive";
     case "collect_source_unavailable":

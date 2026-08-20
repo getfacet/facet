@@ -11,7 +11,7 @@
  * document with.
  *
  * **One object form.** `bootstrapRenderer({ catalog, registry, theme,
- * themeExtensions?, copy? })` is the only spelling. The form is closed — an
+ * assetRegistry?, themeExtensions?, copy? })` is the only spelling. The form is closed — an
  * option it does not declare is a rejection, not an ignored extra — because a
  * silently dropped option is how a host ends up believing it configured
  * something it did not. Closed against the **own property names**, and every option read is an own read: an option
@@ -75,6 +75,7 @@
 
 import type {
   ComponentSpec,
+  FacetAssetRegistry,
   FacetCatalog,
   FacetTheme,
   FacetThemeExtensionDeclaration,
@@ -84,6 +85,7 @@ import {
   buildCatalogIndex,
   resolveNeutralCopy,
   validateCatalog,
+  validateFacetAssetRegistry,
   validateModalConformance,
   validateTheme,
   validateThemeExtensionDeclarations,
@@ -111,6 +113,8 @@ export type RendererBootstrap =
       readonly index: ReadonlyMap<string, ComponentSpec>;
       /** The session's own frozen snapshot of the registry: what actually mounts. */
       readonly registry: ComponentRegistry;
+      /** The session's validated, frozen host-pinned assets. */
+      readonly assetRegistry: FacetAssetRegistry;
       /** The validated theme every registered component styles itself from. */
       readonly theme: FacetTheme;
       /** Host-declared theme extension namespaces active for this session. */
@@ -132,7 +136,16 @@ export type RendererBootstrap =
 type BootstrapRejection = Extract<RendererBootstrap, { readonly ok: false }>;
 
 /** The closed option form. An option outside this set is a rejection. */
-const OPTION_KEYS: readonly string[] = ["catalog", "registry", "theme", "themeExtensions", "copy"];
+const OPTION_KEYS: readonly string[] = [
+  "catalog",
+  "registry",
+  "assetRegistry",
+  "theme",
+  "themeExtensions",
+  "copy",
+];
+
+const EMPTY_ASSET_REGISTRY = Object.freeze(Object.create(null)) as FacetAssetRegistry;
 
 /** The tag whose registered spec the framework overlap frame projects. */
 const MODAL_TAG = "Modal";
@@ -180,6 +193,8 @@ export function bootstrapRenderer(options: {
   readonly catalog: FacetCatalog;
   /** The trusted implementations. Snapshotted and frozen for this session. */
   readonly registry: ComponentRegistry;
+  /** Optional host-pinned image assets. Omit it for an empty registry. */
+  readonly assetRegistry?: FacetAssetRegistry;
   /** The complete token contract this session renders with. */
   readonly theme: FacetTheme;
   /** Optional host extension token declarations for `theme.extensions`. */
@@ -203,7 +218,7 @@ function bootstrap(options: unknown): RendererBootstrap {
     return reject(
       "bootstrap_not_an_object",
       "",
-      "Bootstrap takes one object: { catalog, registry, theme, themeExtensions?, copy? }.",
+      "Bootstrap takes one object: { catalog, registry, assetRegistry?, theme, themeExtensions?, copy? }.",
     );
   }
   // `getOwnPropertyNames`, not `Object.keys`: an option defined non-enumerably
@@ -243,6 +258,13 @@ function bootstrap(options: unknown): RendererBootstrap {
     return themeExtensions;
   }
 
+  const assetRegistry = validateFacetAssetRegistry(
+    Object.hasOwn(options, "assetRegistry") ? read(options, "assetRegistry") : EMPTY_ASSET_REGISTRY,
+  );
+  if (!assetRegistry.ok) {
+    return assetRegistry;
+  }
+
   const theme = validateTheme(read(options, "theme"), {
     catalog: catalog.catalog,
     extensions: themeExtensions.extensions,
@@ -266,6 +288,7 @@ function bootstrap(options: unknown): RendererBootstrap {
     catalog: catalog.catalog,
     index: buildCatalogIndex(catalog.catalog),
     registry: registry.registry,
+    assetRegistry: assetRegistry.registry,
     theme: theme.theme,
     themeExtensions: themeExtensions.extensions,
     copy: copy.copy,

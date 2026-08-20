@@ -60,19 +60,18 @@ describe("screen gallery fixtures", () => {
     const patterns = screenPatterns(DEFAULT_CATALOG);
 
     expect(patterns.map((pattern) => pattern.id)).toEqual([
-      "revenue-command-center",
-      "customer-success-review",
-      "workspace-settings-flow",
-      "support-operations-board",
-      "security-audit-console",
-      "brand-campaign-studio",
-      "product-launch-dossier",
-      "service-control-panel",
-      "ecommerce-order-desk",
-      "booking-reservation-manager",
-      "subscription-billing-center",
-      "personal-finance-wallet",
-      "resume-bio-profile",
+      "landing",
+      "personal-profile-resume",
+      "commerce",
+      "saas",
+      "analytics",
+      "booking-consultation",
+      "support",
+      "collaboration",
+      "operations-board",
+      "education",
+      "knowledge",
+      "finance",
     ]);
 
     for (const pattern of patterns) {
@@ -84,47 +83,46 @@ describe("screen gallery fixtures", () => {
       expect(pattern.result.fixture.document.nodes[pattern.result.fixture.targetNodeId]?.tag).toBe(
         "Screen",
       );
+      const catalogTags = new Set(DEFAULT_CATALOG.components.map((component) => component.tag));
+      expect(pattern.roles.filter((tag) => !catalogTags.has(tag))).toEqual([]);
+      const fixtureTags = [
+        ...new Set(Object.values(pattern.result.fixture.document.nodes).map((node) => node.tag)),
+      ];
+      expect(fixtureTags.filter((tag) => !catalogTags.has(tag))).toEqual([]);
+      expect([...pattern.roles].sort()).toEqual(fixtureTags.sort());
     }
   });
 
   it("keeps table rows in the data model rather than inline screen markup", () => {
-    const table = screenPatterns().find((pattern) => pattern.id === "revenue-command-center");
+    const table = screenPatterns().find((pattern) => pattern.id === "analytics");
 
     expect(table?.result.ok).toBe(true);
     if (table === undefined || !table.result.ok) {
-      throw new Error("Missing revenue command center pattern");
+      throw new Error("Missing analytics pattern");
     }
 
-    expect(table.result.fixture.source).toContain('rows="data:pipelineRows"');
+    expect(table.result.fixture.source).toContain('rows="data:records"');
     expect(table.result.fixture.source).not.toContain('rows="[');
-    expect(table.result.fixture.data["pipelineRows"]).toEqual([
-      { account: "Acme", stage: "Negotiation", owner: "Mina", arr: 42000 },
-      { account: "Northwind", stage: "Legal", owner: "Jules", arr: 31000 },
-      { account: "Globex", stage: "Expansion", owner: "Ari", arr: 28000 },
-      { account: "Initech", stage: "Risk review", owner: "Nora", arr: 19000 },
+    expect(table.result.fixture.data["records"]).toEqual([
+      { item: "Launch brief", owner: "Mina", status: "Ready" },
+      { item: "Partner proof", owner: "Jules", status: "Review" },
+      { item: "Release notes", owner: "Alex", status: "Draft" },
     ]);
   });
 
-  it("keeps revenue card statuses distinct from the two primary header actions", () => {
-    const pattern = screenPatterns().find((candidate) => candidate.id === "revenue-command-center");
-
-    expect(pattern?.result.ok).toBe(true);
-    if (pattern === undefined || !pattern.result.ok) {
-      throw new Error("Missing revenue command center pattern");
+  it("covers the exact default catalog across deterministic family fixtures", () => {
+    const tags = new Set<string>();
+    for (const pattern of screenPatterns()) {
+      if (!pattern.result.ok) {
+        throw new Error(`Invalid ${pattern.id} pattern`);
+      }
+      for (const node of Object.values(pattern.result.fixture.document.nodes)) {
+        tags.add(node.tag);
+      }
     }
-
-    const source = pattern.result.fixture.source;
-    const buttonLabels = [...source.matchAll(/<Button label="([^"]+)"/g)].map((match) => match[1]);
-
-    expect(buttonLabels).toEqual(["Refresh", "Create plan"]);
-    expect(source).toContain('<Badge label="On track" tone="positive" />');
-    expect(source).toContain('<Badge label="Needs attention" tone="warning" />');
-    expect(source).toContain('<Badge label="Strong signal" tone="positive" />');
-    expect(source).toContain('<Badge label="Ready" tone="neutral" />');
-    expect(source).not.toContain("Open forecast");
-    expect(source).not.toContain("Review risks");
-    expect(source).not.toContain("Plan outreach");
-    expect(source).not.toContain("Update notes");
+    expect([...tags].sort()).toEqual(
+      DEFAULT_CATALOG.components.map((component) => component.tag).sort(),
+    );
   });
 
   it("appends active overlay screen examples without changing default patterns", () => {
@@ -137,9 +135,7 @@ describe("screen gallery fixtures", () => {
     );
     expect(patterns.map((pattern) => pattern.id)).toContain("launch-operations-screen");
     expect(patterns.map((pattern) => pattern.id)).not.toContain("launch-card-component");
-    expect(patterns.find((pattern) => pattern.id === "revenue-command-center")?.source).toBe(
-      "default",
-    );
+    expect(patterns.find((pattern) => pattern.id === "landing")?.source).toBe("default");
 
     const overlayPattern = patterns.find((pattern) => pattern.id === "launch-operations-screen");
     expect(overlayPattern?.source).toBe("imported");
@@ -166,9 +162,9 @@ describe("screen gallery fixtures", () => {
     const result = resolveQuickstartDesignOverlay({
       examples: [
         {
-          id: "revenue-command-center",
+          id: "landing",
           kind: "screen",
-          label: "Custom revenue command center",
+          label: "Custom landing",
           tags: ["Screen", "Text"],
           markup: `<Facet entry="preview">
   <Screen name="preview">
@@ -187,10 +183,10 @@ describe("screen gallery fixtures", () => {
       examples: result.design.examples,
     });
 
-    expect(patterns.map((pattern) => pattern.id)).toContain("revenue-command-center");
-    expect(patterns.map((pattern) => pattern.id)).toContain("active:revenue-command-center");
-    expect(patterns.find((pattern) => pattern.id === "active:revenue-command-center")?.label).toBe(
-      "Custom revenue command center",
+    expect(patterns.map((pattern) => pattern.id)).toContain("landing");
+    expect(patterns.map((pattern) => pattern.id)).toContain("active:landing");
+    expect(patterns.find((pattern) => pattern.id === "active:landing")?.label).toBe(
+      "Custom landing",
     );
   });
 });

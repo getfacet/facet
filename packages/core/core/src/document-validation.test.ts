@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { BOUNDS } from "./bounds.js";
+import type { FacetAssetRegistry } from "./asset-registry.js";
 import { validateCatalog, type FacetCatalog } from "./catalog.js";
 import { validateAuthorMarkup } from "./document-validation.js";
 import type { ComponentDocument } from "./document.js";
@@ -77,7 +78,7 @@ function screenSpec(props: Record<string, unknown> = {}): unknown {
     tag: "Screen",
     whenToUse: "Declare one screen of the page.",
     props: { ...props, name: { ...SCREEN_NAME_SCHEMA } },
-    acceptsChildren: true,
+    content: { mode: "children" },
   };
 }
 
@@ -96,7 +97,7 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Stack",
     whenToUse: "Group related content in one flow column.",
-    acceptsChildren: true,
+    content: { mode: "children" },
     props: {
       gap: {
         type: "string",
@@ -109,7 +110,7 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Text",
     whenToUse: "Show one run of copy.",
-    acceptsChildren: false,
+    content: { mode: "none" },
     props: {
       value: { type: "string", guidance: "The copy to show.", required: true, bindable: true },
       tone: { type: "string", guidance: "How prominent the copy is.", enum: ["muted", "strong"] },
@@ -118,7 +119,7 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Metric",
     whenToUse: "Show one labelled number.",
-    acceptsChildren: false,
+    content: { mode: "none" },
     props: {
       label: { type: "string", guidance: "What the number measures.", required: true },
       amount: {
@@ -134,25 +135,44 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Toggle",
     whenToUse: "Show one on/off state.",
-    acceptsChildren: false,
+    content: { mode: "none" },
     props: { on: { type: "boolean", guidance: "Whether the state is on." } },
   },
   {
     tag: "Table",
     whenToUse: "Show published rows.",
-    acceptsChildren: false,
+    content: { mode: "none" },
     props: {
       rows: { type: "array", guidance: "The published rows.", required: true, bindable: true },
       config: { type: "object", guidance: "The published column settings.", bindable: true },
     },
   },
   {
+    tag: "Image",
+    whenToUse: "Show one host-pinned image asset.",
+    content: { mode: "none" },
+    props: {
+      asset: {
+        type: "string",
+        guidance: "The host-pinned image asset key.",
+        required: true,
+        assetKind: "image",
+      },
+      alt: { type: "string", guidance: "Accessible image description.", required: true },
+    },
+  },
+  {
     tag: "Button",
     whenToUse: "Offer one action.",
-    acceptsChildren: false,
+    content: { mode: "none" },
     props: {
       label: { type: "string", guidance: "What the action does.", required: true },
-      action: { type: "string", guidance: "The nav or agent reference to run.", required: true },
+      action: {
+        type: "string",
+        action: true,
+        guidance: "The nav or agent reference to run.",
+        required: true,
+      },
       arg: { type: "string", guidance: "The one explicit argument this event sends." },
       collect: { type: "string", guidance: "The field names this event carries, space separated." },
     },
@@ -166,7 +186,7 @@ const TEST_CATALOG = catalogOf([
   {
     tag: "Field",
     whenToUse: "Ask the visitor for one value a control can name in its collect list.",
-    acceptsChildren: false,
+    content: { mode: "none" },
     props: {
       name: {
         type: "string",
@@ -177,13 +197,41 @@ const TEST_CATALOG = catalogOf([
       value: { type: "string", guidance: "The value shown.", default: "" },
       secret: { type: "boolean", guidance: "Whether the value is withheld.", default: false },
     },
-    collect: { collectable: true, valueProp: "value", sensitiveProp: "secret" },
+    collect: {
+      collectable: true,
+      valueProp: "value",
+      valueKind: "string",
+      sensitiveProp: "secret",
+    },
   },
   {
     tag: "Wide",
     whenToUse: "Declare more props than one element is allowed to carry.",
-    acceptsChildren: false,
+    content: { mode: "none" },
     props: widePropContract(),
+  },
+  {
+    tag: "Split",
+    whenToUse: "Arrange one primary and one secondary region.",
+    content: {
+      mode: "slots",
+      slots: {
+        primary: { guidance: "The primary region.", minChildren: 1, maxChildren: 1 },
+        secondary: {
+          guidance: "The secondary region.",
+          minChildren: 1,
+          maxChildren: 1,
+          allowedTags: ["Card"],
+        },
+      },
+    },
+    props: {},
+  },
+  {
+    tag: "Card",
+    whenToUse: "Group related content in a bounded surface.",
+    content: { mode: "children" },
+    props: {},
   },
   screenSpec(),
 ]);
@@ -198,7 +246,7 @@ const NEIGHBOUR_CATALOG = catalogOf([
   {
     tag: "Panel",
     whenToUse: "A component declaring the reserved name and its near neighbours.",
-    acceptsChildren: false,
+    content: { mode: "none" },
     props: {
       id: { type: "string", guidance: "A spec trying to claim Facet's node identity." },
       Id: { type: "string", guidance: "An ordinary prop that differs only in case." },
@@ -230,7 +278,7 @@ const STRUCTURAL_CATALOG = {
     {
       tag: "Facet",
       whenToUse: "A registration claiming the envelope position.",
-      acceptsChildren: true,
+      content: { mode: "children" },
       props: { entry: { type: "string", guidance: "The entry screen." } },
     },
   ],
@@ -296,12 +344,13 @@ function author(
   source: string,
   catalog: FacetCatalog = TEST_CATALOG,
   data: DataModel = DATA,
+  assets: FacetAssetRegistry = Object.freeze({}),
 ): Outcome {
   const parsed = parseMarkup(source);
   if (!parsed.ok) {
     return { ok: false, failure: { phase: "parse", error: parsed.error } };
   }
-  return validateAst(parsed.ast, catalog, data);
+  return validateAst(parsed.ast, catalog, data, assets);
 }
 
 /** The same path from an already-parsed ast, for faults no source can express. */
@@ -309,8 +358,9 @@ function validateAst(
   ast: MarkupAst,
   catalog: FacetCatalog = TEST_CATALOG,
   data: DataModel = DATA,
+  assets: FacetAssetRegistry = Object.freeze({}),
 ): Outcome {
-  const result = validateAuthorMarkup(ast, catalog, data);
+  const result = validateAuthorMarkup(ast, catalog, data, assets);
   if (result.ok) {
     return { ok: true, document: result.document };
   }
@@ -364,9 +414,16 @@ const AUTHOR_ERROR_KEYS: readonly string[] = ["cause", "code", "location", "repa
  */
 function expectSingleStructuredError(failure: Failure): void {
   const error = failure.error as unknown as Record<string, unknown>;
-  expect(Object.keys(error).sort()).toEqual(AUTHOR_ERROR_KEYS);
-  for (const value of Object.values(error)) {
+  expect(
+    Object.keys(error)
+      .filter((key) => key !== "repairContext")
+      .sort(),
+  ).toEqual(AUTHOR_ERROR_KEYS);
+  for (const value of AUTHOR_ERROR_KEYS.map((key) => error[key])) {
     expect(Array.isArray(value)).toBe(false);
+  }
+  if (error["repairContext"] !== undefined) {
+    expect(error["repairContext"]).toEqual(expect.objectContaining({ kind: expect.any(String) }));
   }
   expect(error["document"]).toBeUndefined();
 }
@@ -439,13 +496,20 @@ describe("validateAuthorMarkup — the accepted document", () => {
     expect(outcome.ok).toBe(true);
   });
 
+  it("rejects an action reference carried by an ordinary string prop", () => {
+    expectAtomicReject(
+      documentOf('<Button label="agent:hidden" action="nav:home" />'),
+      "invalid-value",
+    );
+  });
+
   it("rejects a syntactically valid number that overflows before range checks", () => {
     const overflow = `1${"0".repeat(400)}`;
     const numericCatalog = catalogOf([
       {
         tag: "Reading",
         whenToUse: "Show one unbounded numeric reading.",
-        acceptsChildren: false,
+        content: { mode: "none" },
         props: {
           amount: { type: "number", guidance: "The reading.", required: true },
         },
@@ -471,7 +535,7 @@ describe("validateAuthorMarkup — the accepted document", () => {
       {
         tag: "Reading",
         whenToUse: "Show one unbounded numeric reading.",
-        acceptsChildren: false,
+        content: { mode: "none" },
         props: {
           amount: { type: "number", guidance: "The reading.", required: true },
         },
@@ -496,6 +560,63 @@ describe("validateAuthorMarkup — the accepted document", () => {
     expect(author('<Facet entry="home"><Screen name="home"><Stack /></Screen></Facet>').ok).toBe(
       true,
     );
+  });
+});
+
+describe("validateAuthorMarkup — structured slots", () => {
+  it("accepts one child in each declared slot", () => {
+    expect(
+      author(
+        '<Facet entry="home"><Screen name="home"><Split><Card slot="primary" /><Card slot="secondary" /></Split></Screen></Facet>',
+      ).ok,
+    ).toBe(true);
+  });
+
+  it.each([
+    [
+      '<Facet entry="home"><Screen name="home"><Split><Card slot="primary" /></Split></Screen></Facet>',
+      "missing-slot-children",
+    ],
+    [
+      '<Facet entry="home"><Screen name="home"><Split><Card /><Card slot="secondary" /></Split></Screen></Facet>',
+      "missing-child-slot",
+    ],
+    [
+      '<Facet entry="home"><Screen name="home"><Split><Card slot="primary" /><Card slot="aside" /></Split></Screen></Facet>',
+      "unknown-slot",
+    ],
+    [
+      '<Facet entry="home"><Screen name="home"><Split><Card slot="primary" /><Card slot="toString" /></Split></Screen></Facet>',
+      "unknown-slot",
+    ],
+    [
+      '<Facet entry="home"><Screen name="home"><Split><Card slot="primary" /><Text slot="secondary" value="x" /></Split></Screen></Facet>',
+      "slot-tag-not-allowed",
+    ],
+    [
+      '<Facet entry="home"><Screen name="home"><Split><Card slot="primary" /><Card slot="primary" /><Card slot="secondary" /></Split></Screen></Facet>',
+      "too-many-slot-children",
+    ],
+    [
+      '<Facet entry="home"><Screen name="home"><Stack><Card slot="primary" /></Stack></Screen></Facet>',
+      "slot-not-accepted",
+    ],
+  ])("rejects an invalid structured assignment with %s", (markup, code) => {
+    expect(failureOf(author(markup)).error.code).toBe(code);
+  });
+
+  it("identifies the structured parent and allowed slots without echoing rejected markup", () => {
+    const failure = failureOf(
+      author(
+        '<Facet entry="home"><Screen name="home"><Split><Card /><Card slot="secondary" /></Split></Screen></Facet>',
+      ),
+    );
+
+    expect(failure.error.repairContext).toEqual({
+      kind: "child_slot",
+      parentTag: "Split",
+      allowedSlots: ["primary", "secondary"],
+    });
   });
 });
 
@@ -624,6 +745,18 @@ describe("validateAuthorMarkup — the adversarial rejection table", () => {
     });
   }
 
+  it("names the component and prop in a non-bindable repair hint", () => {
+    const source =
+      '<Facet entry="home"><Screen name="home"><Stack gap="data:sales.gap" /></Screen></Facet>';
+    const failure = failureOf(author(source));
+
+    expect(failure.error).toMatchObject({
+      code: "binding-not-allowed",
+      cause: expect.stringContaining("Stack.gap") as string,
+      repair: expect.stringContaining("Stack.gap") as string,
+    });
+  });
+
   it("reports the same rejection twice for the same input", () => {
     const source = '<Facet entry="home"><Screen name="home"><Widget /></Screen></Facet>';
 
@@ -644,6 +777,23 @@ describe("validateAuthorMarkup — the adversarial rejection table", () => {
 
     expect(outcome.ok).toBe(false);
     expect(outcome.ok ? null : outcome.failure.error.code).toBe("undeclared-prop");
+  });
+});
+
+describe("validateAuthorMarkup — safe repair coordinates", () => {
+  it("identifies an enum prop and its catalog-declared values", () => {
+    const failure = failureOf(
+      author(
+        '<Facet entry="home"><Screen name="home"><Text value="x" tone="neon" /></Screen></Facet>',
+      ),
+    );
+
+    expect(failure.error.repairContext).toEqual({
+      kind: "prop_value",
+      componentTag: "Text",
+      propName: "tone",
+      allowedValues: ["muted", "strong"],
+    });
   });
 });
 
@@ -843,7 +993,7 @@ describe("validateAuthorMarkup — a screen root is checked against its register
       ).toBe(`${label}: guidance,required,type`);
       expect(`${label}: ${name?.["type"]}`).toBe(`${label}: string`);
       expect(`${label}: ${name?.["required"]}`).toBe(`${label}: true`);
-      expect(`${label}: ${screen?.acceptsChildren}`).toBe(`${label}: true`);
+      expect(`${label}: ${screen?.content.mode}`).toBe(`${label}: children`);
       expect(`${label}: ${screen?.collect}`).toBe(`${label}: undefined`);
     }
   });
@@ -1316,7 +1466,7 @@ describe("validateAuthorMarkup — the collection request list", () => {
         "binding-not-allowed",
       );
       expect(
-        author(documentOf(fields(["email"]) + '<Button label="nav:home" action="agent:submit" />'))
+        author(documentOf(fields(["email"]) + '<Button label="Submit" action="agent:submit" />'))
           .ok,
       ).toBe(true);
     });
@@ -1416,10 +1566,15 @@ describe("validateAuthorMarkup — the collection request list", () => {
         {
           tag: "Button",
           whenToUse: "Offer one action.",
-          acceptsChildren: false,
+          content: { mode: "none" },
           props: {
             label: { type: "string", guidance: "What the action does.", required: true },
-            action: { type: "string", guidance: "The reference to run.", required: true },
+            action: {
+              type: "string",
+              action: true,
+              guidance: "The reference to run.",
+              required: true,
+            },
             collect: declaration,
           },
         },
@@ -1537,7 +1692,7 @@ describe("validateAuthorMarkup — the authored collection address", () => {
       home('<Field name="email" label="data:sales.label" />'),
       "binding-not-allowed",
     );
-    expect(author(home('<Field name="email" label="nav:home" />')).ok).toBe(true);
+    expect(author(home('<Field name="email" label="Email" />')).ok).toBe(true);
   });
 
   /** A missing address is the required-prop rule's answer, and stays there. */
@@ -1557,7 +1712,7 @@ describe("validateAuthorMarkup — the authored collection address", () => {
       {
         tag: "Plain",
         whenToUse: "Carry an ordinary prop that happens to be spelled `name`.",
-        acceptsChildren: false,
+        content: { mode: "none" },
         props: { name: { type: "string", guidance: "An ordinary label, not an address." } },
       },
     ]);
@@ -1636,7 +1791,7 @@ const ARG_DOMAIN_CATALOG = catalogOf([
   {
     tag: "Choice",
     whenToUse: "Send one of a closed set of arguments, with no action prop of its own.",
-    acceptsChildren: false,
+    content: { mode: "none" },
     props: {
       arg: {
         type: "string",
@@ -1754,7 +1909,7 @@ describe("validateAuthorMarkup — the authored event argument", () => {
         documentOf('<Button label="data:sales.label" action="agent:submit" />'),
         "binding-not-allowed",
       );
-      expect(author(documentOf('<Button label="nav:home" action="agent:submit" />')).ok).toBe(true);
+      expect(author(documentOf('<Button label="Submit" action="agent:submit" />')).ok).toBe(true);
     });
   });
 
@@ -1775,10 +1930,15 @@ describe("validateAuthorMarkup — the authored event argument", () => {
         {
           tag: "Button",
           whenToUse: "Offer one action.",
-          acceptsChildren: false,
+          content: { mode: "none" },
           props: {
             label: { type: "string", guidance: "What the action does.", required: true },
-            action: { type: "string", guidance: "The reference to run.", required: true },
+            action: {
+              type: "string",
+              action: true,
+              guidance: "The reference to run.",
+              required: true,
+            },
             arg: declaration,
           },
         },
@@ -1844,7 +2004,7 @@ describe("validateAuthorMarkup — the authored event argument", () => {
         screenNode("home", [
           elementNode("Button", [
             propOf("label", scalar("Send")),
-            propOf("action", scalar("agent:submit")),
+            propOf("action", reference("agent", "submit")),
             propOf("arg", scalar(text)),
           ]),
         ]),
@@ -1956,7 +2116,7 @@ describe("validateAuthorMarkup — the authored event argument", () => {
           screenNode("home", [
             elementNode("Button", [
               propOf("label", scalar("Send")),
-              propOf("action", scalar("agent:submit")),
+              propOf("action", reference("agent", "submit")),
               propOf("arg", scalar("v".repeat(BOUNDS.collectedValueChars + 1))),
             ]),
           ]),
@@ -1990,6 +2150,10 @@ const ORIGIN = Object.freeze({ offset: 0, line: 1, column: 1 });
 
 function scalar(value: string): MarkupValue {
   return { kind: "scalar", value };
+}
+
+function reference(scheme: "agent" | "nav", target: string): MarkupValue {
+  return { kind: "reference", scheme, target };
 }
 
 function propOf(name: string, value: MarkupValue): unknown {
@@ -2174,6 +2338,68 @@ describe("validateAuthorMarkup — the bounds it stands behind", () => {
     expect(outcome.ok ? null : outcome.failure.error.code).toBe("reserved-attribute");
     expect(next).toBe(stage);
     expect(JSON.stringify(next)).toBe(before);
+  });
+});
+
+describe("validateAuthorMarkup — host-pinned image assets", () => {
+  const assets = Object.freeze({
+    hero: Object.freeze({
+      kind: "image" as const,
+      src: "https://cdn.example.com/hero.webp",
+      width: 1600,
+      height: 900,
+    }),
+  });
+
+  it("accepts a known asset reference only on an image asset prop", () => {
+    expect(
+      author(
+        '<Facet entry="home"><Screen name="home"><Image asset="asset:hero" alt="Desk lamp" /></Screen></Facet>',
+        TEST_CATALOG,
+        DATA,
+        assets,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it("rejects an unknown asset key", () => {
+    const failure = failureOf(
+      author(
+        '<Facet entry="home"><Screen name="home"><Image asset="asset:missing" alt="Missing" /></Screen></Facet>',
+        TEST_CATALOG,
+        DATA,
+        assets,
+      ),
+    );
+    expect(failure.error.code).toBe("invalid-value");
+    expect(failure.error.cause).toContain("missing");
+  });
+
+  it.each(["https://cdn.example.com/hero.webp", "data:images.hero", "nav:home", "agent:loadImage"])(
+    "rejects %s because an asset prop accepts only asset:key",
+    (source) => {
+      const failure = failureOf(
+        author(
+          `<Facet entry="home"><Screen name="home"><Image asset="${source}" alt="Banner" /></Screen></Facet>`,
+          TEST_CATALOG,
+          { ...DATA, images: { hero: "https://cdn.example.com/hero.webp" } },
+          assets,
+        ),
+      );
+      expect(failure.error.code).toBe("invalid-value");
+    },
+  );
+
+  it("rejects asset:key on an ordinary string prop", () => {
+    const failure = failureOf(
+      author(
+        '<Facet entry="home"><Screen name="home"><Text value="asset:hero" /></Screen></Facet>',
+        TEST_CATALOG,
+        DATA,
+        assets,
+      ),
+    );
+    expect(failure.error.code).toBe("invalid-value");
   });
 });
 

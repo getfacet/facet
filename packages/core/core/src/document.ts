@@ -75,13 +75,15 @@ const ID_PREFIX = "n";
  */
 export interface ComponentNode {
   readonly tag: string;
+  /** The named region this node fills in its parent, when present. */
+  readonly slot?: string;
   readonly props: Readonly<
     Record<
       string,
       | { readonly kind: "scalar"; readonly value: string }
       | {
           readonly kind: "reference";
-          readonly scheme: "data" | "nav" | "agent";
+          readonly scheme: "data" | "nav" | "agent" | "asset";
           readonly target: string;
         }
     >
@@ -114,6 +116,8 @@ function isMarkupNode(value: unknown): value is MarkupNode {
   return (
     isRecord(value) &&
     typeof value["tag"] === "string" &&
+    (!("slot" in value) ||
+      (typeof value["slot"] === "string" && isFacetIdentifier(value["slot"]))) &&
     Array.isArray(value["props"]) &&
     Array.isArray(value["children"])
   );
@@ -293,6 +297,7 @@ function build(ast: MarkupAst): ComponentDocument | null {
     }
     nodes[id] = Object.freeze({
       tag: visit.node.tag,
+      ...(visit.node.slot === undefined ? {} : { slot: visit.node.slot }),
       props,
       children: Object.freeze(children),
     });
@@ -347,7 +352,7 @@ function linkChildren(
 
 /** A screen root: the reserved tag plus a name that is a Facet identifier. */
 function screenName(node: MarkupNode): string | null {
-  if (node.tag !== SCREEN_TAG) {
+  if (node.tag !== SCREEN_TAG || node.slot !== undefined) {
     return null;
   }
   const name = readScalarProp(node, NAME_PROP);
@@ -369,7 +374,12 @@ function readEnvelope(
     return null;
   }
   const root: unknown = ast.roots[0];
-  if (!isMarkupNode(root) || root.tag !== ENVELOPE_TAG || root.props.length !== 1) {
+  if (
+    !isMarkupNode(root) ||
+    root.tag !== ENVELOPE_TAG ||
+    root.slot !== undefined ||
+    root.props.length !== 1
+  ) {
     return null;
   }
   const entry = readScalarProp(root, ENTRY_PROP);

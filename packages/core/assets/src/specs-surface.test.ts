@@ -1,296 +1,246 @@
 import { readFileSync } from "node:fs";
 
-import {
-  BOUNDS,
-  validateCatalog,
-  validateComponentSpec,
-  validateModalConformance,
-} from "@facet/core";
+import { BOUNDS, validateComponentSpec } from "@facet/core";
 import type { ComponentSpec } from "@facet/core";
 import { describe, expect, it } from "vitest";
 
-import { CARD_SPEC, EMPTY_SPEC, MODAL_SPEC, SURFACE_SPECS } from "./specs-surface.js";
+import {
+  ACTION_BAR_SPEC,
+  ACTION_GROUP_SPEC,
+  BUTTON_SPEC,
+  NAVIGATION_ITEM_SPEC,
+  NAVIGATION_SPEC,
+  SURFACE_SPECS,
+} from "./specs-surface.js";
 
-/** The three scalar types an authored prop value may take. */
-const SCALAR_TYPES: readonly string[] = ["string", "number", "boolean"];
+const EXPECTED_TAGS = [
+  "Navigation",
+  "NavigationItem",
+  "Button",
+  "ActionGroup",
+  "ActionBar",
+] as const;
 
-/**
- * Prop names that would smuggle placement, stacking or coordinates into author
- * markup. Overlap belongs to the framework Modal frame alone, so no spec in
- * this group may declare one.
- */
-const COORDINATE_PROP_NAMES: readonly string[] = [
-  "x",
-  "y",
-  "top",
-  "left",
-  "right",
-  "bottom",
-  "zIndex",
-  "layer",
-  "elevation",
-  "offsetX",
-  "offsetY",
-  "anchorX",
-  "anchorY",
-  "placement",
-  "coordinates",
-];
-
-/** Authored values that would name a placement mode rather than flow content. */
-const PLACEMENT_VALUES: readonly string[] = [
-  "absolute",
-  "fixed",
-  "sticky",
-  "overlay",
-  "above",
-  "behind",
-  "front",
-  "back",
-];
-
-/** Accepts, or fails with the structured rejection rather than a bare undefined. */
-function accept(value: unknown): ComponentSpec {
-  const result = validateComponentSpec(value);
-  if (!result.ok) {
-    throw new Error(`expected acceptance, got ${result.code} at ${result.at}: ${result.detail}`);
-  }
-  return result.spec;
-}
-
-/** The rejection code, or the sentinel `"accepted"` so a stray acceptance reads clearly. */
-function rejectionCode(value: unknown): string {
-  const result = validateComponentSpec(value);
-  return result.ok ? "accepted" : result.code;
-}
-
-/** A spec as plain JSON — which also proves the declaration is serializable. */
-function specRecord(spec: ComponentSpec): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(spec)) as Record<string, unknown>;
-}
-
-function readSource(file: string): string {
-  return readFileSync(new URL(file, import.meta.url), "utf8");
-}
-
-/**
- * The smallest conforming `Screen` registration, declared here rather than
- * imported from the layout group.
- *
- * Every valid catalog carries exactly one `Screen` — the renderer mounts a
- * stored screen root like any other node — so a catalog assembled from surface
- * specs alone is incomplete by construction. This stub supplies that one member
- * and nothing else, which keeps the assertions below about Modal, Card and
- * Empty instead of about whatever the real `Screen` happens to declare.
- */
-const SCREEN_STUB: Record<string, unknown> = {
-  tag: "Screen",
-  whenToUse: "The screen root a catalog must register, standing in for the real one.",
-  props: {
-    name: { type: "string", guidance: "The screen's name.", required: true },
+const EXPECTED_PROP_CONTRACTS: Readonly<Record<string, Record<string, unknown>>> = {
+  Navigation: {
+    label: { type: "string" },
+    orientation: {
+      type: "string",
+      enum: ["horizontal", "vertical"],
+      default: "horizontal",
+    },
+    density: {
+      type: "string",
+      enum: ["compact", "comfortable"],
+      default: "comfortable",
+    },
+    tone: {
+      type: "string",
+      enum: ["neutral", "accent", "inverse"],
+      default: "neutral",
+    },
   },
-  acceptsChildren: true,
+  NavigationItem: {
+    label: { type: "string", required: true },
+    action: { type: "string", required: true, action: true },
+    arg: { type: "string" },
+    mark: { type: "string" },
+    meta: { type: "string" },
+    active: { type: "boolean", default: false },
+  },
+  Button: {
+    label: { type: "string", required: true },
+    action: { type: "string", required: true, action: true },
+    arg: { type: "string" },
+    collect: { type: "string" },
+    tone: {
+      type: "string",
+      enum: ["primary", "secondary", "quiet"],
+      default: "secondary",
+    },
+  },
+  ActionGroup: {
+    title: { type: "string" },
+    layout: { type: "string", enum: ["row", "stack"], default: "stack" },
+    align: {
+      type: "string",
+      enum: ["start", "center", "end"],
+      default: "start",
+    },
+    density: {
+      type: "string",
+      enum: ["compact", "comfortable"],
+      default: "comfortable",
+    },
+    tone: {
+      type: "string",
+      enum: ["neutral", "accent", "inverse"],
+      default: "neutral",
+    },
+  },
+  ActionBar: {
+    align: {
+      type: "string",
+      enum: ["start", "center", "between"],
+      default: "start",
+    },
+    tone: {
+      type: "string",
+      enum: ["neutral", "accent", "inverse"],
+      default: "neutral",
+    },
+  },
 };
 
-describe("surface specs — every spec is a valid component spec", () => {
-  it("declares exactly Modal, Card and Empty, in that order", () => {
-    expect(SURFACE_SPECS.map((spec) => spec.tag)).toEqual(["Modal", "Card", "Empty"]);
-    expect(SURFACE_SPECS).toEqual([MODAL_SPEC, CARD_SPEC, EMPTY_SPEC]);
-  });
+const EXPECTED_CONTENT: Readonly<Record<string, unknown>> = {
+  Navigation: {
+    mode: "slots",
+    slots: {
+      brand: { guidance: "Optional navigation identity.", minChildren: 0, maxChildren: 1 },
+      items: {
+        guidance: "Navigation destinations and commands.",
+        minChildren: 1,
+        maxChildren: 32,
+      },
+      actions: { guidance: "Optional navigation actions.", minChildren: 0, maxChildren: 4 },
+    },
+  },
+  NavigationItem: { mode: "none" },
+  Button: { mode: "none" },
+  ActionGroup: { mode: "children" },
+  ActionBar: {
+    mode: "slots",
+    slots: {
+      context: { guidance: "Optional context for the actions.", minChildren: 0, maxChildren: 4 },
+      actions: { guidance: "The available actions.", minChildren: 1, maxChildren: 4 },
+    },
+  },
+};
 
-  it.each(["Modal", "Card", "Empty"])("accepts the %s spec", (tag) => {
-    const spec = SURFACE_SPECS.find((candidate) => candidate.tag === tag);
-    expect(spec).toBeDefined();
-    expect(accept(specRecord(spec as ComponentSpec)).tag).toBe(tag);
-  });
+const EXPECTED_CLASSES: Readonly<Record<string, string>> = {
+  Navigation: "Structured",
+  NavigationItem: "Leaf",
+  Button: "Leaf",
+  ActionGroup: "Container",
+  ActionBar: "Structured",
+};
 
-  it("registers all three as ordinary members — no surface tag is a grammar position", () => {
-    const result = validateCatalog({
-      components: [SCREEN_STUB, ...SURFACE_SPECS.map(specRecord)],
-    });
-    expect(result.ok ? result.catalog.components.map((spec) => spec.tag) : result.code).toEqual([
-      "Screen",
-      "Modal",
-      "Card",
-      "Empty",
+function plainRecord(value: unknown): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
+function propContract(spec: ComponentSpec): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(spec.props).map(([name, schema]) => {
+      const contract = plainRecord(schema);
+      delete contract["guidance"];
+      return [name, contract];
+    }),
+  );
+}
+
+function contentClass(spec: ComponentSpec): string {
+  return spec.content.mode === "none"
+    ? "Leaf"
+    : spec.content.mode === "children"
+      ? "Container"
+      : "Structured";
+}
+
+describe("default navigation and action specs", () => {
+  it("declares exactly the five locked navigation/action tags in catalog order", () => {
+    expect(SURFACE_SPECS.map(({ tag }) => tag)).toEqual(EXPECTED_TAGS);
+    expect(SURFACE_SPECS).toEqual([
+      NAVIGATION_SPEC,
+      NAVIGATION_ITEM_SPEC,
+      BUTTON_SPEC,
+      ACTION_GROUP_SPEC,
+      ACTION_BAR_SPEC,
     ]);
   });
 
-  it("is not a complete catalog on its own: the required Screen is what it lacks", () => {
-    const result = validateCatalog({ components: SURFACE_SPECS.map(specRecord) });
-    expect(result.ok ? ["accepted", ""] : [result.code, result.at]).toEqual([
-      "missing_screen_spec",
-      "components",
-    ]);
+  it("pins every behavioral prop declaration", () => {
+    expect(Object.fromEntries(SURFACE_SPECS.map((spec) => [spec.tag, propContract(spec)]))).toEqual(
+      EXPECTED_PROP_CONTRACTS,
+    );
   });
 
-  it("survives a JSON round trip unchanged, because a spec travels to disk and to the agent", () => {
+  it("pins each content branch, slot name, and cardinality", () => {
+    expect(Object.fromEntries(SURFACE_SPECS.map((spec) => [spec.tag, spec.content]))).toEqual(
+      EXPECTED_CONTENT,
+    );
+  });
+
+  it("derives the locked Leaf, Container, and Structured classes", () => {
+    expect(Object.fromEntries(SURFACE_SPECS.map((spec) => [spec.tag, contentClass(spec)]))).toEqual(
+      EXPECTED_CLASSES,
+    );
+  });
+
+  it("passes the ComponentSpec validator after a JSON round trip", () => {
     for (const spec of SURFACE_SPECS) {
-      expect(specRecord(spec)).toEqual(spec);
+      const result = validateComponentSpec(plainRecord(spec));
+      expect(result.ok ? result.spec.tag : `${result.code} at ${result.at}`).toBe(spec.tag);
     }
   });
 
-  it("takes children everywhere: each surface frames authored flow content", () => {
+  it("pins literal action props and keeps action choice out of bindings", () => {
+    for (const spec of [NAVIGATION_ITEM_SPEC, BUTTON_SPEC]) {
+      const action = spec.props["action"];
+      expect(action).toMatchObject({ type: "string", required: true, action: true });
+      expect(action === undefined ? true : "bindable" in action).toBe(false);
+    }
+  });
+
+  it("tells agents to preserve declared choice values in Button arguments", () => {
+    expect(BUTTON_SPEC.whenToUse).toContain("one Button per offered value");
+    expect(BUTTON_SPEC.whenToUse).toContain("Avoid replacing choices");
+    expect(BUTTON_SPEC.props["arg"]?.guidance).toContain("Required when the event contract");
+    expect(BUTTON_SPEC.props["arg"]?.guidance).toContain("one exact accepted value");
+  });
+
+  it("contains no retired role or child-acceptance fields", () => {
+    const retiredFields = [
+      ["authoring", "Role"],
+      ["accepts", "Children"],
+    ].map((parts) => parts.join(""));
     for (const spec of SURFACE_SPECS) {
-      expect(spec.acceptsChildren).toBe(true);
-    }
-  });
-});
-
-describe("Modal — the framework frame contract", () => {
-  it("conforms: validateModalConformance accepts the registered spec", () => {
-    const result = validateModalConformance(specRecord(MODAL_SPEC));
-    expect(result.ok ? "conforms" : `${result.code} at ${result.at}`).toBe("conforms");
-  });
-
-  it("declares the two projected props as required strings with no default of its own", () => {
-    for (const name of ["triggerLabel", "title"] as const) {
-      const schema = MODAL_SPEC.props[name];
-      expect(schema?.type).toBe("string");
-      expect(schema?.required).toBe(true);
-      expect(schema === undefined ? true : "default" in schema).toBe(false);
+      const record = plainRecord(spec);
+      for (const field of retiredFields) expect(Object.hasOwn(record, field)).toBe(false);
+      expect(Object.keys(record).sort()).toEqual(
+        ["content", "props", "tag", "themeRecipe", "whenToUse"].sort(),
+      );
     }
   });
 
-  it("owns no collected value — the frame owns the overlap, not a field", () => {
-    expect(MODAL_SPEC.collect).toBeUndefined();
-  });
-
-  it("stops conforming if the projected optionality is relaxed — the pair is one edit apart", () => {
-    const record = specRecord(MODAL_SPEC);
-    const props = record["props"] as Record<string, Record<string, unknown>>;
-    const title = props["title"] as Record<string, unknown>;
-    delete title["required"];
-    const result = validateModalConformance(record);
-    expect(result.ok ? "conforms" : result.code).toBe("modal_prop_optionality_mismatch");
-  });
-
-  it("stops conforming if a projected prop is dropped", () => {
-    const record = specRecord(MODAL_SPEC);
-    delete (record["props"] as Record<string, unknown>)["triggerLabel"];
-    const result = validateModalConformance(record);
-    expect(result.ok ? "conforms" : result.code).toBe("modal_prop_omitted");
-  });
-});
-
-describe("surface specs — content only, never coordinates", () => {
-  it("declares no prop that could carry a coordinate, a layer or a placement", () => {
-    for (const spec of SURFACE_SPECS) {
-      for (const name of Object.keys(spec.props)) {
-        expect({ tag: spec.tag, coordinate: COORDINATE_PROP_NAMES.includes(name) }).toEqual({
-          tag: spec.tag,
-          coordinate: false,
-        });
-      }
-    }
-  });
-
-  it("offers no authored value that names a placement mode", () => {
-    for (const spec of SURFACE_SPECS) {
-      for (const [name, schema] of Object.entries(spec.props)) {
-        const domain = "enum" in schema ? (schema.enum ?? []) : [];
-        const declared = "default" in schema ? [...domain, schema.default] : domain;
-        for (const value of declared) {
-          const placement = PLACEMENT_VALUES.includes(String(value));
-          expect({ at: `${spec.tag}.${name}`, placement }).toEqual({
-            at: `${spec.tag}.${name}`,
-            placement: false,
-          });
-        }
-      }
-    }
-  });
-
-  it("writes no CSS stacking or placement declaration into its source", () => {
-    const source = readSource("./specs-surface.ts");
-    for (const forbidden of ["zIndex", "z-index", "position:", "top:", "left:"]) {
-      expect({ forbidden, present: source.includes(forbidden) }).toEqual({
-        forbidden,
-        present: false,
-      });
-    }
-  });
-});
-
-describe("surface specs — no prop accepts inline object or array JSON", () => {
-  it("declares scalar props only: a structured prop is satisfiable by a binding alone", () => {
-    for (const spec of SURFACE_SPECS) {
-      for (const [name, schema] of Object.entries(spec.props)) {
-        expect({ at: `${spec.tag}.${name}`, scalar: SCALAR_TYPES.includes(schema.type) }).toEqual({
-          at: `${spec.tag}.${name}`,
-          scalar: true,
-        });
-      }
-    }
-  });
-
-  it("declares no bindable prop at all, so no value arrives from outside the markup", () => {
-    for (const spec of SURFACE_SPECS) {
-      for (const schema of Object.values(spec.props)) {
-        expect(schema.bindable).toBeUndefined();
-      }
-    }
-  });
-});
-
-describe("surface specs — every bound is respected", () => {
-  it("keeps when-to-use inside B-12 and prop guidance inside B-13", () => {
+  it("keeps guidance and finite theme recipes inside Core bounds", () => {
     for (const spec of SURFACE_SPECS) {
       expect(spec.whenToUse.length).toBeGreaterThan(0);
       expect(spec.whenToUse.length).toBeLessThanOrEqual(BOUNDS.componentWhenToUseChars);
+      expect(Object.keys(spec.props).length).toBeLessThanOrEqual(BOUNDS.propsPerComponentSpec);
       for (const schema of Object.values(spec.props)) {
         expect(schema.guidance.length).toBeGreaterThan(0);
         expect(schema.guidance.length).toBeLessThanOrEqual(BOUNDS.propGuidanceChars);
       }
+      expect(Object.keys(spec.themeRecipe?.tokens ?? {}).length).toBeGreaterThan(0);
+      expect(Object.keys(spec.themeRecipe?.tokens ?? {}).length).toBeLessThanOrEqual(
+        BOUNDS.propsPerComponentSpec,
+      );
     }
-  });
-
-  it("keeps prop count inside B-10 and every enum domain inside B-11", () => {
-    for (const spec of SURFACE_SPECS) {
-      expect(Object.keys(spec.props).length).toBeLessThanOrEqual(BOUNDS.propsPerComponentSpec);
-      for (const schema of Object.values(spec.props)) {
-        const domain = "enum" in schema ? schema.enum : undefined;
-        expect(domain === undefined ? 0 : domain.length).toBeLessThanOrEqual(
-          BOUNDS.enumValuesPerProp,
-        );
-      }
-    }
-  });
-
-  it("rejects a when-to-use one character past B-12 and accepts one exactly at it", () => {
-    const atBound = specRecord(CARD_SPEC);
-    atBound["whenToUse"] = "w".repeat(BOUNDS.componentWhenToUseChars);
-    const overBound = specRecord(CARD_SPEC);
-    overBound["whenToUse"] = "w".repeat(BOUNDS.componentWhenToUseChars + 1);
-    expect(rejectionCode(atBound)).toBe("accepted");
-    expect(rejectionCode(overBound)).toBe("when_to_use_too_long");
-  });
-
-  it("rejects prop guidance one character past B-13 and accepts one exactly at it", () => {
-    const atBound = specRecord(EMPTY_SPEC);
-    const atProps = atBound["props"] as Record<string, Record<string, unknown>>;
-    (atProps["title"] as Record<string, unknown>)["guidance"] = "g".repeat(
-      BOUNDS.propGuidanceChars,
-    );
-    const overBound = specRecord(EMPTY_SPEC);
-    const overProps = overBound["props"] as Record<string, Record<string, unknown>>;
-    (overProps["title"] as Record<string, unknown>)["guidance"] = "g".repeat(
-      BOUNDS.propGuidanceChars + 1,
-    );
-    expect(rejectionCode(atBound)).toBe("accepted");
-    expect(rejectionCode(overBound)).toBe("prop_guidance_too_long");
   });
 });
 
-describe("specs-surface.ts — source hygiene", () => {
-  it("carries no NUL byte", () => {
-    const bytes = readFileSync(new URL("./specs-surface.ts", import.meta.url));
-    expect(bytes.indexOf(0)).toBe(-1);
-  });
-
-  it("imports nothing but @facet/core", () => {
-    const source = readSource("./specs-surface.ts");
-    const specifiers = [...source.matchAll(/from\s+"([^"]+)"/g)].map((match) => match[1]);
-    expect([...new Set(specifiers)]).toEqual(["@facet/core"]);
+describe("specs-surface.ts source hygiene", () => {
+  it("is private serializable data with no retired fields or forbidden dependencies", () => {
+    const source = readFileSync(new URL("./specs-surface.ts", import.meta.url), "utf8");
+    for (const field of [
+      ["authoring", "Role"],
+      ["accepts", "Children"],
+    ]) {
+      expect(source.includes(field.join(""))).toBe(false);
+    }
+    expect(source.includes("\0")).toBe(false);
+    const imports = [...source.matchAll(/from\s+"([^"]+)"/g)].map((match) => match[1]);
+    expect([...new Set(imports)]).toEqual(["@facet/core"]);
   });
 });

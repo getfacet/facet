@@ -3,6 +3,7 @@ import {
   resolveNeutralCopy,
   validateAuthorMarkup,
   validateCatalog,
+  validateFacetAssetRegistry,
   validateModalConformance,
   validateTheme,
   validateThemeExtensionDeclarations,
@@ -11,6 +12,7 @@ import type {
   AuthorError,
   ComponentDocument,
   DataModel,
+  FacetAssetRegistry,
   FacetCatalog,
   FacetTheme,
 } from "@facet/core";
@@ -19,6 +21,7 @@ import type { Session } from "./session.js";
 
 export interface SessionBootstrapOptions {
   readonly catalog: FacetCatalog;
+  readonly assetRegistry?: FacetAssetRegistry;
   readonly theme: FacetTheme;
   readonly themeExtensions?: unknown;
   readonly copy?: unknown;
@@ -27,6 +30,7 @@ export interface SessionBootstrapOptions {
 
 const OPTION_KEYS: readonly string[] = [
   "catalog",
+  "assetRegistry",
   "theme",
   "themeExtensions",
   "copy",
@@ -34,6 +38,7 @@ const OPTION_KEYS: readonly string[] = [
 ];
 const MODAL_TAG = "Modal";
 const EMPTY_DATA: DataModel = Object.freeze({});
+const EMPTY_ASSET_REGISTRY: FacetAssetRegistry = Object.freeze(Object.create(null));
 
 function reject(
   code: string,
@@ -63,6 +68,7 @@ function initialDocument(
   source: unknown,
   catalog: FacetCatalog,
   data: DataModel,
+  assetRegistry: FacetAssetRegistry,
 ): { readonly ok: true; readonly document: ComponentDocument | null } | ReturnType<typeof reject> {
   if (source === undefined) {
     return { ok: true, document: null };
@@ -71,7 +77,7 @@ function initialDocument(
   if (!parsed.ok) {
     return authorReject(parsed.error);
   }
-  const validated = validateAuthorMarkup(parsed.ast, catalog, data);
+  const validated = validateAuthorMarkup(parsed.ast, catalog, data, assetRegistry);
   if (!validated.ok) {
     return authorReject(validated.error);
   }
@@ -80,6 +86,7 @@ function initialDocument(
 
 function sessionFrom(
   catalog: FacetCatalog,
+  assetRegistry: FacetAssetRegistry,
   theme: FacetTheme,
   themeExtensions: Session["themeExtensions"],
   copy: Session["copy"],
@@ -87,6 +94,7 @@ function sessionFrom(
 ): Session {
   return Object.freeze({
     catalog,
+    assetRegistry,
     theme,
     themeExtensions,
     copy,
@@ -118,7 +126,7 @@ function bootstrap(options: unknown): ReturnType<typeof bootstrapSession> {
     return reject(
       "session_bootstrap_not_an_object",
       "",
-      "Session bootstrap takes one object: { catalog, theme, themeExtensions?, copy?, initialMarkup? }.",
+      "Session bootstrap takes one object: { catalog, assetRegistry?, theme, themeExtensions?, copy?, initialMarkup? }.",
     );
   }
 
@@ -146,6 +154,13 @@ function bootstrap(options: unknown): ReturnType<typeof bootstrapSession> {
     }
   }
 
+  const assetRegistry = validateFacetAssetRegistry(
+    Object.hasOwn(options, "assetRegistry") ? read(options, "assetRegistry") : EMPTY_ASSET_REGISTRY,
+  );
+  if (!assetRegistry.ok) {
+    return assetRegistry;
+  }
+
   const themeExtensions = validateThemeExtensionDeclarations(read(options, "themeExtensions"));
   if (!themeExtensions.ok) {
     return themeExtensions;
@@ -164,7 +179,12 @@ function bootstrap(options: unknown): ReturnType<typeof bootstrapSession> {
     return copy;
   }
 
-  const document = initialDocument(read(options, "initialMarkup"), catalog.catalog, EMPTY_DATA);
+  const document = initialDocument(
+    read(options, "initialMarkup"),
+    catalog.catalog,
+    EMPTY_DATA,
+    assetRegistry.registry,
+  );
   if (!document.ok) {
     return document;
   }
@@ -173,6 +193,7 @@ function bootstrap(options: unknown): ReturnType<typeof bootstrapSession> {
     ok: true,
     session: sessionFrom(
       catalog.catalog,
+      assetRegistry.registry,
       theme.theme,
       themeExtensions.extensions,
       copy.copy,

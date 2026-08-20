@@ -20,7 +20,8 @@
  * value is reported as a missing value rather than dropped, so the agent can
  * never read an absent key as "the visitor left it blank".
  *
- * This module is the **single enforcement site** for `B-22` and `B-23`. The
+ * This module is the **single enforcement site** for `B-22`, `B-23`, and
+ * `B-27`. The
  * renderer builds a payload and the server validates one through this same
  * exported function reading the same frozen `BOUNDS`, which is what removes the
  * drift the retired pair of per-side constants allowed. No limit is restated
@@ -34,6 +35,7 @@
 
 import { BOUNDS } from "./bounds.js";
 import { isFacetIdentifier } from "./identifiers.js";
+import type { CollectedValue } from "./mount-contract.js";
 
 /**
  * One `agent:` event.
@@ -73,7 +75,7 @@ export interface VisitorEvent {
   readonly collect: Readonly<
     Record<
       string,
-      | { readonly kind: "value"; readonly value: string }
+      | { readonly kind: "value"; readonly value: CollectedValue }
       | { readonly kind: "omitted_sensitive" }
       | { readonly kind: "collect_source_unavailable" }
     >
@@ -134,6 +136,14 @@ const VALUE_ENTRY_KEYS: readonly string[] = ["kind", "value"];
 
 const ABSENT_ENTRY_KEYS: readonly string[] = ["kind"];
 
+/** Conservative JSON object/property overhead outside the bounded string values. */
+const EVENT_FIXED_BYTES = 256;
+const COLLECT_ENTRY_FIXED_BYTES = 64;
+
+interface EventByteBudget {
+  remaining: number;
+}
+
 /**
  * The `eventId` grammar — deliberately **not** the Facet identifier grammar.
  *
@@ -166,6 +176,57 @@ function reject(code: string, at: string, detail: string): EventRejection {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function jsonStringBytes(value: string): number {
+  let bytes = 2;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (
+      code === 0x22 ||
+      code === 0x5c ||
+      code === 0x08 ||
+      code === 0x0c ||
+      code === 0x0a ||
+      code === 0x0d ||
+      code === 0x09
+    ) {
+      bytes += 2;
+      continue;
+    }
+    if (code <= 0x1f) {
+      bytes += 6;
+      continue;
+    }
+    if (code <= 0x7f) {
+      bytes += 1;
+      continue;
+    }
+    if (code <= 0x7ff) {
+      bytes += 2;
+      continue;
+    }
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4;
+        index += 1;
+        continue;
+      }
+      bytes += 6;
+      continue;
+    }
+    bytes += code >= 0xdc00 && code <= 0xdfff ? 6 : 3;
+  }
+  return bytes;
+}
+
+function consumeBytes(budget: EventByteBudget, bytes: number): boolean {
+  if (bytes > budget.remaining) {
+    return false;
+  }
+  budget.remaining -= bytes;
+  return true;
 }
 
 /** Keys are sorted so the first unknown key is the same one on every run. */
@@ -236,7 +297,22 @@ function validateEvent(value: unknown): VisitorEventValidationResult {
     return argument;
   }
 
-  const collected = validateCollect(value["collect"]);
+  const budget: EventByteBudget = {
+    remaining: BOUNDS.visitorEventJsonBytes - EVENT_FIXED_BYTES,
+  };
+  for (const text of [
+    eventId.value,
+    eventName.value,
+    sourceNodeId.value,
+    screen.value,
+    ...(argument.arg === undefined ? [] : [argument.arg]),
+  ]) {
+    if (!consumeBytes(budget, jsonStringBytes(text))) {
+      return reject("event_payload_too_large", "", "The visitor event exceeds B-27.");
+    }
+  }
+
+  const collected = validateCollect(value["collect"], budget);
   if (!collected.ok) {
     return collected;
   }
@@ -318,6 +394,7 @@ function validateArg(
 
 function validateCollect(
   value: unknown,
+  budget: EventByteBudget,
 ): { readonly ok: true; readonly collect: VisitorEvent["collect"] } | EventRejection {
   if (!isRecord(value)) {
     return reject(
@@ -336,7 +413,10 @@ function validateCollect(
     if (!isFacetIdentifier(name)) {
       return reject("invalid_collect_name", at, "A collected field name is a Facet identifier.");
     }
-    const entry = validateEntry(value[name], at);
+    if (!consumeBytes(budget, COLLECT_ENTRY_FIXED_BYTES + jsonStringBytes(name))) {
+      return reject("event_payload_too_large", at, "The visitor event exceeds B-27.");
+    }
+    const entry = validateEntry(value[name], at, budget);
     if (!entry.ok) {
       return entry;
     }
@@ -355,6 +435,7 @@ function validateCollect(
 function validateEntry(
   value: unknown,
   at: string,
+  budget: EventByteBudget,
 ): { readonly ok: true; readonly entry: CollectedEntry } | EventRejection {
   if (!isRecord(value)) {
     return reject("invalid_collect_entry", at, "A collected field is a plain object.");
@@ -382,14 +463,75 @@ function validateEntry(
   if (kind === "collect_source_unavailable") {
     return { ok: true, entry: Object.freeze({ kind: "collect_source_unavailable" }) };
   }
-  const collected = value["value"];
-  if (typeof collected !== "string") {
-    return reject("invalid_collected_value", `${at}.value`, "A collected value is a string.");
+  const collected = validateCollectedValue(value["value"], `${at}.value`, budget);
+  if (!collected.ok) {
+    return collected;
   }
-  if (collected.length > BOUNDS.collectedValueChars) {
-    return reject("collected_value_too_long", `${at}.value`, "The collected value exceeds B-23.");
+  return { ok: true, entry: Object.freeze({ kind: "value", value: collected.value }) };
+}
+
+function validateCollectedValue(
+  value: unknown,
+  at: string,
+  budget: EventByteBudget,
+): { readonly ok: true; readonly value: CollectedValue } | EventRejection {
+  if (typeof value === "boolean") {
+    return consumeBytes(budget, value ? 4 : 5)
+      ? { ok: true, value }
+      : reject("event_payload_too_large", at, "The visitor event exceeds B-27.");
   }
-  return { ok: true, entry: Object.freeze({ kind: "value", value: collected }) };
+  if (typeof value === "string") {
+    if (value.length > BOUNDS.collectedValueChars) {
+      return reject("collected_value_too_long", at, "The collected value exceeds B-23.");
+    }
+    return consumeBytes(budget, jsonStringBytes(value))
+      ? { ok: true, value }
+      : reject("event_payload_too_large", at, "The visitor event exceeds B-27.");
+  }
+  if (!Array.isArray(value)) {
+    return reject(
+      "invalid_collected_value",
+      at,
+      "A collected value is a string, boolean, or string array.",
+    );
+  }
+  if (value.length > BOUNDS.dataModelArrayLength) {
+    return reject(
+      "too_many_collected_values",
+      at,
+      "A collected string array exceeds the existing data-array bound.",
+    );
+  }
+  const items: string[] = [];
+  if (!consumeBytes(budget, 2)) {
+    return reject("event_payload_too_large", at, "The visitor event exceeds B-27.");
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (typeof item !== "string") {
+      return reject(
+        "invalid_collected_value",
+        `${at}[${index}]`,
+        "Every collected array item must be a string.",
+      );
+    }
+    if (item.length > BOUNDS.collectedValueChars) {
+      return reject(
+        "collected_value_too_long",
+        `${at}[${index}]`,
+        "A collected array item exceeds B-23.",
+      );
+    }
+    if (!consumeBytes(budget, jsonStringBytes(item) + (index === 0 ? 0 : 1))) {
+      return reject(
+        "event_payload_too_large",
+        `${at}[${index}]`,
+        "The visitor event exceeds B-27.",
+      );
+    }
+    items.push(item);
+  }
+  return { ok: true, value: Object.freeze(items) };
 }
 
 /** Narrows an authored `kind` to the closed vocabulary, or `null` if it is none of them. */

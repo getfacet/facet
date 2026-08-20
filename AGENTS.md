@@ -41,7 +41,7 @@ repository itself.
 
 1. **Agents emit declarative markup data, never executable UI code.** The author
    grammar admits registered component tags, declared props, quoted scalar
-   values, and explicit `data:path`, `nav:`, and `agent:` references. It rejects
+   values, and explicit `data:path`, `asset:key`, `nav:`, and `agent:` references. It rejects
    raw HTML escape hatches, JavaScript/JSX expressions, handlers, imports,
    spreads, inline structured JSON, raw CSS, and arbitrary token names.
 2. **The active catalog and React registry are one immutable trust boundary.**

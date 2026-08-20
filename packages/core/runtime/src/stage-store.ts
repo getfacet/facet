@@ -4,9 +4,13 @@ import {
   evaluateCandidateModel,
   FACET_THEME_CONTRACT,
   facetThemeToKebabCase,
+  isFacetIdentifier,
   NEUTRAL_COPY_DEFAULTS,
+  parseAuthoredNumber,
+  parseDataPath,
   resolveNeutralCopy,
   validateCatalog,
+  validateFacetAssetRegistry,
   validateTheme,
   validateThemeExtensionDeclarations,
 } from "@facet/core";
@@ -16,11 +20,13 @@ import type {
   ComponentNode,
   ComponentSpec,
   DataModel,
+  FacetAssetRegistry,
   FacetCatalog,
   FacetTheme,
   FacetThemeExtensionDeclaration,
   FacetThemeTokenValues,
   NeutralCopy,
+  PropSchema,
   StageRevision,
 } from "@facet/core";
 
@@ -47,12 +53,16 @@ type StoredProp = ComponentNode["props"][string];
 /** The exact lowercase framework event-argument convention (D-07). */
 const ARG_PROP = "arg";
 
+const EMPTY_ASSET_REGISTRY: FacetAssetRegistry = Object.freeze(Object.create(null));
+
 interface DocumentContext {
   readonly index: ReadonlyMap<string, ComponentSpec>;
   readonly sourceNodes: Readonly<Record<string, unknown>>;
   readonly outputNodes: Record<string, ComponentNode>;
   readonly emitted: Set<string>;
   readonly issues: SessionIssue[];
+  attemptedNodes: number;
+  nodeBudgetReported: boolean;
 }
 
 function fallbackThemeLayer(
@@ -83,7 +93,7 @@ const FALLBACK_CATALOG_INPUT = Object.freeze({
           guidance: "The screen name the document entry selects.",
         }),
       }),
-      acceptsChildren: true,
+      content: Object.freeze({ mode: "children" }),
     }),
   ]),
 });
@@ -188,6 +198,7 @@ function fallbackThemeExtensions(): readonly FacetThemeExtensionDeclaration[] {
 
 function sessionFrom(
   catalog: FacetCatalog,
+  assetRegistry: FacetAssetRegistry,
   theme: FacetTheme,
   themeExtensions: readonly FacetThemeExtensionDeclaration[],
   copy: NeutralCopy,
@@ -197,6 +208,7 @@ function sessionFrom(
 ): Session {
   return Object.freeze({
     catalog,
+    assetRegistry,
     theme,
     themeExtensions,
     copy,
@@ -216,6 +228,7 @@ function safeEmpty(issues: readonly SessionIssue[]): {
   return Object.freeze({
     session: sessionFrom(
       catalog,
+      EMPTY_ASSET_REGISTRY,
       fallbackTheme(catalog, themeExtensions),
       themeExtensions,
       NEUTRAL_COPY_DEFAULTS,
@@ -234,6 +247,15 @@ function normalizeCatalog(source: unknown, issues: SessionIssue[]): FacetCatalog
   }
   issues.push(issue(result.code, result.at, result.detail));
   return fallbackCatalog();
+}
+
+function normalizeAssetRegistry(source: unknown, issues: SessionIssue[]): FacetAssetRegistry {
+  const result = validateFacetAssetRegistry(source);
+  if (result.ok) {
+    return result.registry;
+  }
+  issues.push(issue(result.code, result.at, result.detail));
+  return EMPTY_ASSET_REGISTRY;
 }
 
 function normalizeTheme(
@@ -303,14 +325,66 @@ function normalizeProp(source: unknown): StoredProp | null {
     const scheme = source["scheme"];
     const target = source["target"];
     if (
-      (scheme === "data" || scheme === "nav" || scheme === "agent") &&
+      (scheme === "data" || scheme === "nav" || scheme === "agent" || scheme === "asset") &&
       typeof target === "string" &&
-      target.length > 0
+      target.length > 0 &&
+      `${scheme}:${target}`.length <= BOUNDS.attributeValueChars
     ) {
       return Object.freeze({ kind, scheme, target });
     }
   }
   return null;
+}
+
+function referenceMatchesSchema(
+  prop: Extract<StoredProp, { readonly kind: "reference" }>,
+  schema: PropSchema,
+): boolean {
+  if (prop.scheme === "data") {
+    return (
+      schema.bindable === true &&
+      !(schema.type === "string" && schema.action === true) &&
+      parseDataPath(prop.target) !== null
+    );
+  }
+  if (!isFacetIdentifier(prop.target) || schema.type !== "string") {
+    return false;
+  }
+  if (prop.scheme === "asset") {
+    return schema.assetKind === "image";
+  }
+  return schema.action === true && schema.assetKind === undefined;
+}
+
+function scalarMatchesSchema(value: string, schema: PropSchema): boolean {
+  switch (schema.type) {
+    case "array":
+    case "object":
+      return false;
+    case "boolean":
+      return value === "true" || value === "false";
+    case "number": {
+      const amount = parseAuthoredNumber(value);
+      return (
+        amount !== null &&
+        (schema.enum === undefined || schema.enum.includes(amount)) &&
+        (schema.minimum === undefined || amount >= schema.minimum) &&
+        (schema.maximum === undefined || amount <= schema.maximum)
+      );
+    }
+    case "string":
+      return (
+        schema.action !== true &&
+        schema.assetKind === undefined &&
+        (schema.enum === undefined || schema.enum.includes(value))
+      );
+  }
+}
+
+function propMatchesSchema(prop: StoredProp, schema: PropSchema): boolean {
+  return prop.kind === "reference"
+    ? referenceMatchesSchema(prop, schema)
+    : scalarMatchesSchema(prop.value, schema);
 }
 
 function normalizeProps(
@@ -352,16 +426,44 @@ function normalizeProps(
       );
       return null;
     }
-    if (
-      name === ARG_PROP &&
-      prop.kind === "scalar" &&
-      prop.value.length > BOUNDS.collectedValueChars
-    ) {
+    if (name === ARG_PROP) {
+      if (prop.kind !== "scalar") {
+        context.issues.push(
+          issue(
+            "event_arg_not_literal",
+            `document.nodes.${id}.props.${name}`,
+            "A persisted event argument must be a scalar literal.",
+          ),
+        );
+        return null;
+      }
+      if (prop.value.length > BOUNDS.collectedValueChars) {
+        context.issues.push(
+          issue(
+            "event_arg_too_long",
+            `document.nodes.${id}.props.${name}`,
+            "The persisted event argument exceeds B-23.",
+          ),
+        );
+        return null;
+      }
+    }
+    if (!propMatchesSchema(prop, schema)) {
       context.issues.push(
         issue(
-          "event_arg_too_long",
+          "invalid_prop_value",
           `document.nodes.${id}.props.${name}`,
-          "The persisted event argument exceeds B-23.",
+          "The persisted prop value contradicts its catalog schema.",
+        ),
+      );
+      return null;
+    }
+    if (prop.kind === "scalar" && prop.value.length > BOUNDS.attributeValueChars) {
+      context.issues.push(
+        issue(
+          "attribute_value_too_long",
+          `document.nodes.${id}.props.${name}`,
+          "The persisted attribute value exceeds B-05.",
         ),
       );
       return null;
@@ -392,6 +494,16 @@ function normalizeNode(
   path: ReadonlySet<string>,
   context: DocumentContext,
 ): string | null {
+  if (context.attemptedNodes >= BOUNDS.nodesPerDocument) {
+    if (!context.nodeBudgetReported) {
+      context.nodeBudgetReported = true;
+      context.issues.push(
+        issue("too_many_nodes", "document.nodes", "The restored document exceeds B-07."),
+      );
+    }
+    return null;
+  }
+  context.attemptedNodes += 1;
   if (path.has(id)) {
     context.issues.push(
       issue("cycle", `document.nodes.${id}`, "A restored node points back to an ancestor."),
@@ -458,6 +570,24 @@ function normalizeNode(
     return null;
   }
 
+  const slot = readOwn(rawNode, "slot", context.issues, `document.nodes.${id}.slot`);
+  if (slot !== undefined && (typeof slot !== "string" || !isFacetIdentifier(slot))) {
+    context.issues.push(
+      issue("invalid_slot", `document.nodes.${id}.slot`, "A restored node slot is invalid."),
+    );
+    return null;
+  }
+  if (isScreenRoot && slot !== undefined) {
+    context.issues.push(
+      issue(
+        "invalid_screen_slot",
+        `document.nodes.${id}.slot`,
+        "A screen root cannot fill a slot.",
+      ),
+    );
+    return null;
+  }
+
   const props = normalizeProps(
     readOwn(rawNode, "props", context.issues, `document.nodes.${id}.props`),
     spec,
@@ -475,7 +605,7 @@ function normalizeNode(
     );
     return null;
   }
-  if (!spec.acceptsChildren && rawChildren.length > 0) {
+  if (spec.content.mode === "none" && rawChildren.length > 0) {
     context.issues.push(
       issue(
         "children_not_allowed",
@@ -489,16 +619,115 @@ function normalizeNode(
   const nextPath = new Set(path);
   nextPath.add(id);
   const children: string[] = [];
+  const slotCounts = new Map<string, number>();
+  const additionsBeforeChildren = new Set(context.emitted);
   for (const child of rawChildren) {
+    if (context.attemptedNodes >= BOUNDS.nodesPerDocument) {
+      if (!context.nodeBudgetReported) {
+        context.nodeBudgetReported = true;
+        context.issues.push(
+          issue("too_many_nodes", "document.nodes", "The restored document exceeds B-07."),
+        );
+      }
+      break;
+    }
     if (typeof child !== "string") {
+      context.attemptedNodes += 1;
       context.issues.push(
         issue("invalid_child_id", `document.nodes.${id}.children`, "A child id is invalid."),
       );
       continue;
     }
+    const additionsBeforeChild = new Set(context.emitted);
     const normalized = normalizeNode(child, depth + 1, false, nextPath, context);
-    if (normalized !== null) {
-      children.push(normalized);
+    if (normalized === null) {
+      continue;
+    }
+    const childNode = context.outputNodes[normalized];
+    if (childNode === undefined) {
+      rollbackAdditions(context, additionsBeforeChild);
+      continue;
+    }
+    if (spec.content.mode === "children" && childNode.slot !== undefined) {
+      context.issues.push(
+        issue(
+          "slot_not_accepted",
+          `document.nodes.${normalized}.slot`,
+          "This parent accepts ordinary children, not named slots.",
+        ),
+      );
+      rollbackAdditions(context, additionsBeforeChild);
+      continue;
+    }
+    if (spec.content.mode === "slots") {
+      const slotName = childNode.slot;
+      if (slotName === undefined) {
+        context.issues.push(
+          issue(
+            "missing_child_slot",
+            `document.nodes.${normalized}.slot`,
+            "Every direct child of this structured component must name a slot.",
+          ),
+        );
+        rollbackAdditions(context, additionsBeforeChild);
+        continue;
+      }
+      const slotSpec = Object.hasOwn(spec.content.slots, slotName)
+        ? spec.content.slots[slotName]
+        : undefined;
+      if (slotSpec === undefined) {
+        context.issues.push(
+          issue(
+            "unknown_slot",
+            `document.nodes.${normalized}.slot`,
+            "The parent component does not declare this slot.",
+          ),
+        );
+        rollbackAdditions(context, additionsBeforeChild);
+        continue;
+      }
+      if (slotSpec.allowedTags !== undefined && !slotSpec.allowedTags.includes(childNode.tag)) {
+        context.issues.push(
+          issue(
+            "slot_tag_not_allowed",
+            `document.nodes.${normalized}.tag`,
+            "This component tag is not allowed in the assigned slot.",
+          ),
+        );
+        rollbackAdditions(context, additionsBeforeChild);
+        continue;
+      }
+      const count = (slotCounts.get(slotName) ?? 0) + 1;
+      if (count > slotSpec.maxChildren) {
+        context.issues.push(
+          issue(
+            "too_many_slot_children",
+            `document.nodes.${id}.children`,
+            "The restored slot contains more children than its contract allows.",
+          ),
+        );
+        rollbackAdditions(context, additionsBeforeChild);
+        continue;
+      }
+      slotCounts.set(slotName, count);
+    }
+    children.push(normalized);
+  }
+
+  if (spec.content.mode === "slots") {
+    for (const slotName of Object.keys(spec.content.slots).sort()) {
+      const slotSpec = spec.content.slots[slotName];
+      if (slotSpec !== undefined && (slotCounts.get(slotName) ?? 0) < slotSpec.minChildren) {
+        context.issues.push(
+          issue(
+            "missing_slot_children",
+            `document.nodes.${id}.children`,
+            "A required slot does not contain enough valid restored children.",
+          ),
+        );
+        rollbackAdditions(context, additionsBeforeChildren);
+        return null;
+      }
     }
   }
 
@@ -511,11 +740,22 @@ function normalizeNode(
 
   context.outputNodes[id] = Object.freeze({
     tag,
+    ...(typeof slot === "string" ? { slot } : {}),
     props,
     children: Object.freeze(children),
   });
   context.emitted.add(id);
   return id;
+}
+
+function rollbackAdditions(context: DocumentContext, before: ReadonlySet<string>): void {
+  for (const emitted of [...context.emitted]) {
+    if (before.has(emitted)) {
+      continue;
+    }
+    context.emitted.delete(emitted);
+    delete context.outputNodes[emitted];
+  }
 }
 
 function screenName(node: ComponentNode | undefined): string | null {
@@ -552,9 +792,19 @@ function normalizeDocument(
     outputNodes: Object.create(null) as Record<string, ComponentNode>,
     emitted: new Set<string>(),
     issues,
+    attemptedNodes: 0,
+    nodeBudgetReported: false,
   };
   const screenIds: string[] = [];
-  for (const id of screens) {
+  if (screens.length > BOUNDS.screensPerDocument) {
+    issues.push(
+      issue("too_many_screens", "document.screens", "The restored document exceeds B-08."),
+    );
+  }
+  for (const id of screens.slice(0, BOUNDS.screensPerDocument)) {
+    if (context.attemptedNodes >= BOUNDS.nodesPerDocument) {
+      break;
+    }
     if (typeof id !== "string") {
       issues.push(issue("invalid_screen_id", "document.screens", "A screen id is invalid."));
       continue;
@@ -596,6 +846,10 @@ export function validatePersistedSession(stored: unknown): {
     }
 
     const catalog = normalizeCatalog(readOwn(stored, "catalog", issues, "catalog"), issues);
+    const assetRegistry = normalizeAssetRegistry(
+      readOwn(stored, "assetRegistry", issues, "assetRegistry"),
+      issues,
+    );
     const themeExtensions = normalizeThemeExtensions(
       readOwn(stored, "themeExtensions", issues, "themeExtensions"),
       issues,
@@ -619,7 +873,16 @@ export function validatePersistedSession(stored: unknown): {
     );
 
     return Object.freeze({
-      session: sessionFrom(catalog, theme, themeExtensions, copy, document, data, stageRevision),
+      session: sessionFrom(
+        catalog,
+        assetRegistry,
+        theme,
+        themeExtensions,
+        copy,
+        document,
+        data,
+        stageRevision,
+      ),
       issues: Object.freeze([...issues]),
     });
   } catch {

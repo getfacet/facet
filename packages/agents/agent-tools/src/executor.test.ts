@@ -26,13 +26,13 @@ function catalog(): FacetCatalog {
         tag: "Screen",
         whenToUse: "Root screen.",
         props: { name: { type: "string", required: true, guidance: "Screen name." } },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
       {
         tag: "Text",
         whenToUse: "Short text.",
         props: { value: { type: "string", guidance: "Visible text." } },
-        acceptsChildren: false,
+        content: { mode: "none" },
       },
     ],
   });

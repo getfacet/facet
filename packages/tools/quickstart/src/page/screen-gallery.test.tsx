@@ -83,7 +83,7 @@ function activeScreenPatterns() {
 const PROMO_BANNER_SPEC = Object.freeze({
   tag: "PromoBanner",
   whenToUse: "Use for active design launch announcements.",
-  acceptsChildren: false,
+  content: Object.freeze({ mode: "none" }),
   props: Object.freeze({
     title: Object.freeze({
       type: "string",
@@ -131,20 +131,18 @@ describe("ScreenGallery", () => {
     const gallery = host.querySelector("[data-facet-screen-gallery]");
     expect(gallery).toBeInstanceOf(HTMLElement);
     expect(gallery?.textContent).toContain("Screens");
-    expect(gallery?.textContent).toContain("13 patterns");
-    expect(host.querySelectorAll("[data-screen-pattern-option]")).toHaveLength(13);
+    expect(gallery?.textContent).toContain("12 patterns");
+    expect(host.querySelectorAll("[data-screen-pattern-option]")).toHaveLength(12);
     expect(host.querySelectorAll("[data-screen-pattern]")).toHaveLength(1);
-    expect(
-      host.querySelector('[data-screen-pattern="revenue-command-center"]')?.textContent,
-    ).toContain("Revenue command center");
+    expect(host.querySelector('[data-screen-pattern="landing"]')?.textContent).toContain("Landing");
     expect(host.querySelectorAll("[data-facet-component-preview]")).toHaveLength(1);
   });
 
   it("switches the full screen preview when a pattern is selected", () => {
     const host = render(<ScreenGallery renderPreview={stubPreview} />);
-    const settings = host.querySelector('[data-screen-pattern-option="workspace-settings-flow"]');
+    const settings = host.querySelector('[data-screen-pattern-option="saas"]');
 
-    expect(host.querySelector('[data-screen-pattern="revenue-command-center"]')).toBeTruthy();
+    expect(host.querySelector('[data-screen-pattern="landing"]')).toBeTruthy();
     if (!(settings instanceof HTMLButtonElement)) {
       throw new Error("Missing workspace settings pattern option");
     }
@@ -152,8 +150,8 @@ describe("ScreenGallery", () => {
       settings.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
-    expect(host.querySelector('[data-screen-pattern="workspace-settings-flow"]')).toBeTruthy();
-    expect(host.querySelector('[data-screen-pattern="revenue-command-center"]')).toBeNull();
+    expect(host.querySelector('[data-screen-pattern="saas"]')).toBeTruthy();
+    expect(host.querySelector('[data-screen-pattern="landing"]')).toBeNull();
     expect(host.querySelectorAll("[data-facet-component-preview]")).toHaveLength(1);
   });
 
@@ -172,9 +170,9 @@ describe("ScreenGallery", () => {
     const host = render(<ScreenGallery patterns={patterns} renderPreview={stubPreview} />);
     const launch = host.querySelector('[data-screen-pattern-option="launch-operations-screen"]');
 
-    expect(host.querySelectorAll("[data-screen-pattern-option]")).toHaveLength(14);
-    expect(host.querySelector("[data-facet-screen-gallery]")?.textContent).toContain("14 patterns");
-    expect(host.querySelector('[data-screen-pattern="revenue-command-center"]')).toBeTruthy();
+    expect(host.querySelectorAll("[data-screen-pattern-option]")).toHaveLength(13);
+    expect(host.querySelector("[data-facet-screen-gallery]")?.textContent).toContain("13 patterns");
+    expect(host.querySelector('[data-screen-pattern="landing"]')).toBeTruthy();
     expect(launch?.textContent).toContain("Launch operations");
     if (!(launch instanceof HTMLButtonElement)) {
       throw new Error("Missing launch operations pattern option");
@@ -185,7 +183,7 @@ describe("ScreenGallery", () => {
     });
 
     expect(host.querySelector('[data-screen-pattern="launch-operations-screen"]')).toBeTruthy();
-    expect(host.querySelector('[data-screen-pattern="revenue-command-center"]')).toBeNull();
+    expect(host.querySelector('[data-screen-pattern="landing"]')).toBeNull();
     expect(host.querySelectorAll("[data-facet-component-preview]")).toHaveLength(1);
   });
 
@@ -200,7 +198,7 @@ describe("ScreenGallery", () => {
     expect(host.querySelector('[data-screen-pattern-option="launch-operations-screen"]')).toBe(
       host.querySelector("[data-screen-pattern-option]"),
     );
-    expect(host.querySelector('[data-screen-pattern-option="revenue-command-center"]')).toBeNull();
+    expect(host.querySelector('[data-screen-pattern-option="landing"]')).toBeNull();
     expect(host.querySelector('[data-screen-pattern="launch-operations-screen"]')).toBeTruthy();
   });
 
@@ -210,11 +208,9 @@ describe("ScreenGallery", () => {
       <ScreenGallery patterns={patterns} sourceFilter="default" renderPreview={stubPreview} />,
     );
 
-    expect(host.querySelectorAll("[data-screen-pattern-option]")).toHaveLength(13);
-    expect(host.querySelector("[data-facet-screen-gallery]")?.textContent).toContain("13 patterns");
-    expect(
-      host.querySelector('[data-screen-pattern-option="revenue-command-center"]'),
-    ).toBeTruthy();
+    expect(host.querySelectorAll("[data-screen-pattern-option]")).toHaveLength(12);
+    expect(host.querySelector("[data-facet-screen-gallery]")?.textContent).toContain("12 patterns");
+    expect(host.querySelector('[data-screen-pattern-option="landing"]')).toBeTruthy();
     expect(
       host.querySelector('[data-screen-pattern-option="launch-operations-screen"]'),
     ).toBeNull();

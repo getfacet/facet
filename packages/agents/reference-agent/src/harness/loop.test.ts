@@ -22,6 +22,7 @@ import type {
   ToolSpec,
 } from "../provider.js";
 import { normalizeBudget, type ReferenceAgentBudget } from "./budget.js";
+import type { ReferenceAgentDiagnosticEvent } from "./diagnostic-observer.js";
 import {
   REFERENCE_AGENT_FALLBACK_TEXT,
   runReferenceAgentLoop,
@@ -116,6 +117,7 @@ async function collect(options: {
   readonly budget?: ReferenceAgentBudget;
   readonly trace?: (event: ReferenceAgentTraceEvent) => void;
   readonly summarizer?: Summarizer;
+  readonly diagnosticObserver?: (event: ReferenceAgentDiagnosticEvent) => void;
 }): Promise<{
   readonly fragments: readonly TurnOutcome[];
   readonly summary: ReferenceAgentLoopSummary;
@@ -131,6 +133,9 @@ async function collect(options: {
     budget: options.budget ?? normalizeBudget({ budget: { retryBackoffMs: 0 } }),
     ...(options.trace === undefined ? {} : { trace: options.trace }),
     ...(options.summarizer === undefined ? {} : { summarizer: options.summarizer }),
+    ...(options.diagnosticObserver === undefined
+      ? {}
+      : { diagnosticObserver: options.diagnosticObserver }),
     now: () => 1_234,
   });
   while (true) {
@@ -182,6 +187,27 @@ describe("runReferenceAgentLoop", () => {
       toolCallCount: 2,
       finalTextChars: 5,
     });
+  });
+
+  it("does not report read tools as mutations or emit mutation fragments for them", async () => {
+    const diagnostics: ReferenceAgentDiagnosticEvent[] = [];
+    const result = await collect({
+      provider: providerOf(
+        step("tool", [
+          call("write", "render_page", {
+            markup: '<Screen name="home"><Text value="Ready" /></Screen>',
+          }),
+        ]),
+        step("tool", [call("read", "read_screen", { screen: "home" })]),
+        step("Done."),
+      ),
+      diagnosticObserver: (event) => diagnostics.push(event),
+    });
+
+    expect(result.fragments.map((fragment) => fragment.stageRevision)).toEqual([1, 1]);
+    expect(
+      diagnostics.find((event) => event.kind === "tool-result" && event.callId === "read"),
+    ).toMatchObject({ kind: "tool-result", mutated: false });
   });
 
   it("does not mutate a document for incomplete streamed markup outside a complete tool call", async () => {
@@ -450,7 +476,7 @@ function catalog(): FacetCatalog {
         props: {
           name: { type: "string", required: true, guidance: "Screen name." },
         },
-        acceptsChildren: true,
+        content: { mode: "children" },
       },
       {
         tag: "Text",
@@ -458,7 +484,7 @@ function catalog(): FacetCatalog {
         props: {
           value: { type: "string", guidance: "Text value." },
         },
-        acceptsChildren: false,
+        content: { mode: "none" },
       },
     ],
   });

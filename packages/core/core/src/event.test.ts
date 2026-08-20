@@ -297,6 +297,28 @@ describe("collect entries (D-08)", () => {
     expect(accepted.collect["amount"]).toEqual({ kind: "value", value: "12" });
   });
 
+  it("accepts boolean and string-array collected values", () => {
+    const accepted = accept(
+      event({
+        collect: {
+          enabled: { kind: "value", value: true },
+          interests: { kind: "value", value: ["analytics", "commerce"] },
+        },
+      }),
+    );
+
+    expect(accepted.collect["enabled"]).toEqual({ kind: "value", value: true });
+    expect(accepted.collect["interests"]).toEqual({
+      kind: "value",
+      value: ["analytics", "commerce"],
+    });
+    const interests = accepted.collect["interests"];
+    expect(interests?.kind === "value" && Array.isArray(interests.value)).toBe(true);
+    if (interests?.kind === "value" && Array.isArray(interests.value)) {
+      expect(Object.isFrozen(interests.value)).toBe(true);
+    }
+  });
+
   it("preserves a collect_source_unavailable entry rather than dropping it", () => {
     // D-08: a collectable node that never registers yields a structured error,
     // never a silent `{}` — the agent must be able to see that the value is
@@ -324,7 +346,9 @@ describe("collect entries (D-08)", () => {
   it.each([
     { label: "an unknown entry kind", entry: { kind: "raw", value: "x" } },
     { label: "a missing kind", entry: { value: "x" } },
-    { label: "a non-string collected value", entry: { kind: "value", value: 12 } },
+    { label: "a numeric collected value", entry: { kind: "value", value: 12 } },
+    { label: "an object collected value", entry: { kind: "value", value: {} } },
+    { label: "a mixed collected array", entry: { kind: "value", value: ["valid", false] } },
     { label: "a value entry with no value", entry: { kind: "value" } },
     { label: "a non-object entry", entry: "x" },
     { label: "a null entry", entry: null },
@@ -405,6 +429,36 @@ describe("B-23 — collected value and arg length (DC-026, browser half)", () =>
     expect(rejectionAt(value)).toBe("collect.note.value");
   });
 
+  it("applies B-23 to every collected string-array item", () => {
+    const atLimit = textOf(BOUNDS.collectedValueChars);
+    const accepted = accept(
+      event({ collect: { tags: { kind: "value", value: [atLimit, "short"] } } }),
+    );
+    expect(accepted.collect["tags"]).toEqual({
+      kind: "value",
+      value: [atLimit, "short"],
+    });
+
+    const pastLimit = textOf(BOUNDS.collectedValueChars + 1);
+    const rejected = event({
+      collect: { tags: { kind: "value", value: ["short", pastLimit] } },
+    });
+    expect(rejection(rejected)).toBe("collected_value_too_long");
+    expect(rejectionAt(rejected)).toBe("collect.tags.value[1]");
+  });
+
+  it("bounds collected string-array item count with the existing array bound", () => {
+    const atLimit = new Array(BOUNDS.dataModelArrayLength).fill("value");
+    expect(
+      accept(event({ collect: { tags: { kind: "value", value: atLimit } } })).collect["tags"],
+    ).toEqual({ kind: "value", value: atLimit });
+
+    const pastLimit = [...atLimit, "one-more"];
+    const rejected = event({ collect: { tags: { kind: "value", value: pastLimit } } });
+    expect(rejection(rejected)).toBe("too_many_collected_values");
+    expect(rejectionAt(rejected)).toBe("collect.tags.value");
+  });
+
   it("accepts an arg of exactly B-23 characters", () => {
     const atLimit = textOf(BOUNDS.collectedValueChars);
     expect(accept(event({ arg: atLimit })).arg).toBe(atLimit);
@@ -455,6 +509,46 @@ describe("B-22/B-23 are single-sourced", () => {
     const module: Record<string, unknown> = await import("./event.js");
     expect(Object.keys(module).sort()).toEqual(["validateVisitorEvent"]);
     expect(typeof module["validateVisitorEvent"]).toBe("function");
+  });
+});
+
+describe("B-27 — aggregate visitor event JSON bytes", () => {
+  it("rejects an individually valid string array before it can exceed the transport body", () => {
+    const item = textOf(BOUNDS.collectedValueChars);
+    const oversized = new Array(3_000).fill(item);
+    const candidate = event({ collect: { tags: { kind: "value", value: oversized } } });
+
+    expect(Buffer.byteLength(JSON.stringify(candidate), "utf8")).toBeGreaterThan(
+      BOUNDS.visitorEventJsonBytes,
+    );
+    expect(rejection(candidate)).toBe("event_payload_too_large");
+    expect(rejectionAt(candidate)).toMatch(/^collect\.tags\.value\[\d+\]$/);
+  });
+
+  it("keeps a substantial bounded array valid below the aggregate limit", () => {
+    const item = textOf(BOUNDS.collectedValueChars);
+    const candidate = event({
+      collect: { tags: { kind: "value", value: new Array(1_000).fill(item) } },
+    });
+
+    expect(Buffer.byteLength(JSON.stringify(candidate), "utf8")).toBeLessThan(
+      BOUNDS.visitorEventJsonBytes,
+    );
+    expect(rejection(candidate)).toBe("accepted");
+  });
+
+  it("counts surrogate pairs, multibyte text, and escaped controls at the byte boundary", () => {
+    const wide = "🙂".repeat(1_000);
+    const exactTail = `${"\n".repeat(310)}x`;
+    const values = [...new Array<string>(999).fill(wide), exactTail];
+    const atBoundary = event({ collect: { tags: { kind: "value", value: values } } });
+    const oneByteOver = event({
+      collect: { tags: { kind: "value", value: [...values.slice(0, -1), `${exactTail}x`] } },
+    });
+
+    expect(rejection(atBoundary)).toBe("accepted");
+    expect(rejection(oneByteOver)).toBe("event_payload_too_large");
+    expect(rejectionAt(oneByteOver)).toBe("collect.tags.value[999]");
   });
 });
 

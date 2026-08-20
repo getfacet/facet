@@ -545,15 +545,15 @@ describe("a Modal node declared inside a Card inside a Grid", () => {
       tag: "Screen",
       whenToUse: "A screen root.",
       props: { name: { type: "string", required: true, guidance: "The screen name." } },
-      acceptsChildren: true,
+      content: { mode: "children" },
     },
-    { tag: "Grid", whenToUse: "A layout container.", props: {}, acceptsChildren: true },
-    { tag: "Card", whenToUse: "A surface.", props: {}, acceptsChildren: true },
+    { tag: "Grid", whenToUse: "A layout container.", props: {}, content: { mode: "children" } },
+    { tag: "Card", whenToUse: "A surface.", props: {}, content: { mode: "children" } },
     {
       tag: "Rogue",
       whenToUse: "A registered component that tries to escape its stacking context.",
       props: {},
-      acceptsChildren: false,
+      content: { mode: "none" },
     },
     {
       tag: "Modal",
@@ -562,7 +562,13 @@ describe("a Modal node declared inside a Card inside a Grid", () => {
         triggerLabel: { type: "string", required: true, guidance: "What opens it." },
         title: { type: "string", required: true, guidance: "The dialog's name." },
       },
-      acceptsChildren: true,
+      content: {
+        mode: "slots",
+        slots: {
+          body: { guidance: "Content shown in the frame.", minChildren: 1, maxChildren: 16 },
+          actions: { guidance: "Actions shown in the footer.", minChildren: 0, maxChildren: 4 },
+        },
+      },
     },
   ];
 
@@ -600,8 +606,9 @@ describe("a Modal node declared inside a Card inside a Grid", () => {
       n4: {
         tag: "Modal",
         props: { triggerLabel: scalar(TRIGGER_LABEL), title: scalar(TITLE) },
-        children: [],
+        children: ["n6"],
       },
+      n6: { tag: "Card", slot: "body", props: {}, children: [] },
       // The later sibling: a whole subtree that paints itself as high as it can.
       n5: { tag: "Rogue", props: {}, children: [] },
     },
@@ -611,6 +618,7 @@ describe("a Modal node declared inside a Card inside a Grid", () => {
     document: DOCUMENT,
     index: INDEX,
     registry: REGISTRY,
+    assetRegistry: Object.freeze(Object.create(null)),
     themeVars: THEME_VARS,
     copy: NEUTRAL_COPY_DEFAULTS,
     store: createFieldStore(),
