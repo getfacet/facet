@@ -4,7 +4,7 @@ import type { ComponentSpec } from "@facet/core";
 export const SCREEN_SPEC: ComponentSpec = {
   tag: "Screen",
   whenToUse:
-    "Root one named screen and bound its reading width. Every document screen starts here.",
+    "Use Screen as the root of each distinct navigable view. Do not use it as an inner layout wrapper; use Section, Stack, Grid, or Split inside it.",
   props: {
     name: {
       type: "string",
@@ -44,7 +44,8 @@ export const SCREEN_SPEC: ComponentSpec = {
 
 export const STACK_SPEC: ComponentSpec = {
   tag: "Stack",
-  whenToUse: "Arrange related content vertically in reading order.",
+  whenToUse:
+    "Use Stack when related regions should follow one vertical reading order. Prefer Row or Grid when horizontal alignment or repeated columns carries meaning.",
   props: {
     gap: {
       type: "string",
@@ -82,7 +83,8 @@ export const STACK_SPEC: ComponentSpec = {
 
 export const ROW_SPEC: ComponentSpec = {
   tag: "Row",
-  whenToUse: "Arrange related content side by side, with optional wrapping.",
+  whenToUse:
+    "Use Row when a small set of peers or controls should read horizontally and may wrap. Prefer Stack for vertical flow and Grid for repeated equal columns.",
   props: {
     gap: {
       type: "string",
@@ -114,7 +116,8 @@ export const ROW_SPEC: ComponentSpec = {
 
 export const GRID_SPEC: ComponentSpec = {
   tag: "Grid",
-  whenToUse: "Arrange repeated peer content in equal responsive columns.",
+  whenToUse:
+    "Use Grid when repeated peer content benefits from equal responsive columns. Prefer Row for one control band and Split for unequal primary and secondary regions.",
   props: {
     columns: {
       type: "number",
@@ -141,7 +144,8 @@ export const GRID_SPEC: ComponentSpec = {
 
 export const SPLIT_SPEC: ComponentSpec = {
   tag: "Split",
-  whenToUse: "Place one primary region beside one secondary region in a responsive split.",
+  whenToUse:
+    "Use Split when primary and secondary regions must stay visible together for comparison, reference, or coordinated work. Avoid it for a single linear flow.",
   props: {
     ratio: {
       type: "string",
@@ -184,7 +188,8 @@ export const SPLIT_SPEC: ComponentSpec = {
 
 export const APP_SHELL_SPEC: ComponentSpec = {
   tag: "AppShell",
-  whenToUse: "Frame an app screen with optional navigation and header around one main region.",
+  whenToUse:
+    "Use AppShell when navigation or a persistent header frames one changing main workspace. Avoid it for a focused page without persistent application chrome.",
   props: {
     gap: {
       type: "string",
@@ -219,7 +224,8 @@ export const APP_SHELL_SPEC: ComponentSpec = {
 
 export const SECTION_SPEC: ComponentSpec = {
   tag: "Section",
-  whenToUse: "Group one named part of a page with normal flow content.",
+  whenToUse:
+    "Use Section when one meaningful page region needs its own heading, context, or tone in normal flow. Avoid it as a wrapper that adds no semantic grouping.",
   props: {
     title: { type: "string", guidance: "Optional section heading." },
     description: { type: "string", guidance: "Optional supporting text below the heading." },
@@ -253,7 +259,8 @@ export const SECTION_SPEC: ComponentSpec = {
 
 export const CARD_SPEC: ComponentSpec = {
   tag: "Card",
-  whenToUse: "Group related content in one bounded surface.",
+  whenToUse:
+    "Use Card when one compact, self-contained content group should scan as a bounded unit. Prefer Section for a major region and ItemCard for a collection record.",
   props: {
     title: { type: "string", guidance: "Optional heading for the card." },
     tone: {
@@ -285,7 +292,8 @@ export const CARD_SPEC: ComponentSpec = {
 
 export const MODAL_SPEC: ComponentSpec = {
   tag: "Modal",
-  whenToUse: "Open one focused decision or short task in Facet's trusted modal frame.",
+  whenToUse:
+    "Use Modal when one short, interrupting decision or task must finish without leaving the current context. Avoid it for primary page content or long workflows.",
   props: {
     triggerLabel: {
       type: "string",
@@ -319,7 +327,8 @@ export const MODAL_SPEC: ComponentSpec = {
 
 export const DIVIDER_SPEC: ComponentSpec = {
   tag: "Divider",
-  whenToUse: "Separate neighboring regions in the reading flow.",
+  whenToUse:
+    "Use Divider when adjacent regions need a visible or labeled break in reading flow. Prefer spacing or Section when the grouping is already clear.",
   props: {
     label: { type: "string", guidance: "Optional short label in the divider." },
     emphasis: {

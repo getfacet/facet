@@ -191,6 +191,14 @@ describe("DEFAULT_CATALOG", () => {
     expect(Object.values(actual).map((tags) => tags.length)).toEqual([19, 11, 17]);
   });
 
+  it("gives every component a two-part discovery boundary", () => {
+    for (const spec of DEFAULT_COMPONENT_SPECS) {
+      expect(spec.whenToUse).toMatch(
+        new RegExp(`^Use ${spec.tag} .+\\. (?:Prefer|Avoid|Do not) .+\\.$`, "u"),
+      );
+    }
+  });
+
   it("passes the Core catalog trust boundary with the same exact roster", () => {
     const result = validateCatalog(DEFAULT_CATALOG);
     expect(result.ok ? "accepted" : `${result.code} at ${result.at}`).toBe("accepted");

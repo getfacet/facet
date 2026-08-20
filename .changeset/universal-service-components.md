@@ -14,4 +14,5 @@ Replace the pre-release default component contract with the 47-component V1
 catalog. Components now declare one closed content mode, structured components
 receive named slots, structured data may carry shallow shapes, hosts may pin
 safe image assets, and collected values support strings, booleans, and bounded
-string arrays.
+string arrays. Every default component also carries concise discovery guidance
+that distinguishes its visitor purpose from its nearest alternatives.

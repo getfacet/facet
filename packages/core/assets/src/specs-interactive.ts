@@ -64,7 +64,8 @@ const MESSAGE_SHAPE = {
 
 export const FORM_SPEC: ComponentSpec = {
   tag: "Form",
-  whenToUse: "Group collectable controls with the actions that submit or use their values.",
+  whenToUse:
+    "Use Form when multiple collectable controls belong to one submission or decision. Prefer a standalone control when one value can be acted on independently.",
   props: {
     layout: {
       type: "string",
@@ -98,7 +99,8 @@ export const FORM_SPEC: ComponentSpec = {
 
 export const FIELD_SPEC: ComponentSpec = {
   tag: "Field",
-  whenToUse: "Ask the visitor for one short text value.",
+  whenToUse:
+    "Use Field when the visitor must enter one short non-sensitive text value. Prefer Select or ChoiceGroup when the valid options are already known.",
   props: {
     name: {
       type: "string",
@@ -148,7 +150,8 @@ export const FIELD_SPEC: ComponentSpec = {
 
 export const SELECT_SPEC: ComponentSpec = {
   tag: "Select",
-  whenToUse: "Let the visitor choose one value from a data-backed option list.",
+  whenToUse:
+    "Use Select when the visitor must choose one value from a data-backed list, especially when options are numerous. Prefer ChoiceGroup for a short visible set.",
   props: {
     name: {
       type: "string",
@@ -195,7 +198,8 @@ export const SELECT_SPEC: ComponentSpec = {
 
 export const CHOICE_GROUP_SPEC: ComponentSpec = {
   tag: "ChoiceGroup",
-  whenToUse: "Let the visitor choose several values from a short data-backed option list.",
+  whenToUse:
+    "Use ChoiceGroup when a short set of data-backed choices should stay visible and one or more may be selected. Prefer Select for a longer single-choice list.",
   props: {
     name: {
       type: "string",
@@ -244,7 +248,8 @@ export const CHOICE_GROUP_SPEC: ComponentSpec = {
 
 export const TOGGLE_SPEC: ComponentSpec = {
   tag: "Toggle",
-  whenToUse: "Let the visitor turn one boolean setting on or off.",
+  whenToUse:
+    "Use Toggle when one boolean setting should change directly between on and off. Prefer ChoiceGroup when choosing among named alternatives.",
   props: {
     name: {
       type: "string",
@@ -277,7 +282,8 @@ export const TOGGLE_SPEC: ComponentSpec = {
 
 export const MESSAGE_THREAD_SPEC: ComponentSpec = {
   tag: "MessageThread",
-  whenToUse: "Show a bounded data-backed conversation in chronological order.",
+  whenToUse:
+    "Use MessageThread when a bounded chronological exchange is itself the information to inspect. Prefer List or Timeline for non-conversational events.",
   props: {
     messages: {
       type: "array",
@@ -303,7 +309,8 @@ export const MESSAGE_THREAD_SPEC: ComponentSpec = {
 
 export const ACCORDION_SPEC: ComponentSpec = {
   tag: "Accordion",
-  whenToUse: "Group related disclosures when the visitor should reveal details as needed.",
+  whenToUse:
+    "Use Accordion when several related details are optional and should be revealed on demand. Avoid hiding information required for the visitor's next decision.",
   props: {
     multiple: {
       type: "boolean",
@@ -332,7 +339,8 @@ export const ACCORDION_SPEC: ComponentSpec = {
 
 export const ACCORDION_ITEM_SPEC: ComponentSpec = {
   tag: "AccordionItem",
-  whenToUse: "Provide one titled disclosure inside an Accordion.",
+  whenToUse:
+    "Use AccordionItem for one titled disclosure inside Accordion with optional actions tied to its content. Do not use it as a standalone card.",
   props: {
     title: {
       type: "string",

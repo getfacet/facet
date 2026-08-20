@@ -248,7 +248,7 @@ describe("ComponentInspector", () => {
     ).toEqual(presentedTags());
     expect(components.textContent).toContain(`${DEFAULT_CATALOG.components.length} components`);
 
-    changeInput(inputNamed(components, "Search components"), "mark a short status");
+    changeInput(inputNamed(components, "Search components"), "short status or category");
 
     expect(
       [...components.querySelectorAll("[data-component-option]")].map((element) =>

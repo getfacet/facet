@@ -3,7 +3,8 @@ import type { ComponentSpec } from "@facet/core";
 
 export const TEXT_SPEC: ComponentSpec = {
   tag: "Text",
-  whenToUse: "Show a title, heading, paragraph, or caption.",
+  whenToUse:
+    "Use Text for standalone visitor-facing titles, headings, paragraphs, or captions. Prefer a component's title or description prop when the copy names that component.",
   props: {
     value: {
       type: "string",
@@ -41,7 +42,8 @@ export const TEXT_SPEC: ComponentSpec = {
 
 export const AVATAR_SPEC: ComponentSpec = {
   tag: "Avatar",
-  whenToUse: "Represent a person, team, or brand with compact identity initials.",
+  whenToUse:
+    "Use Avatar for compact identity of a person, team, or brand when initials are sufficient. Prefer Image when the actual visual asset matters.",
   props: {
     label: { type: "string", required: true, guidance: "Accessible identity name." },
     initials: {
@@ -77,7 +79,8 @@ export const AVATAR_SPEC: ComponentSpec = {
 
 export const ICON_SPEC: ComponentSpec = {
   tag: "Icon",
-  whenToUse: "Show a familiar symbolic cue beside content or status.",
+  whenToUse:
+    "Use Icon as a familiar supplemental cue for an action, status, or concept. Do not use it as the only meaning when a clear text label is needed.",
   props: {
     name: { type: "string", required: true, guidance: "A trusted icon name from the default set." },
     label: { type: "string", guidance: "Accessible meaning when the icon is not decorative." },
@@ -100,7 +103,8 @@ export const ICON_SPEC: ComponentSpec = {
 
 export const IMAGE_SPEC: ComponentSpec = {
   tag: "Image",
-  whenToUse: "Show a host-approved image from the pinned asset registry.",
+  whenToUse:
+    "Use Image when a host-approved visual helps the visitor identify, inspect, or compare something. Avoid decorative imagery that does not support the current task.",
   props: {
     asset: {
       type: "string",
@@ -129,7 +133,8 @@ export const IMAGE_SPEC: ComponentSpec = {
 
 export const BADGE_SPEC: ComponentSpec = {
   tag: "Badge",
-  whenToUse: "Mark a short status beside the thing it describes.",
+  whenToUse:
+    "Use Badge for a short status or category attached to a specific object. Prefer Alert for an important message and Text for explanatory copy.",
   props: {
     label: {
       type: "string",
@@ -159,7 +164,8 @@ export const BADGE_SPEC: ComponentSpec = {
 
 export const METRIC_SPEC: ComponentSpec = {
   tag: "Metric",
-  whenToUse: "Show one headline number and the label that explains it.",
+  whenToUse:
+    "Use Metric for one decision-relevant number with a concise label. Prefer Property for an ordinary fact and Progress for bounded completion.",
   props: {
     label: { type: "string", required: true, guidance: "What the number measures." },
     value: {
@@ -184,7 +190,8 @@ export const METRIC_SPEC: ComponentSpec = {
 
 export const METRIC_GROUP_SPEC: ComponentSpec = {
   tag: "MetricGroup",
-  whenToUse: "Arrange related metrics as one comparable summary.",
+  whenToUse:
+    "Use MetricGroup when several related metrics must be scanned or compared as one summary. Prefer a single Metric when only one number matters.",
   props: {
     title: { type: "string", guidance: "Optional heading for the metric set." },
     columns: {
@@ -209,7 +216,8 @@ export const METRIC_GROUP_SPEC: ComponentSpec = {
 
 export const TABLE_SPEC: ComponentSpec = {
   tag: "Table",
-  whenToUse: "Show a published collection of records as rows and columns.",
+  whenToUse:
+    "Use Table when visitors must scan or compare many records across consistent columns. Prefer Collection for visual browsing and PropertyList for one record.",
   props: {
     rows: {
       type: "array",
@@ -237,7 +245,8 @@ export const TABLE_SPEC: ComponentSpec = {
 
 export const CHART_SPEC: ComponentSpec = {
   tag: "Chart",
-  whenToUse: "Compare or trend numeric values from published record data.",
+  whenToUse:
+    "Use Chart when a numeric trend, distribution, or comparison is clearer visually than as rows. Prefer Metric or Table when exact values matter more.",
   props: {
     data: {
       type: "array",
@@ -279,7 +288,8 @@ export const CHART_SPEC: ComponentSpec = {
 
 export const PROGRESS_SPEC: ComponentSpec = {
   tag: "Progress",
-  whenToUse: "Show bounded completion from zero to one hundred percent.",
+  whenToUse:
+    "Use Progress when one task or process has meaningful bounded completion from zero to one hundred. Prefer Badge for status and Timeline for ordered stages.",
   props: {
     label: { type: "string", required: true, guidance: "What is progressing." },
     value: {
@@ -312,7 +322,8 @@ export const PROGRESS_SPEC: ComponentSpec = {
 
 export const TIMELINE_SPEC: ComponentSpec = {
   tag: "Timeline",
-  whenToUse: "Arrange milestones or dated events in a clear sequence.",
+  whenToUse:
+    "Use Timeline when the order of milestones or dated events explains progress or history. Prefer Calendar when date placement and selection matter.",
   props: {
     title: { type: "string", guidance: "Optional heading for the sequence." },
     tone: {
@@ -338,7 +349,8 @@ export const TIMELINE_SPEC: ComponentSpec = {
 
 export const LIST_SPEC: ComponentSpec = {
   tag: "List",
-  whenToUse: "Arrange related items as a readable ordered or unordered list.",
+  whenToUse:
+    "Use List for a simple ordered or unordered sequence read in one flow. Prefer Collection when items need rich summaries, controls, or item actions.",
   props: {
     title: { type: "string", guidance: "Optional heading for the list." },
     marker: {

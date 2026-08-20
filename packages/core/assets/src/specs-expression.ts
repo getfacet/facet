@@ -15,7 +15,8 @@ function slot(
 
 export const HEADER_SPEC: ComponentSpec = {
   tag: "Header",
-  whenToUse: "Introduce a page, record, profile, or major task with clear context.",
+  whenToUse:
+    "Use Header to establish the identity and priority of a page, record, profile, or major task with optional status and actions. Avoid it for ordinary subsections.",
   props: {
     title: { type: "string", required: true, guidance: "The primary heading." },
     description: { type: "string", guidance: "Optional supporting copy below the heading." },
@@ -58,7 +59,8 @@ export const HEADER_SPEC: ComponentSpec = {
 
 export const COLLECTION_SPEC: ComponentSpec = {
   tag: "Collection",
-  whenToUse: "Present a browsable set of related records, products, or resources.",
+  whenToUse:
+    "Use Collection when visitors must browse, filter, or act on multiple peer records or resources. Prefer List for simple sequences and Detail for one item.",
   props: {
     title: { type: "string", guidance: "Optional heading for the collection." },
     description: { type: "string", guidance: "Optional context for the collection." },
@@ -97,7 +99,8 @@ export const COLLECTION_SPEC: ComponentSpec = {
 
 export const ITEM_CARD_SPEC: ComponentSpec = {
   tag: "ItemCard",
-  whenToUse: "Summarize one item in a collection with optional media and actions.",
+  whenToUse:
+    "Use ItemCard to summarize one peer item in a browsable collection with optional facts and actions. Prefer Detail when one item is the primary focus.",
   props: {
     title: { type: "string", required: true, guidance: "The item's primary name." },
     description: { type: "string", guidance: "Optional short item summary." },
@@ -134,7 +137,8 @@ export const ITEM_CARD_SPEC: ComponentSpec = {
 
 export const DETAIL_SPEC: ComponentSpec = {
   tag: "Detail",
-  whenToUse: "Present one record, product, service, or resource in depth.",
+  whenToUse:
+    "Use Detail when the visitor must inspect one record, product, service, or resource in depth and may act on it. Prefer ItemCard when browsing many peers.",
   props: {
     title: { type: "string", required: true, guidance: "The detail view's primary heading." },
     description: { type: "string", guidance: "Optional overview below the heading." },
@@ -172,7 +176,8 @@ export const DETAIL_SPEC: ComponentSpec = {
 
 export const PROPERTY_LIST_SPEC: ComponentSpec = {
   tag: "PropertyList",
-  whenToUse: "Show a scannable set of labels and values for one record.",
+  whenToUse:
+    "Use PropertyList when one record's label-value facts must be scanned together. Prefer Table for many records and Detail for richer content or actions.",
   props: {
     title: { type: "string", guidance: "Optional heading for the property set." },
     columns: {
@@ -194,7 +199,8 @@ export const PROPERTY_LIST_SPEC: ComponentSpec = {
 
 export const PROPERTY_SPEC: ComponentSpec = {
   tag: "Property",
-  whenToUse: "Show one labeled text value inside a property list.",
+  whenToUse:
+    "Use Property for one labeled text value inside PropertyList. Prefer Metric for a headline number and Badge for a short status.",
   props: {
     label: { type: "string", required: true, guidance: "The name of the property." },
     value: {
@@ -216,7 +222,8 @@ export const PROPERTY_SPEC: ComponentSpec = {
 
 export const BOARD_SPEC: ComponentSpec = {
   tag: "Board",
-  whenToUse: "Organize work or records into a bounded set of named columns.",
+  whenToUse:
+    "Use Board when work or records must be understood across a small set of named states or categories. Prefer Collection when column membership is not meaningful.",
   props: { title: { type: "string", guidance: "Optional heading for the board." } },
   content: {
     mode: "slots",
@@ -227,7 +234,8 @@ export const BOARD_SPEC: ComponentSpec = {
 
 export const BOARD_COLUMN_SPEC: ComponentSpec = {
   tag: "BoardColumn",
-  whenToUse: "Group related board items under one workflow state or category.",
+  whenToUse:
+    "Use BoardColumn for one state or category inside Board and order its related items for scanning. Do not use it outside a board-style workflow.",
   props: {
     title: { type: "string", required: true, guidance: "The workflow state or category name." },
     description: { type: "string", guidance: "Optional short explanation of the column." },
@@ -254,7 +262,8 @@ export const BOARD_COLUMN_SPEC: ComponentSpec = {
 
 export const CALENDAR_SPEC: ComponentSpec = {
   tag: "Calendar",
-  whenToUse: "Show dated published events in a month or agenda view.",
+  whenToUse:
+    "Use Calendar when dated events must be understood or selected by month or agenda position. Prefer Timeline when sequence matters more than date navigation.",
   props: {
     name: {
       type: "string",
@@ -306,7 +315,8 @@ export const CALENDAR_SPEC: ComponentSpec = {
 
 export const RESULT_SPEC: ComponentSpec = {
   tag: "Result",
-  whenToUse: "Summarize the outcome of a search, operation, or completed task.",
+  whenToUse:
+    "Use Result when a search, operation, or task produced an outcome the visitor must understand and may act on. Prefer Alert for an active condition.",
   props: {
     title: { type: "string", required: true, guidance: "One line naming the outcome." },
     description: { type: "string", guidance: "Optional explanation or next-step context." },
@@ -340,7 +350,8 @@ export const RESULT_SPEC: ComponentSpec = {
 
 export const EMPTY_SPEC: ComponentSpec = {
   tag: "Empty",
-  whenToUse: "Stand in for a view or collection that has no content yet.",
+  whenToUse:
+    "Use Empty when a view or collection legitimately has no content and the visitor needs context or a next step. Do not use it for loading or error states.",
   props: {
     title: { type: "string", required: true, guidance: "One line naming what is absent." },
     description: { type: "string", guidance: "Optional context explaining what can happen next." },
@@ -366,7 +377,8 @@ export const EMPTY_SPEC: ComponentSpec = {
 
 export const ALERT_SPEC: ComponentSpec = {
   tag: "Alert",
-  whenToUse: "Show one important informational, success, warning, or danger message.",
+  whenToUse:
+    "Use Alert when one active informational, success, warning, or danger condition needs immediate awareness or response. Prefer Result for a completed outcome.",
   props: {
     title: { type: "string", required: true, guidance: "One line naming the message." },
     description: { type: "string", guidance: "Optional supporting detail or next steps." },

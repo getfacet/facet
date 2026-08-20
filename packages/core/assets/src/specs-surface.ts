@@ -3,7 +3,8 @@ import type { ComponentSpec } from "@facet/core";
 
 export const NAVIGATION_SPEC: ComponentSpec = {
   tag: "Navigation",
-  whenToUse: "Group destinations and commands into a horizontal bar or vertical rail.",
+  whenToUse:
+    "Use Navigation when persistent destinations or commands must remain discoverable as a bar or rail. Avoid it for one-off next-step actions.",
   props: {
     label: {
       type: "string",
@@ -56,7 +57,8 @@ export const NAVIGATION_SPEC: ComponentSpec = {
 
 export const NAVIGATION_ITEM_SPEC: ComponentSpec = {
   tag: "NavigationItem",
-  whenToUse: "Add one destination or command inside Navigation.",
+  whenToUse:
+    "Use NavigationItem for one destination or command inside Navigation. Prefer Button for a task action outside persistent navigation.",
   props: {
     label: {
       type: "string",
@@ -101,7 +103,8 @@ export const NAVIGATION_ITEM_SPEC: ComponentSpec = {
 
 export const BUTTON_SPEC: ComponentSpec = {
   tag: "Button",
-  whenToUse: "Offer one explicit navigation or agent action.",
+  whenToUse:
+    "Use Button for one explicit navigation or agent action with a clear outcome. Prefer NavigationItem for persistent destinations and Toggle for boolean settings.",
   props: {
     label: { type: "string", guidance: "Visible label naming the action.", required: true },
     action: {
@@ -144,7 +147,8 @@ export const BUTTON_SPEC: ComponentSpec = {
 
 export const ACTION_GROUP_SPEC: ComponentSpec = {
   tag: "ActionGroup",
-  whenToUse: "Group related navigation and agent actions in a row or stack.",
+  whenToUse:
+    "Use ActionGroup when several closely related actions need shared alignment or emphasis. Prefer ActionBar when actions need adjacent status or explanation.",
   props: {
     title: { type: "string", guidance: "Optional heading for the action group." },
     layout: {
@@ -187,7 +191,8 @@ export const ACTION_GROUP_SPEC: ComponentSpec = {
 
 export const ACTION_BAR_SPEC: ComponentSpec = {
   tag: "ActionBar",
-  whenToUse: "Pair optional context with one to four related actions in a bounded band.",
+  whenToUse:
+    "Use ActionBar when compact context or a current selection must stay beside its available actions. Prefer ActionGroup when no contextual region is needed.",
   props: {
     align: {
       type: "string",
