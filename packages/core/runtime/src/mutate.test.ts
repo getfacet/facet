@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ComponentDocument, DataModel, FacetCatalog } from "@facet/core";
+import type { ComponentDocument, DataModel, FacetAssetRegistry, FacetCatalog } from "@facet/core";
 
 import { validTestTheme } from "../../../../test-support/theme-fixture.js";
 import { bootstrapSession } from "./bootstrap.js";
@@ -82,6 +82,20 @@ function catalogRecord(): Record<string, unknown> {
         content: { mode: "children" },
       },
       {
+        tag: "Image",
+        whenToUse: "Show a host-pinned image.",
+        props: {
+          asset: {
+            type: "string",
+            required: true,
+            assetKind: "image",
+            guidance: "The host-pinned image asset.",
+          },
+          alt: { type: "string", required: true, guidance: "Alternative text." },
+        },
+        content: { mode: "none" },
+      },
+      {
         tag: "Split",
         whenToUse: "Arrange primary and secondary regions.",
         props: {},
@@ -107,10 +121,11 @@ function catalogRecord(): Record<string, unknown> {
   };
 }
 
-function boot(initialMarkup?: string): Session {
+function boot(initialMarkup?: string, assetRegistry?: FacetAssetRegistry): Session {
   const result = bootstrapSession({
     catalog: catalogRecord() as unknown as FacetCatalog,
     theme: validTestTheme(),
+    ...(assetRegistry === undefined ? {} : { assetRegistry }),
     ...(initialMarkup === undefined ? {} : { initialMarkup }),
   });
   if (!result.ok) {
@@ -199,6 +214,40 @@ describe("applyAuthorMutation", () => {
     expect(result.session.data).toEqual({ status: "kept" });
     expect(documentText(result.session.document)).toEqual(["Ready"]);
     expect(result.patches).toEqual([{ op: "replace", path: "/document", value: result.document }]);
+  });
+
+  it("uses the session asset registry for full and targeted authoring", () => {
+    const assets = {
+      hero: { kind: "image" as const, src: "https://cdn.example.test/hero.png" },
+    };
+    const gate = new TurnGate();
+    const token = admitted(gate);
+    const initial = boot(undefined, assets);
+    const rendered = applyAuthorMutation(
+      initial,
+      "render_page",
+      {
+        markup:
+          '<Facet entry="home"><Screen name="home"><Image asset="asset:hero" alt="Hero" /></Screen></Facet>', // component-hard-cut: allowed-negative
+      },
+      0,
+      { kind: "turn", token },
+      gate,
+    );
+
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    const imageId = nodeIdByTag(rendered.document, "Image");
+    const updated = applyAuthorMutation(
+      rendered.session,
+      "update_node",
+      { targetId: imageId, markup: '<Image asset="asset:hero" alt="Updated hero" />' },
+      rendered.stageRevision,
+      { kind: "turn", token },
+      gate,
+    );
+
+    expect(updated.ok).toBe(true);
   });
 
   it.each(MUTATIONS_REQUIRING_A_PAGE)(

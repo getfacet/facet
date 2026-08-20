@@ -72,7 +72,7 @@ function validateShape(value: unknown, at: string): StructuredShapeValidationRes
   if (unknownKey !== undefined) {
     return reject(
       "unknown_structured_shape_key",
-      `${at}.${unknownKey}`,
+      unknownKey === null ? at : `${at}.${unknownKey}`,
       "The structured shape form is closed.",
     );
   }
@@ -93,15 +93,14 @@ function validateShape(value: unknown, at: string): StructuredShapeValidationRes
     );
   }
 
-  const names = Object.getOwnPropertyNames(rawFields).sort();
-  if (names.length > BOUNDS.dataModelObjectKeys) {
+  const names = boundedEnumerableKeys(rawFields, BOUNDS.dataModelObjectKeys);
+  if (names === null) {
     return reject(
       "too_many_structured_fields",
       `${at}.fields`,
       "Structured field count exceeds B-18.",
     );
   }
-
   const fields: Record<string, StructuredFieldSpec> = Object.create(null) as Record<
     string,
     StructuredFieldSpec
@@ -150,7 +149,7 @@ function validateField(
   if (unknownKey !== undefined) {
     return reject(
       "unknown_structured_field_key",
-      `${at}.${unknownKey}`,
+      unknownKey === null ? at : `${at}.${unknownKey}`,
       "The structured field form is closed.",
     );
   }
@@ -286,10 +285,25 @@ function matchesFieldValue(value: unknown, type: StructuredFieldSpec["type"]): b
 function firstUnknownKey(
   record: Readonly<Record<string, unknown>>,
   allowed: readonly string[],
-): string | undefined {
-  return Object.getOwnPropertyNames(record)
-    .sort()
-    .find((key) => !allowed.includes(key));
+): string | null | undefined {
+  const keys = boundedEnumerableKeys(record, BOUNDS.propsPerElement);
+  if (keys === null) return null;
+  return keys.find((key) => !allowed.includes(key));
+}
+
+function boundedEnumerableKeys(
+  record: Readonly<Record<string, unknown>>,
+  limit: number,
+): readonly string[] | null {
+  const keys: string[] = [];
+  for (const key in record) {
+    if (!Object.hasOwn(record, key)) {
+      break;
+    }
+    keys.push(key);
+    if (keys.length > limit) return null;
+  }
+  return Object.freeze(keys.sort());
 }
 
 function defineFrozenEntry<T>(record: Record<string, T>, key: string, value: T): void {

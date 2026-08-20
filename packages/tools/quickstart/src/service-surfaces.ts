@@ -60,11 +60,11 @@ export type ServiceSurfaceGroupId =
   | "analytics"
   | "booking-consultation"
   | "support"
-  | "onboarding"
+  | "collaboration"
   | "operations-board"
-  | "calendar-scheduling"
-  | "messaging"
-  | "form-result";
+  | "education"
+  | "knowledge"
+  | "finance";
 
 export interface ServiceSurfaceGroup {
   readonly id: ServiceSurfaceGroupId;
@@ -228,9 +228,9 @@ export const SERVICE_SURFACE_GROUPS: readonly ServiceSurfaceGroup[] = Object.fre
     ],
   ),
   group(
-    "onboarding",
-    "Onboarding",
-    "Guided setup, preference collection, progress, and next-step surfaces.",
+    "collaboration",
+    "Collaboration",
+    "Shared setup, preference collection, progress, and team next-step surfaces.",
     false,
     [
       "Screen",
@@ -266,9 +266,9 @@ export const SERVICE_SURFACE_GROUPS: readonly ServiceSurfaceGroup[] = Object.fre
     ],
   ),
   group(
-    "calendar-scheduling",
-    "Calendar / Scheduling",
-    "Agenda, availability, event selection, and schedule management surfaces.",
+    "education",
+    "Education",
+    "Course schedules, learning queues, event selection, and preparation surfaces.",
     false,
     [
       "Screen",
@@ -283,9 +283,9 @@ export const SERVICE_SURFACE_GROUPS: readonly ServiceSurfaceGroup[] = Object.fre
     ],
   ),
   group(
-    "messaging",
-    "Messaging",
-    "Conversation history, contact context, replies, and escalation actions.",
+    "knowledge",
+    "Knowledge",
+    "Expert context, evidence conversations, questions, and follow-up actions.",
     false,
     [
       "Screen",
@@ -300,9 +300,9 @@ export const SERVICE_SURFACE_GROUPS: readonly ServiceSurfaceGroup[] = Object.fre
     ],
   ),
   group(
-    "form-result",
-    "Form / Result",
-    "Input-heavy workflows that resolve into a clear success, warning, or empty state.",
+    "finance",
+    "Finance",
+    "Financial request workflows that resolve into a clear outcome or empty state.",
     false,
     [
       "Screen",

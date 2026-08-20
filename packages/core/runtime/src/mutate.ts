@@ -134,7 +134,12 @@ function validateNextDocument(
   if (!parsed.ok) {
     return authorReject(parsed.error);
   }
-  const validated = validateAuthorMarkup(parsed.ast, session.catalog, session.data);
+  const validated = validateAuthorMarkup(
+    parsed.ast,
+    session.catalog,
+    session.data,
+    session.assetRegistry,
+  );
   if (!validated.ok) {
     return authorReject(validated.error);
   }
@@ -437,7 +442,12 @@ function validateCandidate(
 ):
   | { readonly ok: true; readonly document: ComponentDocument }
   | Extract<AuthorMutationResult, { ok: false }> {
-  const validated = validateAuthorMarkup(stripIds(candidateAst), session.catalog, session.data);
+  const validated = validateAuthorMarkup(
+    stripIds(candidateAst),
+    session.catalog,
+    session.data,
+    session.assetRegistry,
+  );
   if (!validated.ok) {
     return authorReject(validated.error);
   }

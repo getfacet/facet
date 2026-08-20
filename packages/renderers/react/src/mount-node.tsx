@@ -324,14 +324,22 @@ function readImplementation(
  * required one, a value that disagrees with its declared type, a binding on a
  * prop the schema does not make bindable, a prop whose read threw — describes
  * the **document**, and a document that says those things did not come from an
- * accepted mutation.
+ * accepted mutation. The exception never applies to a collectable component's
+ * sensitivity prop: an unresolved confidentiality decision must remove the
+ * field rather than register it as non-sensitive.
  *
  * Written as "everything except the one exception" on purpose: a reason added to
  * either arm of the union later refuses by default, which is the safe direction
  * for a consumer of a vocabulary it does not own.
  */
-function refusesTheMount(issues: readonly BindingIssue[]): boolean {
-  return issues.some((issue) => issue.scope === "node" || issue.reason !== DATA_ONLY_ISSUE);
+function refusesTheMount(issues: readonly BindingIssue[], spec: ComponentSpec): boolean {
+  const sensitiveProp = spec.collect?.sensitiveProp;
+  return issues.some(
+    (issue) =>
+      issue.scope === "node" ||
+      issue.reason !== DATA_ONLY_ISSUE ||
+      (sensitiveProp !== undefined && issue.prop === sensitiveProp),
+  );
 }
 
 /**
@@ -445,7 +453,9 @@ function planContent(
     if (bucket === undefined || typeof minChildren !== "number" || bucket.length < minChildren) {
       return null;
     }
-    slots[name] = Object.freeze([...bucket]);
+    if (bucket.length > 0) {
+      slots[name] = Object.freeze([...bucket]);
+    }
   }
   return {
     children: NO_CHILD_IDS,
@@ -488,25 +498,62 @@ function readsAsModal(spec: ComponentSpec): boolean {
  * The boundary reset input for one node: a pure function of that node's own
  * post-binding `{tag, resolvedProps, contentRouting}`, and of nothing else.
  *
- * `resolveProps` walks a spec's declared props in sorted order, so the record's
- * key order is a property of the spec rather than of the stored node, and the
- * same node always reduces to the same string.
+ * `resolveProps` walks a spec's declared props in sorted order. Scalar text and
+ * structured values are reduced to fixed-size digests, and structured object
+ * digests are cached by immutable model identity. A large value shared by many
+ * nodes is therefore serialized once and no boundary retains its full text.
  *
  * A resolved value that cannot be reduced — a structured prop the Data Model
  * handed over with a cycle in it — yields a **stable** stand-in rather than a
  * fresh one. A token that changed on every render would remount the subtree on
  * every render, which is the failure this whole derivation exists to avoid.
  */
+const RESET_VALUE_DIGESTS = new WeakMap<object, string>();
+
+function digestText(value: string): string {
+  let left = 0x811c9dc5;
+  let right = 0x9e3779b9;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    left = Math.imul(left ^ code, 0x01000193);
+    right = Math.imul(right ^ code, 0x85ebca6b);
+  }
+  return `${(left >>> 0).toString(16).padStart(8, "0")}${(right >>> 0)
+    .toString(16)
+    .padStart(8, "0")}:${value.length}`;
+}
+
+function digestResetValue(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "string") return `s:${digestText(value)}`;
+  if (typeof value === "number") return `n:${String(value)}`;
+  if (typeof value === "boolean") return value ? "b:1" : "b:0";
+  if (typeof value !== "object") return `${typeof value}:${UNSERIALIZABLE}`;
+
+  const cached = RESET_VALUE_DIGESTS.get(value);
+  if (cached !== undefined) return cached;
+  try {
+    const serialized = JSON.stringify(value);
+    if (typeof serialized !== "string") return `j:${UNSERIALIZABLE}`;
+    const digest = `j:${digestText(serialized)}`;
+    RESET_VALUE_DIGESTS.set(value, digest);
+    return digest;
+  } catch {
+    return `j:${UNSERIALIZABLE}`;
+  }
+}
+
 export function deriveResetToken(
   tag: string,
   props: ResolvedProps,
   contentRouting: readonly unknown[],
 ): string {
-  try {
-    return JSON.stringify([tag, props, contentRouting]);
-  } catch {
-    return JSON.stringify([tag, UNSERIALIZABLE, contentRouting]);
+  const parts = [`tag:${digestText(tag)}`];
+  for (const name of Object.keys(props).sort()) {
+    parts.push(`prop:${digestText(name)}=${digestResetValue(props[name])}`);
   }
+  parts.push(`content:${digestResetValue(contentRouting)}`);
+  return parts.join("|");
 }
 
 /**
@@ -555,7 +602,7 @@ export function mountOrFallback(
     model,
     context.assetRegistry,
   );
-  if (refusesTheMount(resolution.issues)) {
+  if (refusesTheMount(resolution.issues, spec)) {
     return degrade();
   }
   return (

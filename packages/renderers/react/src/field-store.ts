@@ -38,8 +38,8 @@
  * nothing else, which is what keeps the server the only writer of the document
  * and the data.
  *
- * Values are clamped to `B-23` on write, so the store cannot come to hold a
- * value that could not be collected. Every function is **total**: a write to an
+ * Values outside `B-23` are rejected on write, so the store cannot silently
+ * change one semantic value into another. Every function is **total**: a write to an
  * unregistered node, a disposer that fires twice, and a component reporting a
  * value after unmounting are all no-ops rather than errors.
  *
@@ -190,23 +190,21 @@ function normalizeValue(kind: CollectedValueKind, value: unknown): CollectedValu
       if (typeof value !== "string") {
         return null;
       }
-      return value.length > BOUNDS.collectedValueChars
-        ? value.slice(0, BOUNDS.collectedValueChars)
-        : value;
+      return value.length <= BOUNDS.collectedValueChars ? value : null;
     }
     if (!Array.isArray(value)) {
       return null;
     }
     const items: string[] = [];
-    const count = Math.min(value.length, BOUNDS.dataModelArrayLength);
-    for (let index = 0; index < count; index += 1) {
+    if (value.length > BOUNDS.dataModelArrayLength) {
+      return null;
+    }
+    for (let index = 0; index < value.length; index += 1) {
       const item = value[index];
-      if (typeof item !== "string") {
+      if (typeof item !== "string" || item.length > BOUNDS.collectedValueChars) {
         return null;
       }
-      items.push(
-        item.length > BOUNDS.collectedValueChars ? item.slice(0, BOUNDS.collectedValueChars) : item,
-      );
+      items.push(item);
     }
     return Object.freeze(items);
   } catch {
@@ -226,6 +224,13 @@ function sameValue(left: CollectedValue, right: CollectedValue): boolean {
     return left === right;
   }
   return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
+function valueIdentity(value: CollectedValue): string {
+  if (Array.isArray(value)) {
+    return `array:${JSON.stringify(value)}`;
+  }
+  return `${typeof value}:${String(value)}`;
 }
 
 /** Creates one session's field store. Nothing here is shared between sessions. */
@@ -404,6 +409,7 @@ const useRegistrationEffect = typeof window === "undefined" ? useEffect : useLay
 export function FieldHost(host: FieldHostProps): ReactNode {
   const { nodeId, spec, props, store, mount } = host;
   const seed = useMemo(() => readSeed(spec, props), [spec, props]);
+  const seedIdentity = valueIdentity(seed);
   const sensitive = readSensitive(spec.collect, props);
   const name = readName(props);
   const valueProp = spec.collect.valueProp;
@@ -434,7 +440,7 @@ export function FieldHost(host: FieldHostProps): ReactNode {
     // `name` is read here but is intentionally not a dependency: it is carried
     // so a fresh registration is complete in one step, and the effect below owns
     // every later change to it.
-    [store, nodeId, sensitive, seed, valueKind],
+    [store, nodeId, sensitive, seedIdentity, valueKind],
   );
 
   // The address moves on its own, because values are keyed by the stable node

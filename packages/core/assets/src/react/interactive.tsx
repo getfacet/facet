@@ -1,5 +1,6 @@
 /** Trusted React implementations for inputs, communication, and disclosure. */
 
+import { BOUNDS } from "@facet/core";
 import type { ComponentMountProps, MountedComponent } from "@facet/core";
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
@@ -60,7 +61,7 @@ function stringArrayProp(mount: Mount, name: string): readonly string[] {
 function arrayProp(mount: Mount, name: string): readonly unknown[] {
   try {
     const value = mount.props[name];
-    return Array.isArray(value) ? value : [];
+    return Array.isArray(value) ? value.slice(0, BOUNDS.renderedCollectionItems) : [];
   } catch {
     return [];
   }
@@ -194,6 +195,7 @@ export const Field: MountedComponent<ReactNode, ReactNode> = (mount): ReactNode 
       <input
         type={secret ? "password" : "text"}
         value={value}
+        maxLength={BOUNDS.collectedValueChars}
         placeholder={placeholder}
         style={flowStyle(inputStyle("field"))}
         onChange={(event) => {
@@ -211,12 +213,23 @@ interface OptionRecord {
 }
 
 function optionsFrom(mount: Mount): readonly OptionRecord[] {
-  return arrayProp(mount, "options").flatMap((candidate): readonly OptionRecord[] => {
+  const options: OptionRecord[] = [];
+  const seen = new Set<string>();
+  for (const candidate of arrayProp(mount, "options")) {
     const label = ownString(candidate, "label");
     const value = ownString(candidate, "value");
-    if (label === undefined || value === undefined) return [];
-    return [{ label, value, disabled: ownBoolean(candidate, "disabled") ?? false }];
-  });
+    if (
+      label === undefined ||
+      value === undefined ||
+      value.length > BOUNDS.collectedValueChars ||
+      seen.has(value)
+    ) {
+      continue;
+    }
+    seen.add(value);
+    options.push({ label, value, disabled: ownBoolean(candidate, "disabled") ?? false });
+  }
+  return Object.freeze(options);
 }
 
 /** One controlled native select over a closed shaped option collection. */
@@ -225,6 +238,14 @@ export const Select: MountedComponent<ReactNode, ReactNode> = (mount): ReactNode
   const value = stringProp(mount, "value");
   const placeholder = textProp(mount.props, "placeholder");
   const options = optionsFrom(mount);
+  const valueIsAvailable = value === "" || options.some((option) => option.value === value);
+  const displayedValue = valueIsAvailable ? value : "";
+
+  useEffect(() => {
+    if (!valueIsAvailable) {
+      mount.onValueChange?.("");
+    }
+  }, [mount.onValueChange, value, valueIsAvailable]);
 
   return (
     <label
@@ -238,15 +259,15 @@ export const Select: MountedComponent<ReactNode, ReactNode> = (mount): ReactNode
     >
       <span style={labelStyle("select")}>{label}</span>
       <select
-        value={value}
+        value={displayedValue}
         style={flowStyle(inputStyle("select"))}
         onChange={(event) => {
           mount.onValueChange?.(event.target.value);
         }}
       >
-        {placeholder === undefined ? null : (
-          <option value="" disabled>
-            {placeholder}
+        {placeholder === undefined && displayedValue !== "" ? null : (
+          <option value="" disabled hidden={placeholder === undefined}>
+            {placeholder ?? ""}
           </option>
         )}
         {options.map((option, index) => (
@@ -277,8 +298,25 @@ function nextChoiceValues(
 export const ChoiceGroup: MountedComponent<ReactNode, ReactNode> = (mount): ReactNode => {
   const label = textProp(mount.props, "label") ?? "";
   const options = optionsFrom(mount);
-  const selected = new Set(stringArrayProp(mount, "value"));
+  const authoredSelection = stringArrayProp(mount, "value");
+  const selectedValues = Object.freeze(
+    options
+      .filter((option) => authoredSelection.includes(option.value))
+      .map((option) => option.value),
+  );
+  const selectionIsCanonical =
+    authoredSelection.length === selectedValues.length &&
+    authoredSelection.every((value, index) => value === selectedValues[index]);
+  const selected = new Set(selectedValues);
+  const authoredSelectionKey = JSON.stringify(authoredSelection);
+  const selectedValuesKey = JSON.stringify(selectedValues);
   const layout = enumProp(mount.props, "layout", CHOICE_LAYOUTS, "stacked");
+
+  useEffect(() => {
+    if (!selectionIsCanonical) {
+      mount.onValueChange?.(selectedValues);
+    }
+  }, [authoredSelectionKey, mount.onValueChange, selectedValuesKey, selectionIsCanonical]);
 
   return (
     <fieldset

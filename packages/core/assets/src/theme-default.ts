@@ -394,15 +394,7 @@ export const DEFAULT_THEME: FacetTheme = Object.freeze({
       minColumnWidth: "16rem",
     }),
     modal: Object.freeze({
-      triggerBg: "var(--facet-semantic-action-secondary-bg)",
-      triggerText: "var(--facet-semantic-action-secondary-text)",
-      frameBg: "var(--facet-semantic-overlay-surface)",
       frameText: "var(--facet-semantic-text-default)",
-      frameBorder: "var(--facet-semantic-border-default)",
-      frameRadius: "var(--facet-foundation-radius-xl)",
-      frameShadow: "var(--facet-semantic-layer-modal-shadow)",
-      framePadding: "var(--facet-foundation-space-lg)",
-      titleColor: "var(--facet-semantic-text-default)",
     }),
     card: Object.freeze({
       background: "var(--facet-semantic-surface-default)",

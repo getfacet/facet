@@ -67,11 +67,11 @@ describe("screen gallery fixtures", () => {
       "analytics",
       "booking-consultation",
       "support",
-      "onboarding",
+      "collaboration",
       "operations-board",
-      "calendar-scheduling",
-      "messaging",
-      "form-result",
+      "education",
+      "knowledge",
+      "finance",
     ]);
 
     for (const pattern of patterns) {
@@ -85,11 +85,11 @@ describe("screen gallery fixtures", () => {
       );
       const catalogTags = new Set(DEFAULT_CATALOG.components.map((component) => component.tag));
       expect(pattern.roles.filter((tag) => !catalogTags.has(tag))).toEqual([]);
-      expect(
-        Object.values(pattern.result.fixture.document.nodes)
-          .map((node) => node.tag)
-          .filter((tag) => !catalogTags.has(tag)),
-      ).toEqual([]);
+      const fixtureTags = [
+        ...new Set(Object.values(pattern.result.fixture.document.nodes).map((node) => node.tag)),
+      ];
+      expect(fixtureTags.filter((tag) => !catalogTags.has(tag))).toEqual([]);
+      expect([...pattern.roles].sort()).toEqual(fixtureTags.sort());
     }
   });
 

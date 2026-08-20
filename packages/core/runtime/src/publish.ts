@@ -5,9 +5,7 @@ import {
   isFacetIdentifier,
   measurePublishPayload,
   nextRevision,
-  resolveBinding,
   writePath,
-  type ComponentDocument,
   type DataValueDescriptor,
   type DataModel,
   type DataPath,
@@ -66,6 +64,9 @@ function isDataPath(value: unknown): value is DataPath {
       return false;
     }
     for (let index = 0; index < value.length; index += 1) {
+      if (!Object.hasOwn(value, index)) {
+        return false;
+      }
       const segment = value[index];
       if (!isFacetIdentifier(segment)) {
         return false;
@@ -126,68 +127,6 @@ function valueAtPath(model: DataModel, path: DataPath): unknown {
   return current;
 }
 
-function splitDataReference(target: string): readonly string[] {
-  return Object.freeze(target.split("."));
-}
-
-function pathsOverlap(left: readonly string[], right: readonly string[]): boolean {
-  const shared = Math.min(left.length, right.length);
-  for (let index = 0; index < shared; index += 1) {
-    if (left[index] !== right[index]) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function bindingReject(
-  tag: string,
-  propName: string,
-  target: string,
-): Extract<DataPublishResult, { ok: false }> {
-  return reject(
-    "binding_schema_mismatch",
-    `data:${target}`,
-    `Published data would break a bound ${tag}.${propName} prop.`,
-  );
-}
-
-function validateAffectedBindings(
-  document: ComponentDocument | null,
-  session: Session,
-  data: DataModel,
-  path: DataPath,
-): Extract<DataPublishResult, { ok: false }> | null {
-  if (document === null) {
-    return null;
-  }
-  const specs = new Map(session.catalog.components.map((spec) => [spec.tag, spec]));
-  for (const node of Object.values(document.nodes)) {
-    const spec = specs.get(node.tag);
-    if (spec === undefined) {
-      return reject(
-        "binding_schema_unavailable",
-        "catalog",
-        "A bound component is not in the catalog.",
-      );
-    }
-    for (const [propName, prop] of Object.entries(node.props)) {
-      if (prop.kind !== "reference" || prop.scheme !== "data") {
-        continue;
-      }
-      if (!pathsOverlap(splitDataReference(prop.target), path)) {
-        continue;
-      }
-      const schema = spec.props[propName];
-      const resolved = resolveBinding(prop.target, data, schema);
-      if (!resolved.ok) {
-        return bindingReject(node.tag, propName, prop.target);
-      }
-    }
-  }
-  return null;
-}
-
 function commit(
   session: Session,
   data: DataModel,
@@ -241,11 +180,6 @@ export function applyDataPublish(
     if (!payload.ok) {
       return modelReject(payload);
     }
-  }
-
-  const binding = validateAffectedBindings(session.document, session, evaluated.model, path);
-  if (binding !== null) {
-    return binding;
   }
 
   return commit(session, evaluated.model, descriptor(path, valueAtPath(evaluated.model, path)));

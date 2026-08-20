@@ -21,8 +21,9 @@ Agents author one declarative markup envelope:
 - `<Facet entry="...">` wraps the document.
 - `<Screen name="...">` declares each screen root.
 - Registered component tags describe UI through declared scalar props.
-- `data:path`, `nav:screen`, and `agent:action` references are the only
-  reference forms.
+- `data:path`, `asset:key`, `nav:screen`, and `agent:action` are the only
+  reference forms. `asset:key` is restricted to image-asset props backed by the
+  host-pinned registry.
 
 The parser rejects executable or host-escape syntax before catalog validation:
 raw HTML, JavaScript or JSX expressions, event-handler props, imports, spreads,
@@ -122,6 +123,14 @@ HTTPS URL or image data URI supplied by the host. Author markup can refer to one
 only as `asset:key` on a string prop declaring `assetKind: "image"`. Literal
 URLs, data bindings, unknown keys, wrong kinds, and malformed registries fail
 closed. `resolveFacetAsset` performs the same checked lookup for rendering.
+
+## Action props
+
+A string prop that can activate navigation or an agent event declares
+`action: true`. Only action-marked props admit `nav:<screen>` or
+`agent:<event>` references; scalar text, data bindings, defaults, enums, and
+asset references are rejected for that prop. The renderer and runtime both
+re-check the same marker before dispatching an interaction.
 
 ## Typed collection
 

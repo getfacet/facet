@@ -330,12 +330,13 @@ type ValueOutcome =
  *
  * An action reference resolves to its authored text — `nav:details` — because
  * the component reports the interaction and the **renderer** decides what the
- * reference means. Requiring the prop be declared `string` mirrors author
- * validation exactly; the declared domain is deliberately *not* consulted for
- * one, for the same reason it is not at author time: the domain of an action is
- * the closed scheme vocabulary, whose targets are open.
+ * reference means. Requiring the prop be declared `string` with `action: true`
+ * mirrors author validation exactly; the declared domain is deliberately *not*
+ * consulted for one, for the same reason it is not at author time: the domain
+ * of an action is the closed scheme vocabulary, whose targets are open.
  */
 function resolveValue(
+  name: string,
   stored: unknown,
   schema: PropSchema,
   model: DataModel,
@@ -349,7 +350,11 @@ function resolveValue(
   if (kind === "reference") {
     const scheme = readOwn(stored, "scheme");
     const target = readOwn(stored, "target");
-    if (typeof target !== "string") {
+    if (
+      typeof target !== "string" ||
+      target.length === 0 ||
+      `${String(scheme)}:${target}`.length > BOUNDS.attributeValueChars
+    ) {
       return { ok: false, reason: "invalid_value" };
     }
     if (scheme === "asset") {
@@ -384,7 +389,7 @@ function resolveValue(
     if (scheme !== "nav" && scheme !== "agent") {
       return { ok: false, reason: "invalid_value" };
     }
-    return schema.type === "string"
+    return schema.type === "string" && schema.action === true
       ? { ok: true, value: `${scheme}:${target}` }
       : { ok: false, reason: "invalid_value" };
   }
@@ -394,8 +399,11 @@ function resolveValue(
   if (assetKind !== null) {
     return { ok: false, reason: "invalid_value" };
   }
+  if (schema.type === "string" && schema.action === true) {
+    return { ok: false, reason: "invalid_value" };
+  }
   const text = readOwn(stored, "value");
-  if (typeof text !== "string") {
+  if (typeof text !== "string" || (name !== ARG_PROP && text.length > BOUNDS.attributeValueChars)) {
     return { ok: false, reason: "invalid_value" };
   }
   const agreed = agreeScalar(text, schema);
@@ -522,7 +530,15 @@ function declared(
     const fallback = agreeDefault(declaredDefault(schema), schema);
     return fallback === null ? { kind: "absent" } : { kind: "value", value: fallback };
   }
-  const outcome = resolveValue(readOwn(stored, name), schema, model, assetRegistry);
+  const storedValue = readOwn(stored, name);
+  if (
+    name === ARG_PROP &&
+    isSafeRecord(storedValue) &&
+    readOwn(storedValue, "kind") === "reference"
+  ) {
+    return { kind: "issue", reason: "invalid_value" };
+  }
+  const outcome = resolveValue(name, storedValue, schema, model, assetRegistry);
   return outcome.ok
     ? { kind: "value", value: outcome.value }
     : { kind: "issue", reason: outcome.reason };

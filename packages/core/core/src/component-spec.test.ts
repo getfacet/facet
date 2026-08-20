@@ -447,6 +447,15 @@ describe("validateComponentSpec — domain and default coherence", () => {
     );
   });
 
+  it("rejects string enum values that authored markup cannot represent", () => {
+    expect(rejectionCode(withProps({ p: stringProp({ enum: ['He said "it\'s ready"'] }) }))).toBe(
+      "unrepresentable_enum_value",
+    );
+    expect(rejectionCode(withProps({ p: stringProp({ enum: ["data:status"] }) }))).toBe(
+      "unrepresentable_enum_value",
+    );
+  });
+
   it("rejects an enum value whose type contradicts the prop type", () => {
     expect(rejectionCode(withProps({ p: stringProp({ enum: ["sm", 2] }) }))).toBe(
       "invalid_enum_value",
@@ -639,6 +648,40 @@ describe("validateComponentSpec — image asset props", () => {
 
   it("rejects assetKind on non-string props through the closed schema", () => {
     expect(rejectionCode(withProps({ source: numberProp({ assetKind: "image" }) }))).toBe(
+      "unknown_prop_key",
+    );
+  });
+});
+
+describe("validateComponentSpec — action props", () => {
+  it("accepts one literal action marker and preserves it", () => {
+    const spec = accept(
+      withProps({
+        action: stringProp({ required: true, action: true, guidance: "The action to run." }),
+      }),
+    );
+
+    expect(spec.props["action"]).toEqual({
+      type: "string",
+      guidance: "The action to run.",
+      required: true,
+      action: true,
+    });
+  });
+
+  it.each([
+    { action: false },
+    { action: "true" },
+    { action: true, bindable: true },
+    { action: true, default: "agent:submit" },
+    { action: true, enum: ["agent:submit"] },
+    { action: true, assetKind: "image" },
+  ])("rejects a non-literal or ambiguous action declaration %#", (overrides) => {
+    expect(rejectionCode(withProps({ action: stringProp(overrides) }))).not.toBe("accepted");
+  });
+
+  it("rejects action on a non-string prop through the closed schema", () => {
+    expect(rejectionCode(withProps({ action: numberProp({ action: true }) }))).toBe(
       "unknown_prop_key",
     );
   });

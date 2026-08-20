@@ -28,7 +28,8 @@ secrets, billing, quotas, and operations remain outside Facet.
 The author grammar admits one `<Facet entry="...">` envelope with named
 `<Screen name="...">` children. Inside screens, the agent may use only registered
 component tags, declared props, quoted scalar values, and explicit `data:path`,
-`nav:screen`, and `agent:event` references.
+`asset:key`, `nav:screen`, and `agent:event` references. `asset:key` is valid
+only for an image-asset prop backed by the host-pinned registry.
 
 The parser rejects raw HTML, JavaScript/JSX expressions, event-handler props,
 imports, spreads, inline JSON, raw CSS, arbitrary style keys, and unsupported
@@ -38,7 +39,7 @@ not executable code.
 Catalog validation is the second gate. The host supplies a `FacetCatalog` whose
 component specs declare tags, props, scalar domains, data-bindable props,
 optional shallow structured shapes, typed collection addresses, asset props,
-and one closed content mode. `validateAuthorMarkup` rejects unknown tags,
+explicit `action: true` props, and one closed content mode. `validateAuthorMarkup` rejects unknown tags,
 undeclared props, invalid values, unauthorized bindings, invalid slot placement,
 unresolved assets, and action/collection contract failures atomically with one
 deterministic author error.
@@ -51,13 +52,14 @@ Every component spec declares exactly one content branch:
 - `children` accepts ordered direct children and derives `Container`; and
 - `slots` declares named regions and derives `Structured`.
 
-A slot declares bounded guidance, minimum and maximum child counts, and an
-optional allowlist whose tags must all exist in the same catalog. Author markup assigns a direct child with one
-literal `slot="name"`; Core stores that value as `ComponentNode.slot` rather
-than an ordinary prop, and component specs cannot redeclare `slot` as a prop.
-Document validation uses own-property slot lookup and checks unknown, missing, disallowed,
-and over-capacity slots before state changes. The renderer then supplies frozen
-named slot arrays to the trusted component.
+A component declares at most B-18 slots. Each slot carries bounded guidance,
+minimum and maximum child counts, and an optional allowlist whose tags must all
+exist in the same catalog. Author markup assigns a direct child with one literal
+`slot="name"`; Core stores that value as `ComponentNode.slot` rather than an
+ordinary prop, and component specs cannot redeclare `slot` as a prop. Document
+validation uses own-property slot lookup and checks unknown, missing,
+disallowed, and over-capacity slots before state changes. The renderer then
+supplies frozen named slot arrays to the trusted component.
 
 These classes are derived discovery labels, not another policy axis. A
 component is the host-owned unit of catalog metadata and trusted render code; a
@@ -121,6 +123,9 @@ image data URI and optional positive dimensions. Author markup can use only an
 `asset:key` reference on a prop declared for image assets. URL literals, data
 bindings, unknown keys, and kind mismatches reject before mount. Omitting the
 registry produces an empty frozen registry.
+
+Agent tools may read the registry's bounded key and kind index through the tool
+session. They never receive asset bytes or a new asset-writing authority.
 
 ## Collected values
 

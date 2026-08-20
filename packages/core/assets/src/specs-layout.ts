@@ -312,15 +312,7 @@ export const MODAL_SPEC: ComponentSpec = {
   },
   themeRecipe: {
     tokens: {
-      triggerBg: "color",
-      triggerText: "color",
-      frameBg: "color",
       frameText: "color",
-      frameBorder: "color",
-      frameRadius: "length",
-      frameShadow: "shadow",
-      framePadding: "length",
-      titleColor: "color",
     },
   },
 };

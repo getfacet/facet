@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 
-import type { CollectedValue, ComponentMountProps, MountedComponent } from "@facet/core";
+import {
+  BOUNDS,
+  type CollectedValue,
+  type ComponentMountProps,
+  type MountedComponent,
+} from "@facet/core";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -161,6 +166,82 @@ describe("trusted input, communication, and disclosure React components", () => 
     expect(onValueChange).toHaveBeenCalledWith("north");
   });
 
+  it("keeps an empty Select value visible and caps data-backed choices", () => {
+    const options = Array.from({ length: BOUNDS.renderedCollectionItems + 20 }, (_, index) => ({
+      label: `Option ${index}`,
+      value: `option-${index}`,
+    }));
+    const root = renderComponent(
+      Interactive.Select,
+      mount({ name: "region", label: "Region", value: "", options }),
+    );
+    const select = root.querySelector("select") as HTMLSelectElement;
+
+    expect(select.value).toBe("");
+    expect(select.options[0]?.value).toBe("");
+    expect(select.options[0]?.hidden).toBe(true);
+    expect(select.options).toHaveLength(BOUNDS.renderedCollectionItems + 1);
+  });
+
+  it("clears a Select value that is absent from its current option set", () => {
+    const onValueChange = vi.fn<(value: CollectedValue) => void>();
+    const root = renderComponent(
+      Interactive.Select,
+      mount(
+        {
+          name: "region",
+          label: "Region",
+          value: "west",
+          options: [
+            { label: "North", value: "north" },
+            { label: "South", value: "south" },
+          ],
+        },
+        { onValueChange },
+      ),
+    );
+
+    expect((root.querySelector("select") as HTMLSelectElement).value).toBe("");
+    expect(onValueChange).toHaveBeenCalledWith("");
+  });
+
+  it("clears each distinct unavailable Select and ChoiceGroup value", () => {
+    const onSelectChange = vi.fn<(value: CollectedValue) => void>();
+    const Select = Interactive.Select;
+    const selectProps = {
+      name: "region",
+      label: "Region",
+      options: [{ label: "North", value: "north" }],
+    };
+    const select = render(
+      <Select {...mount({ ...selectProps, value: "west" }, { onValueChange: onSelectChange })} />,
+    );
+    select.rerender(
+      <Select {...mount({ ...selectProps, value: "south" }, { onValueChange: onSelectChange })} />,
+    );
+    expect(onSelectChange).toHaveBeenCalledTimes(2);
+    cleanup();
+
+    const onChoiceChange = vi.fn<(value: CollectedValue) => void>();
+    const ChoiceGroup = Interactive.ChoiceGroup;
+    const choiceProps = {
+      name: "channels",
+      label: "Channels",
+      options: [{ label: "Email", value: "email" }],
+    };
+    const choices = render(
+      <ChoiceGroup
+        {...mount({ ...choiceProps, value: ["sms"] }, { onValueChange: onChoiceChange })}
+      />,
+    );
+    choices.rerender(
+      <ChoiceGroup
+        {...mount({ ...choiceProps, value: ["push"] }, { onValueChange: onChoiceChange })}
+      />,
+    );
+    expect(onChoiceChange).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps ChoiceGroup controlled and emits a string array in option order", () => {
     const onValueChange = vi.fn<(value: CollectedValue) => void>();
     const root = renderComponent(
@@ -190,6 +271,80 @@ describe("trusted input, communication, and disclosure React components", () => 
     fireEvent.click(choices[1] as HTMLInputElement);
     expect(onValueChange).toHaveBeenCalledWith(["email", "sms"]);
     expect(choices[1]?.checked).toBe(false);
+  });
+
+  it("removes unavailable and duplicate ChoiceGroup values from the collected selection", () => {
+    const onValueChange = vi.fn<(value: CollectedValue) => void>();
+    const root = renderComponent(
+      Interactive.ChoiceGroup,
+      mount(
+        {
+          name: "channels",
+          label: "Channels",
+          value: ["removed", "email", "email"],
+          options: [
+            { label: "Email", value: "email" },
+            { label: "SMS", value: "sms" },
+          ],
+        },
+        { onValueChange },
+      ),
+    );
+    const choices = root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+
+    expect(choices[0]?.checked).toBe(true);
+    expect(choices[1]?.checked).toBe(false);
+    expect(onValueChange).toHaveBeenCalledWith(["email"]);
+  });
+
+  it("caps data-backed ChoiceGroup options and MessageThread messages", () => {
+    const options = Array.from({ length: BOUNDS.renderedCollectionItems + 20 }, (_, index) => ({
+      label: `Choice ${index}`,
+      value: `choice-${index}`,
+    }));
+    const choices = renderComponent(
+      Interactive.ChoiceGroup,
+      mount({ name: "items", label: "Items", value: [], options }),
+    );
+    expect(choices.querySelectorAll('input[type="checkbox"]')).toHaveLength(
+      BOUNDS.renderedCollectionItems,
+    );
+    cleanup();
+
+    const messages = Array.from({ length: BOUNDS.renderedCollectionItems + 20 }, (_, index) => ({
+      id: `message-${index}`,
+      author: "Ada",
+      body: `Message ${index}`,
+      timestamp: "09:30",
+      side: "incoming",
+    }));
+    const thread = renderComponent(Interactive.MessageThread, mount({ messages }));
+    expect(thread.querySelectorAll("li")).toHaveLength(BOUNDS.renderedCollectionItems);
+  });
+
+  it("keeps the first unique collectable option value and drops invalid semantic values", () => {
+    const onValueChange = vi.fn<(value: CollectedValue) => void>();
+    const root = renderComponent(
+      Interactive.ChoiceGroup,
+      mount(
+        {
+          name: "regions",
+          label: "Regions",
+          value: [],
+          options: [
+            { label: "North", value: "north" },
+            { label: "North duplicate", value: "north" },
+            { label: "Too long", value: "x".repeat(BOUNDS.collectedValueChars + 1) },
+          ],
+        },
+        { onValueChange },
+      ),
+    );
+    const choices = root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+
+    expect(choices).toHaveLength(1);
+    fireEvent.click(choices[0] as HTMLInputElement);
+    expect(onValueChange).toHaveBeenCalledWith(["north"]);
   });
 
   it("keeps Toggle controlled and emits a boolean", () => {

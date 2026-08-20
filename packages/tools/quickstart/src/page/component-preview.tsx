@@ -85,8 +85,8 @@ export function ComponentPreview({
   renderContent,
 }: ComponentPreviewProps): ReactNode {
   const resetKey = result.ok
-    ? `${result.tag}:${result.fixture.targetNodeId}`
-    : `${result.tag}:error`;
+    ? `${result.tag}:${result.fixture.targetNodeId}:${result.fixture.source}`
+    : `${result.tag}:error:${result.error.phase}:${result.error.code}`;
   return (
     <PreviewBoundary resetKey={resetKey} tag={result.tag}>
       <PreviewContentSlot

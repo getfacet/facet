@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 
-import type { CollectedValue, ComponentMountProps, MountedComponent } from "@facet/core";
+import {
+  BOUNDS,
+  type CollectedValue,
+  type ComponentMountProps,
+  type MountedComponent,
+} from "@facet/core";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -267,6 +272,59 @@ describe("trusted task-surface React components", () => {
     expect(root.querySelectorAll("button")).toHaveLength(1);
     expect(root.textContent).toContain("Valid");
     expect(root.textContent).not.toContain("object Object");
+  });
+
+  it("drops duplicate or uncollectable calendar ids and clears an unavailable selection", () => {
+    const onValueChange = vi.fn<(value: CollectedValue) => void>();
+    const tooLong = "x".repeat(BOUNDS.collectedValueChars + 1);
+    const root = renderComponent(Surface.Calendar, {
+      props: {
+        value: tooLong,
+        events: [
+          { id: tooLong, title: "Too long", start: "2026-08-20" },
+          { id: "valid", title: "Valid", start: "2026-08-21" },
+          { id: "valid", title: "Duplicate", start: "2026-08-22" },
+        ],
+      },
+      onValueChange,
+    });
+    const events = root.querySelectorAll<HTMLButtonElement>("button");
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.textContent).toContain("Valid");
+    expect(onValueChange).toHaveBeenCalledWith("");
+    fireEvent.click(events[0] as HTMLButtonElement);
+    expect(onValueChange).toHaveBeenLastCalledWith("valid");
+  });
+
+  it("clears each distinct unavailable Calendar value", () => {
+    const onValueChange = vi.fn<(value: CollectedValue) => void>();
+    const Calendar = Surface.Calendar;
+    const events = [{ id: "valid", title: "Valid", start: "2026-08-21" }];
+    const mount = (value: string) => ({
+      props: { value, events },
+      children: null,
+      slots: {},
+      themeVars: THEME_VARS,
+      onAction: (): void => undefined,
+      onValueChange,
+    });
+    const view = render(<Calendar {...mount("missing-a")} />);
+
+    view.rerender(<Calendar {...mount("missing-b")} />);
+
+    expect(onValueChange).toHaveBeenCalledTimes(2);
+  });
+
+  it("caps data-backed calendar events before creating controls", () => {
+    const events = Array.from({ length: BOUNDS.renderedCollectionItems + 20 }, (_, index) => ({
+      id: `event-${index}`,
+      title: `Event ${index}`,
+      start: "2026-08-20",
+    }));
+    const root = renderComponent(Surface.Calendar, { props: { events } });
+
+    expect(root.querySelectorAll("button")).toHaveLength(BOUNDS.renderedCollectionItems);
   });
 
   it("keeps every root theme-mounted, bounded, and in normal flow", () => {

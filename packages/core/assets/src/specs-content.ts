@@ -1,6 +1,21 @@
 /** Default content, media, and data-display component contracts. */
 import type { ComponentSpec } from "@facet/core";
 
+const DEFAULT_ICON_NAMES = Object.freeze([
+  "check",
+  "close",
+  "info",
+  "warning",
+  "star",
+  "heart",
+  "user",
+  "calendar",
+  "clock",
+  "search",
+  "message",
+  "arrow-right",
+] as const);
+
 export const TEXT_SPEC: ComponentSpec = {
   tag: "Text",
   whenToUse:
@@ -82,7 +97,12 @@ export const ICON_SPEC: ComponentSpec = {
   whenToUse:
     "Use Icon as a familiar supplemental cue for an action, status, or concept. Do not use it as the only meaning when a clear text label is needed.",
   props: {
-    name: { type: "string", required: true, guidance: "A trusted icon name from the default set." },
+    name: {
+      type: "string",
+      required: true,
+      enum: DEFAULT_ICON_NAMES,
+      guidance: "A trusted icon name from the default set.",
+    },
     label: { type: "string", guidance: "Accessible meaning when the icon is not decorative." },
     size: {
       type: "string",
@@ -224,6 +244,11 @@ export const TABLE_SPEC: ComponentSpec = {
       required: true,
       bindable: true,
       guidance: "Open records bound from published data; unusable rows are ignored safely.",
+    },
+    columns: {
+      type: "string",
+      guidance:
+        "Optional comma-separated record keys in display order; otherwise the first non-empty readable row supplies columns.",
     },
     caption: { type: "string", guidance: "Optional accessible caption naming the records." },
   },

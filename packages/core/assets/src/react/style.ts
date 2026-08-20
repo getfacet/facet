@@ -243,7 +243,7 @@ export function countProp(
 export function arrayProp(
   props: ResolvedProps,
   name: string,
-  maximum: number = BOUNDS.dataModelArrayLength,
+  maximum: number = BOUNDS.renderedCollectionItems,
 ): readonly unknown[] {
   const value = readValue(props, name);
   try {

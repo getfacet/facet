@@ -42,7 +42,7 @@ const EXPECTED_PROP_CONTRACTS: Readonly<Record<string, Record<string, unknown>>>
   },
   NavigationItem: {
     label: { type: "string", required: true },
-    action: { type: "string", required: true },
+    action: { type: "string", required: true, action: true },
     arg: { type: "string" },
     mark: { type: "string" },
     meta: { type: "string" },
@@ -50,7 +50,7 @@ const EXPECTED_PROP_CONTRACTS: Readonly<Record<string, Record<string, unknown>>>
   },
   Button: {
     label: { type: "string", required: true },
-    action: { type: "string", required: true },
+    action: { type: "string", required: true, action: true },
     arg: { type: "string" },
     collect: { type: "string" },
     tone: {
@@ -187,7 +187,7 @@ describe("default navigation and action specs", () => {
   it("pins literal action props and keeps action choice out of bindings", () => {
     for (const spec of [NAVIGATION_ITEM_SPEC, BUTTON_SPEC]) {
       const action = spec.props["action"];
-      expect(action).toMatchObject({ type: "string", required: true });
+      expect(action).toMatchObject({ type: "string", required: true, action: true });
       expect(action === undefined ? true : "bindable" in action).toBe(false);
     }
   });

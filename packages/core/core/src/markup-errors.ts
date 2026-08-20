@@ -13,9 +13,9 @@
  * clamped to `B-24` the same way every time. Nothing here reads a clock, a
  * random source, or a locale.
  *
- * **Surface.** `AuthorError`, `AuthorErrorCode` and `SourceLocation` are the
- * public contract — a consumer names them, and every layer that can reject an
- * authored mutation reports in exactly these terms. `AUTHOR_ERROR_CODES`,
+ * **Surface.** `AuthorError`, `AuthorErrorCode`, `AuthorRepairContext`, and
+ * `SourceLocation` are the public contract — a consumer names them, and every
+ * layer that can reject an authored mutation reports in exactly these terms. `AUTHOR_ERROR_CODES`,
  * `truncate`, `authorError` and `firstError` are package-internal: they are
  * exported only so the lexer, the parser and document validation can raise a
  * failure through the one builder that applies the `B-24` clamp, and they are

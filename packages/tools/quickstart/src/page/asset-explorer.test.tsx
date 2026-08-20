@@ -79,6 +79,10 @@ function scalar(value: string): ComponentDocument["nodes"][string]["props"][stri
   return Object.freeze({ kind: "scalar" as const, value });
 }
 
+function navReference(target: string): ComponentDocument["nodes"][string]["props"][string] {
+  return Object.freeze({ kind: "reference" as const, scheme: "nav" as const, target });
+}
+
 function modalDocument(): ComponentDocument {
   return Object.freeze({
     entry: "home",
@@ -93,7 +97,7 @@ function modalDocument(): ComponentDocument {
         tag: "Button",
         props: Object.freeze({
           label: scalar("View details"),
-          action: scalar("nav:details"),
+          action: navReference("details"),
         }),
         children: Object.freeze([]),
       }),

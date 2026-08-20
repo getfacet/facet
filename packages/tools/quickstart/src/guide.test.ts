@@ -65,8 +65,8 @@ describe("quickstart guide", () => {
   it("pins the regenerated seed size and sha256 golden", () => {
     const json = JSON.stringify(QUICKSTART_INITIAL_STAGE);
 
-    expect(json).toHaveLength(23_575);
-    expect(sha256(json)).toBe("da42d6215d7e3607718bb8d35211a57c6f7dc665996927f8120080dbd6c01c3d");
+    expect(json).toHaveLength(23_577);
+    expect(sha256(json)).toBe("a96ea82d441b042be424c95d630e1d992f85d19b60f89810ce31d1009b2769d7");
   });
 
   it("keeps the seed within the quickstart prompt budget", () => {

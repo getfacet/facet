@@ -152,7 +152,7 @@ const SPECS: readonly ComponentSpec[] = [
     props: {
       value: { type: "string", required: true, guidance: "What it says." },
       total: { type: "number", bindable: true, guidance: "A bound number." },
-      action: { type: "string", guidance: "May carry an action reference." },
+      action: { type: "string", action: true, guidance: "May carry an action reference." },
       arg: { type: "string", guidance: "The event argument." },
     },
     content: { mode: "none" },
@@ -838,6 +838,8 @@ describe("Mounted — the Modal insertion seam", () => {
     // twice, and the count is what says so.
     expect(content.length).toBe(1);
     expect(modalContracts.length).toBe(1);
+    expect(Object.keys(modalContracts[0]?.slots ?? {})).toEqual(["body"]);
+    expect(modalContracts[0]?.slots["actions"]).toBeUndefined();
     const frame = container.querySelector('[data-testid="frame"]');
     expect(frame).not.toBeNull();
     expect(frame?.contains(content[0] as Node)).toBe(true);
@@ -1512,6 +1514,23 @@ describe("deriveResetToken — the node-local derivation (D3)", () => {
     // Deterministic, so a node holding an unserialisable value does not remount
     // on every render.
     expect(deriveResetToken("Text", { rows: hostile.rows }, [])).toBe(token);
+  });
+
+  it("keeps large shared structured values out of retained reset tokens", () => {
+    let serializations = 0;
+    const shared = {
+      toJSON() {
+        serializations += 1;
+        return { payload: "x".repeat(BOUNDS.dataModelStringChars) };
+      },
+    };
+
+    const first = deriveResetToken("Table", { rows: shared }, []);
+    const second = deriveResetToken("Table", { rows: shared }, []);
+
+    expect(first).toBe(second);
+    expect(first.length).toBeLessThan(256);
+    expect(serializations).toBe(1);
   });
 
   it("is byte-identical when an unrelated node changes and when an unrelated publish lands", () => {

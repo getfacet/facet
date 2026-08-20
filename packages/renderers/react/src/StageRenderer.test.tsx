@@ -250,6 +250,14 @@ function buttonImpl({ props, onAction }: ComponentMountProps<ReactNode>): ReactN
   );
 }
 
+function ordinaryPropActionImpl({ onAction }: ComponentMountProps<ReactNode>): ReactNode {
+  return (
+    <button type="button" data-testid="ordinary-prop-action" onClick={() => onAction("label")}>
+      Attempt ordinary prop action
+    </button>
+  );
+}
+
 function fieldImpl({ props, onValueChange }: ComponentMountProps<ReactNode>): ReactNode {
   return (
     <input
@@ -371,6 +379,7 @@ const BUTTON_SPEC: ComponentSpec = {
     action: {
       type: "string",
       required: true,
+      action: true,
       guidance: "`nav:<screen>` or `agent:<event>`; there is no other action.",
     },
     arg: {
@@ -396,7 +405,12 @@ const FIELD_SPEC: ComponentSpec = {
     },
     label: { type: "string", required: true, guidance: "What the visitor is being asked for." },
     value: { type: "string", default: "", guidance: "The value shown; Facet owns it." },
-    secret: { type: "boolean", default: false, guidance: "Keeps the value out of every event." },
+    secret: {
+      type: "boolean",
+      bindable: true,
+      default: false,
+      guidance: "Keeps the value out of every event.",
+    },
   },
   content: { mode: "none" },
   collect: {
@@ -616,6 +630,13 @@ function scalar(value: string): ComponentNode["props"][string] {
   return { kind: "scalar", value };
 }
 
+function reference(
+  scheme: "data" | "nav" | "agent" | "asset",
+  target: string,
+): ComponentNode["props"][string] {
+  return { kind: "reference", scheme, target };
+}
+
 /**
  * Example 1 with one node added to the home screen — a **document** update.
  *
@@ -684,7 +705,10 @@ const ARG_DOCUMENT = authorDocument(ARG_MARKUP, EXAMPLE_SPECS);
  */
 const PLANTED_PROPS: ComponentNode["props"] = Object.assign(
   Object.create({ arg: scalar("planted") }) as ComponentNode["props"],
-  { label: scalar("Planted"), action: scalar("agent:pick") },
+  {
+    label: scalar("Planted"),
+    action: reference("agent", "pick"),
+  },
 );
 
 const PLANTED_DOCUMENT: ComponentDocument = Object.freeze({
@@ -693,6 +717,63 @@ const PLANTED_DOCUMENT: ComponentDocument = Object.freeze({
   nodes: {
     s1: { tag: "Screen", props: { name: scalar("home") }, children: ["b1"] },
     b1: { tag: "Button", props: PLANTED_PROPS, children: [] },
+  },
+});
+
+const ORDINARY_PROP_ACTION_DOCUMENT: ComponentDocument = Object.freeze({
+  entry: "home",
+  screens: ["s1", "s2"],
+  nodes: {
+    s1: {
+      tag: "Screen",
+      props: { name: scalar("home") },
+      children: ["b1"],
+    },
+    b1: {
+      tag: "Button",
+      props: {
+        label: scalar("Attempt ordinary prop action"),
+        action: reference("nav", "details"),
+      },
+      children: [],
+    },
+    s2: {
+      tag: "Screen",
+      props: { name: scalar("details") },
+      children: ["t1"],
+    },
+    t1: { tag: "Text", props: { value: scalar("Details") }, children: [] },
+  },
+});
+
+const UNRESOLVED_SENSITIVITY_DOCUMENT: ComponentDocument = Object.freeze({
+  entry: "home",
+  screens: ["s1"],
+  nodes: {
+    s1: {
+      tag: "Screen",
+      props: { name: scalar("home") },
+      children: ["f1", "b1"],
+    },
+    f1: {
+      tag: "Field",
+      props: {
+        name: scalar("token"),
+        label: scalar("API token"),
+        value: scalar("top-secret"),
+        secret: reference("data", "policy.secret"),
+      },
+      children: [],
+    },
+    b1: {
+      tag: "Button",
+      props: {
+        label: scalar("Submit secret"),
+        action: reference("agent", "submit"),
+        collect: scalar("token"),
+      },
+      children: [],
+    },
   },
 });
 
@@ -991,6 +1072,40 @@ describe("Example 1, end to end through registered implementations", () => {
     });
     // The visitor typing and the event leaving both wrote nothing.
     expect(JSON.stringify(EXAMPLE_DOCUMENT)).toBe(before);
+  });
+
+  it("keeps action-shaped values in ordinary props inert even when trusted code reports them", () => {
+    const onEvent = vi.fn<NonNullable<StageRendererProps["onEvent"]>>();
+    const bootstrap = bootstrapOrThrow(
+      EXAMPLE_SPECS,
+      Object.freeze({ ...EXAMPLE_REGISTRY, Button: ordinaryPropActionImpl }),
+    );
+    render(
+      stage({
+        bootstrap,
+        document: ORDINARY_PROP_ACTION_DOCUMENT,
+        data: {},
+        onEvent,
+      }),
+    );
+
+    fireEvent.click(one('[data-testid="ordinary-prop-action"]'));
+
+    expect(onEvent).not.toHaveBeenCalled();
+    expect(one('[data-testid="screen"]').getAttribute("data-screen")).toBe("home");
+  });
+
+  it("withholds a field when its bound sensitivity cannot be resolved", () => {
+    render(stage({ document: UNRESOLVED_SENSITIVITY_DOCUMENT, data: {} }));
+
+    expect(testIds("field")).toEqual([]);
+    clickButton("Submit secret");
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.collect).toEqual({
+      token: { kind: "collect_source_unavailable" },
+    });
+    expect(JSON.stringify(events)).not.toContain("top-secret");
   });
 
   it("collects from the store rather than the page, so no address is in the DOM", () => {

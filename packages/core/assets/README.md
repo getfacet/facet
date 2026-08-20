@@ -78,7 +78,9 @@ events use `{ id: string, title: string, start: string, end?: string, tone?:
 string }`; and messages use `{ id: string, author: string, body: string,
 timestamp?: string, side?: string, status?: string }`. `Table.rows` and
 `Chart.data` deliberately remain bounded open record arrays because their
-authored key props select display fields.
+authored key props select display fields. `Table.columns` optionally names a
+comma-separated display order; without it, Table uses the first non-empty
+readable row.
 
 Collected values are typed through the Core contract. `Field` and `Calendar`
 collect strings, `Toggle` collects a boolean, `Select` collects one string, and

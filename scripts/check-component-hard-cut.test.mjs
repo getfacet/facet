@@ -216,15 +216,20 @@ test("allows current identifiers that only contain retired component-contract te
   assert.deepEqual(result.violations, []);
 });
 
-test("keeps retired component-contract vocabulary scoped to source files", async (t) => {
+test("detects retired component-contract vocabulary in shipping documentation", async (t) => {
   const cwd = await makeFixture(t);
   const retired = retiredComponentContractSamples()[0];
   await writeFixture(cwd, "docs/history.md", `Historical record: ${retired}.\n`);
   await writeFixture(cwd, "packages/example/example/README.md", `Historical record: ${retired}.\n`);
+  await writeFixture(cwd, "docs/roles.md", "Component authoring roles group discovery.\n"); // component-hard-cut: allowed-negative
 
   const result = scanHardCut({ cwd });
 
-  assert.deepEqual(result.violations, []);
+  assert.equal(
+    result.violations.filter((violation) => violation.group === "retired_component_contract")
+      .length,
+    3,
+  );
 });
 
 test("waives same-line annotated retired component-contract negatives in tests", async (t) => {

@@ -40,6 +40,20 @@ function textSpec(): Record<string, unknown> {
   });
 }
 
+function imageSpec(): Record<string, unknown> {
+  return spec("Image", {
+    props: {
+      asset: {
+        type: "string",
+        required: true,
+        assetKind: "image",
+        guidance: "The host-pinned image asset.",
+      },
+      alt: { type: "string", required: true, guidance: "Alternative text." },
+    },
+  });
+}
+
 function modalSpec(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return spec("Modal", {
     whenToUse: "Show focused content over the page without leaving the screen.",
@@ -165,6 +179,35 @@ describe("bootstrapSession", () => {
       expect(accepted.session.document?.entry).toBe("home");
     }
     expect(rejected(rejectedMarkup).code).toBe("unknown-tag");
+  });
+
+  it("validates and snapshots host-pinned assets for initial markup", () => {
+    const source = {
+      hero: { kind: "image" as const, src: "https://cdn.example.test/hero.png" },
+    };
+    const result = bootstrapSession({
+      catalog: (() => {
+        const validated = validateCatalog(catalogWithScreen(textSpec(), imageSpec()));
+        if (!validated.ok) throw new Error(validated.code);
+        return validated.catalog;
+      })(),
+      assetRegistry: source,
+      theme: validTheme(),
+      initialMarkup:
+        '<Facet entry="home"><Screen name="home"><Image asset="asset:hero" alt="Hero" /></Screen></Facet>', // component-hard-cut: allowed-negative
+    });
+    source.hero.src = "https://attacker.example.test/replaced.png";
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.session.assetRegistry["hero"]?.src).toBe("https://cdn.example.test/hero.png");
+      expect(Object.isFrozen(result.session.assetRegistry)).toBe(true);
+      expect(result.session.document?.nodes["n2"]?.props["asset"]).toEqual({
+        kind: "reference",
+        scheme: "asset",
+        target: "hero",
+      });
+    }
   });
 
   it("keeps each session on its own frozen catalog and theme snapshot", () => {

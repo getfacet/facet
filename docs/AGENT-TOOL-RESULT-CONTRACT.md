@@ -68,8 +68,10 @@ contract.
 
 ## Read outcomes
 
-`read_component_spec` returns `{ ok: true, spec, stageRevision }` or
-`component_not_found` with the available tag list.
+`read_component_spec` returns `{ ok: true, spec, availableAssets,
+stageRevision }` or `component_not_found` with the available tag list.
+`availableAssets` is the bounded host-pinned key and kind index used by valid
+`asset:` references; it is empty when the host supplied no matching assets.
 
 `read_screen` returns `{ ok: true, screen, markup, issues, stageRevision }` or
 `page_not_rendered`. Serialization issues are included as structured issue

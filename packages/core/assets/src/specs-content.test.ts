@@ -48,7 +48,24 @@ const EXPECTED_PROPS = {
     tone: { type: "string", enum: ["neutral", "accent", "warm", "cool"], default: "accent" },
   },
   Icon: {
-    name: { type: "string", required: true },
+    name: {
+      type: "string",
+      required: true,
+      enum: [
+        "check",
+        "close",
+        "info",
+        "warning",
+        "star",
+        "heart",
+        "user",
+        "calendar",
+        "clock",
+        "search",
+        "message",
+        "arrow-right",
+      ],
+    },
     label: { type: "string" },
     size: { type: "string", enum: ["sm", "md", "lg"], default: "md" },
     tone: { type: "string", enum: ["default", "muted", "accent"], default: "default" },
@@ -83,6 +100,7 @@ const EXPECTED_PROPS = {
   },
   Table: {
     rows: { type: "array", required: true, bindable: true },
+    columns: { type: "string" },
     caption: { type: "string" },
   },
   Chart: {
@@ -182,7 +200,7 @@ describe("content/media/data component specs", () => {
     });
   });
 
-  it("keeps Table.rows and Chart.data open record arrays", () => {
+  it("keeps Table.rows and Chart.data open record arrays with explicit table field selection", () => {
     expect(contract(TABLE_SPEC)["rows"]).toEqual({
       type: "array",
       required: true,
@@ -193,6 +211,7 @@ describe("content/media/data component specs", () => {
       required: true,
       bindable: true,
     });
+    expect(contract(TABLE_SPEC)["columns"]).toEqual({ type: "string" });
   });
 
   it("stays within catalog metadata bounds and validates through Core", () => {

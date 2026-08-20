@@ -18,11 +18,11 @@ describe("service surface taxonomy", () => {
       "analytics",
       "booking-consultation",
       "support",
-      "onboarding",
+      "collaboration",
       "operations-board",
-      "calendar-scheduling",
-      "messaging",
-      "form-result",
+      "education",
+      "knowledge",
+      "finance",
     ]);
   });
 

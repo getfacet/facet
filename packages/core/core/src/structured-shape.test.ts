@@ -80,6 +80,19 @@ describe("validateStructuredShapeSpec - closure and bounds", () => {
     ]);
   });
 
+  it("rejects an oversized field descriptor before sorting all unknown keys", () => {
+    const descriptor = Object.fromEntries(
+      Array.from({ length: 100_000 }, (_, index) => [`unknown${index}`, true]),
+    );
+    const started = performance.now();
+
+    expect(rejection({ fields: { label: descriptor } })).toEqual([
+      "unknown_structured_field_key",
+      "shape.fields.label",
+    ]);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   it("requires a plain field map with bounded Facet field names", () => {
     expect(rejection({})).toEqual(["invalid_structured_fields", "shape.fields"]);
     expect(rejection({ fields: [] })).toEqual(["invalid_structured_fields", "shape.fields"]);
@@ -95,6 +108,23 @@ describe("validateStructuredShapeSpec - closure and bounds", () => {
       ]),
     );
     expect(rejection({ fields: tooMany })).toEqual(["too_many_structured_fields", "shape.fields"]);
+  });
+
+  it("treats non-enumerable field declarations as out-of-band JavaScript metadata", () => {
+    const fields = {};
+    Object.defineProperty(fields, "hidden", { value: field(), enumerable: false });
+
+    expect(acceptShape({ fields })).toEqual({ fields: {} });
+  });
+
+  it("rejects a large field map without sorting the complete hostile input", () => {
+    const fields = Object.fromEntries(
+      Array.from({ length: 100_000 }, (_, index) => [`Field${index}`, field()]),
+    );
+    const started = performance.now();
+
+    expect(rejection({ fields })).toEqual(["too_many_structured_fields", "shape.fields"]);
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 
   it.each([

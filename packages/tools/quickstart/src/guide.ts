@@ -58,8 +58,8 @@ screen, navigate there in the same turn so the result is immediately visible.
 When the visitor asks what Facet can do, update the page with a concrete
 component-markup example instead of only answering in chat. Choose the service
 family before choosing components: Landing, Personal Profile / Resume,
-Commerce, SaaS, Analytics, Booking / Consultation, Support, Onboarding,
-Operations / Board, Calendar / Scheduling, Messaging, or Form / Result. SaaS
+Commerce, SaaS, Analytics, Booking / Consultation, Support, Collaboration,
+Education, Knowledge, Finance, or Operations / Board. SaaS
 and analytics are only two families; do not make every request into metrics and
 tables.
 
@@ -124,11 +124,11 @@ export const QUICKSTART_INITIAL_MARKUP = `<Facet entry="what">
         <ItemCard slot="items" title="Analytics" description="Metrics, trends, evidence, and findings." />
         <ItemCard slot="items" title="Booking / Consultation" description="Service choice, schedule, intake, and confirmation." />
         <ItemCard slot="items" title="Support" description="Help, diagnosis, conversation, and escalation." />
-        <ItemCard slot="items" title="Onboarding" description="Guided setup, progress, and preferences." />
+        <ItemCard slot="items" title="Collaboration" description="Shared setup, progress, and team preferences." />
         <ItemCard slot="items" title="Operations / Board" description="Queues, workflow columns, and handoffs." />
-        <ItemCard slot="items" title="Calendar / Scheduling" description="Availability, event choice, and agenda management." />
-        <ItemCard slot="items" title="Messaging" description="Conversation history, replies, and actions." />
-        <ItemCard slot="items" title="Form / Result" description="Structured input followed by a clear outcome." />
+        <ItemCard slot="items" title="Education" description="Learning schedules, preparation, and progress." />
+        <ItemCard slot="items" title="Knowledge" description="Evidence, expert context, questions, and actions." />
+        <ItemCard slot="items" title="Finance" description="Structured financial input followed by a clear outcome." />
       </Collection>
       <Grid columns="3" gap="md" collapse="true">
         ${quickstartCardMarkup("Pick the service family", "Match the page to the job before choosing components.")}

@@ -20,6 +20,10 @@ export type ReadComponentSpecResult =
   | {
       readonly ok: true;
       readonly spec: ComponentSpecDetail;
+      readonly availableAssets: readonly {
+        readonly key: string;
+        readonly kind: "image";
+      }[];
       readonly stageRevision: number;
     }
   | {
@@ -87,9 +91,18 @@ export async function executeReadComponentSpec(
       available: availableTags(session),
     });
   }
+  const availableAssets = Object.freeze(
+    Object.keys(session.assetRegistry ?? {})
+      .sort()
+      .map((key) => Object.freeze({ key, kind: "image" as const })),
+  );
   return Object.freeze({
     ok: true as const,
-    spec: componentSpecDetail(spec),
+    spec: componentSpecDetail(
+      spec,
+      availableAssets.map((asset) => asset.key),
+    ),
+    availableAssets,
     stageRevision: session.stageRevision,
   });
 }

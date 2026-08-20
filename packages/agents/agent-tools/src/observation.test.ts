@@ -64,24 +64,24 @@ function scalar(value: string): { readonly kind: "scalar"; readonly value: strin
 function document(hiddenText = "Hidden"): ComponentDocument {
   return Object.freeze({
     entry: "home",
-    screens: Object.freeze(["s-home", "s-hidden"]),
+    screens: Object.freeze(["n1", "n3"]),
     nodes: Object.freeze({
-      "s-home": Object.freeze({
+      n1: Object.freeze({
         tag: "Screen",
         props: Object.freeze({ name: scalar("home") }),
-        children: Object.freeze(["n-visible"]),
+        children: Object.freeze(["n2"]),
       }),
-      "n-visible": Object.freeze({
+      n2: Object.freeze({
         tag: "Text",
         props: Object.freeze({ value: scalar("Visible") }),
         children: Object.freeze([]),
       }),
-      "s-hidden": Object.freeze({
+      n3: Object.freeze({
         tag: "Screen",
         props: Object.freeze({ name: scalar("hidden") }),
-        children: Object.freeze(["n-hidden"]),
+        children: Object.freeze(["n4"]),
       }),
-      "n-hidden": Object.freeze({
+      n4: Object.freeze({
         tag: "Text",
         props: Object.freeze({ value: scalar(hiddenText) }),
         children: Object.freeze([]),
@@ -145,7 +145,7 @@ describe("buildTurnObservation", () => {
       issues: [],
     });
     expect(observation.currentScreen?.name).toBe("home");
-    expect(observation.currentScreen?.markup).toContain('<Text value="Visible" id="n-visible" />');
+    expect(observation.currentScreen?.markup).toContain('<Text value="Visible" id="n2" />');
     expect(JSON.stringify(observation)).not.toContain("DO_NOT_LEAK_PROP_SCHEMA");
     expect(JSON.stringify(observation)).not.toContain("Ada");
     expect(JSON.stringify(observation)).not.toContain("do-not-include");

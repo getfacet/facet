@@ -1,3 +1,4 @@
+import { validateVisitorEvent, validateVisitorText } from "@facet/core";
 import type { VisitorEvent, ConversationMessage, FacetTransport, ServerFrame } from "@facet/core";
 
 const MAX_QUEUE = 100;
@@ -65,11 +66,43 @@ export class SseTransport implements FacetTransport {
   }
 
   send(event: VisitorEvent): Promise<void> {
-    return this.enqueue({ kind: "event", event });
+    const validated = validateVisitorEvent(event);
+    return validated.ok
+      ? this.enqueue({ kind: "event", event: validated.event })
+      : Promise.reject(new Error(`invalid visitor event: ${validated.code}`));
   }
 
   sendMessage(message: SseVisitorMessageInput): Promise<void> {
-    return this.enqueue({ kind: "message", message });
+    let messageId: unknown;
+    let text: unknown;
+    let screen: unknown;
+    let stageRevision: unknown;
+    try {
+      messageId = message.messageId;
+      text = message.text;
+      screen = message.screen;
+      stageRevision = message.stageRevision;
+    } catch {
+      return Promise.reject(new Error("invalid visitor message"));
+    }
+    const event = validateVisitorEvent({
+      eventId: messageId,
+      eventName: "message",
+      sourceNodeId: "visitor",
+      screen,
+      stageRevision,
+      collect: {},
+    });
+    if (!event.ok || !validateVisitorText(text)) {
+      return Promise.reject(new Error("invalid visitor message"));
+    }
+    const snapshot = Object.freeze({
+      messageId: event.event.eventId,
+      text,
+      screen: event.event.screen,
+      stageRevision: event.event.stageRevision,
+    });
+    return this.enqueue({ kind: "message", message: snapshot });
   }
 
   private enqueue(
@@ -112,7 +145,13 @@ export class SseTransport implements FacetTransport {
           }
         : {
             path: "/message",
-            body: { sessionKey: this.sessionKey, ...pending.message },
+            body: {
+              sessionKey: this.sessionKey,
+              messageId: pending.message.messageId,
+              text: pending.message.text,
+              screen: pending.message.screen,
+              stageRevision: pending.message.stageRevision,
+            },
           };
     const response = await fetch(`${this.baseUrl}${target.path}`, {
       method: "POST",

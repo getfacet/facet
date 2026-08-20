@@ -372,9 +372,9 @@ describe("runCli — quickstart built-in default", () => {
 
       expect(globals.__FACET_INITIAL_STAGE__).toEqual(QUICKSTART_INITIAL_STAGE);
       expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(129);
-      expect(seedText).toHaveLength(23_575);
+      expect(seedText).toHaveLength(23_577);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "da42d6215d7e3607718bb8d35211a57c6f7dc665996927f8120080dbd6c01c3d",
+        "a96ea82d441b042be424c95d630e1d992f85d19b60f89810ce31d1009b2769d7",
       );
     } finally {
       await running.close();

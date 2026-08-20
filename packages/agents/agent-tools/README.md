@@ -39,15 +39,18 @@ multiple tool calls in one response, the kit directs it to request independent
 `read_component_spec` calls together; the host may still execute those reads
 serially and enforce every per-call admission bound.
 The kit also teaches composition-first authoring: decide spatial relationships,
-use only the layout components that express them, then fill the structure.
-`formatCatalogIndex` renders the compact catalog as Screen root, Layout,
-Surface, Content, Interaction, and Unclassified groups. These groups guide
-discovery only; they do not require a layout wrapper.
+choose components whose contracts express them, then fill the structure.
+`formatCatalogIndex` groups the compact catalog by the content contract derived
+from each spec: Leaf, Container, or Structured. These groups describe how a
+component receives content; they do not prescribe a service layout.
 
 `read_component_spec` also derives an `authoringGuide` from the validated
 contract. It gives the element form, required-prop syntax, and the exact direct
 child rule, including every declared `slot="..."` value for Structured
-components. Hosts do not need to maintain handwritten markup examples.
+components. Required actions use a valid `agent:` reference. The result also
+lists the session's available host-pinned assets, and required image examples
+use an actual key when one exists. Hosts do not need to maintain handwritten
+markup examples.
 
 ```ts check-docs
 import {

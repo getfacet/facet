@@ -1,6 +1,6 @@
 /** Trusted React implementations for the default content, media, and data components. */
 
-import type { MountedComponent } from "@facet/core";
+import { BOUNDS, type MountedComponent } from "@facet/core";
 import { Children } from "react";
 import type { ReactNode } from "react";
 
@@ -223,6 +223,12 @@ const ICON_PATHS: Readonly<Record<string, ReactNode>> = Object.freeze({
       <path d="m20 20-4-4" />
     </>
   ),
+  message: (
+    <>
+      <path d="M4 5h16v11H8l-4 4V5Z" />
+      <path d="M8 9h8M8 12h5" />
+    </>
+  ),
   "arrow-right": (
     <>
       <path d="M5 12h14" />
@@ -248,8 +254,8 @@ const ICON_TONES = {
 const ICON_TONE_LIST = Object.keys(ICON_TONES) as readonly (keyof typeof ICON_TONES)[];
 
 export const Icon: MountedComponent<ReactNode, ReactNode> = ({ props, themeVars }) => {
-  const name = stringProp(props, "name", "");
-  const path = ICON_PATHS[name];
+  const authoredName = stringProp(props, "name", "");
+  const path = Object.hasOwn(ICON_PATHS, authoredName) ? ICON_PATHS[authoredName] : undefined;
   const label = textProp(props, "label");
   const size = ICON_SIZES[enumProp(props, "size", ICON_SIZE_LIST, "md")];
   const color = ICON_TONES[enumProp(props, "tone", ICON_TONE_LIST, "default")];
@@ -534,11 +540,37 @@ function safeOwnValue(row: unknown, key: string): unknown {
   }
 }
 
-function deriveColumns(rows: readonly unknown[]): readonly string[] {
+function selectedColumns(value: string | undefined): readonly string[] {
+  if (value === undefined) return [];
+  const columns: string[] = [];
+  const seen = new Set<string>();
+  for (const part of value.split(",")) {
+    const column = part.trim();
+    if (column.length === 0 || seen.has(column)) continue;
+    seen.add(column);
+    columns.push(column);
+    if (columns.length >= BOUNDS.dataModelObjectKeys) break;
+  }
+  return columns;
+}
+
+function deriveColumns(rows: readonly unknown[], authored: string | undefined): readonly string[] {
+  const selected = selectedColumns(authored);
+  if (selected.length > 0) return selected;
   for (const row of rows) {
     try {
       if (typeof row !== "object" || row === null || Array.isArray(row)) continue;
-      return Object.keys(row);
+      const columns = Object.keys(row)
+        .slice(0, BOUNDS.dataModelObjectKeys)
+        .filter((column) => {
+          const value = safeOwnValue(row, column);
+          return (
+            typeof value === "string" ||
+            typeof value === "boolean" ||
+            (typeof value === "number" && Number.isFinite(value))
+          );
+        });
+      if (columns.length > 0) return columns;
     } catch {
       continue;
     }
@@ -552,10 +584,23 @@ function cellText(row: unknown, column: string): string {
   return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
 }
 
+function usableTableRow(row: unknown, columns: readonly string[]): boolean {
+  if (typeof row !== "object" || row === null || Array.isArray(row)) return false;
+  return columns.some((column) => {
+    const value = safeOwnValue(row, column);
+    return (
+      typeof value === "string" ||
+      typeof value === "boolean" ||
+      (typeof value === "number" && Number.isFinite(value))
+    );
+  });
+}
+
 export const Table: MountedComponent<ReactNode, ReactNode> = ({ props, themeVars }) => {
   const rows = arrayProp(props, "rows");
   const caption = textProp(props, "caption");
-  const columns = deriveColumns(rows);
+  const columns = deriveColumns(rows, textProp(props, "columns"));
+  const usableRows = rows.filter((row) => usableTableRow(row, columns));
   const cellStyle: FlowStyle = {
     maxWidth: foundation("size", "contentMeasureSm"),
     padding: recipe("table", "cellPadding"),
@@ -627,7 +672,7 @@ export const Table: MountedComponent<ReactNode, ReactNode> = ({ props, themeVars
         <tbody>
           {columns.length === 0
             ? null
-            : rows.map((row, rowIndex) => (
+            : usableRows.map((row, rowIndex) => (
                 <tr key={rowIndex}>
                   {columns.map((column) => (
                     <td key={column} style={flowStyle(cellStyle)}>
@@ -652,7 +697,6 @@ interface PositionedChartPoint extends ChartPoint {
   readonly y: number;
 }
 
-const MAX_RENDERED_CHART_POINTS = 100;
 const CHART_WIDTH = 640;
 const CHART_HEIGHT = 320;
 const CHART_LEFT = 36;
@@ -673,7 +717,7 @@ function chartPoints(rows: readonly unknown[], xKey: string, yKey: string): read
     const value = safeOwnValue(row, yKey);
     if (label === undefined || typeof value !== "number" || !Number.isFinite(value)) continue;
     points.push({ label, value });
-    if (points.length === MAX_RENDERED_CHART_POINTS) break;
+    if (points.length === BOUNDS.renderedCollectionItems) break;
   }
   return points;
 }
@@ -782,7 +826,7 @@ function chartMarks(
 }
 
 export const Chart: MountedComponent<ReactNode, ReactNode> = ({ props, themeVars }) => {
-  const rows = arrayProp(props, "data");
+  const rows = arrayProp(props, "data", BOUNDS.dataModelArrayLength);
   const xKey = stringProp(props, "xKey", "");
   const yKey = stringProp(props, "yKey", "");
   const type = enumProp(props, "type", ["bar", "line", "area"] as const, "bar");

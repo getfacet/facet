@@ -76,6 +76,7 @@ const PUBLIC_TYPE_NAMES: readonly string[] = [
   "ComponentDocument",
   "DataModel",
   "DataPath",
+  "FacetAssetRegistry",
   "FacetCatalog",
   "FacetTargetedMutationInput",
   "FacetTargetedMutationResult",

@@ -38,7 +38,7 @@
 
 import type { ComponentMountProps, ComponentSpec, DataModel } from "@facet/core";
 import { BOUNDS } from "@facet/core";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -384,7 +384,7 @@ describe("createFieldStore", () => {
     expect(store.collectSource("email")).toEqual({ kind: "unavailable" });
   });
 
-  it("clamps a written value to B-23, so the store cannot hold an uncollectable one", () => {
+  it("rejects a written value past B-23 instead of changing its meaning", () => {
     const store = createFieldStore();
     store.register({
       nodeId: "n4",
@@ -396,7 +396,7 @@ describe("createFieldStore", () => {
 
     store.write("n4", "v".repeat(BOUNDS.collectedValueChars + 500));
 
-    expect(store.readValue("n4")).toHaveLength(BOUNDS.collectedValueChars);
+    expect(store.readValue("n4")).toBe("");
   });
 
   it("stores booleans without coercion and ignores a value of the wrong declared kind", () => {
@@ -416,7 +416,7 @@ describe("createFieldStore", () => {
     expect(store.collectSource("enabled")).toEqual({ kind: "value", value: true });
   });
 
-  it("copies, freezes, and bounds collected string arrays", () => {
+  it("copies and freezes collected string arrays while rejecting an over-bound replacement", () => {
     const store = createFieldStore();
     const seed = ["north"];
     store.register({
@@ -439,10 +439,35 @@ describe("createFieldStore", () => {
     next[1] = "mutated-after-write";
 
     const stored = store.readValue("n4");
-    expect(Array.isArray(stored) ? stored : []).toHaveLength(BOUNDS.dataModelArrayLength);
-    expect(Array.isArray(stored) ? stored[0] : "").toHaveLength(BOUNDS.collectedValueChars);
-    expect(Array.isArray(stored) ? stored[1] : "").toBe("v1");
+    expect(stored).toEqual(["north"]);
     expect(Object.isFrozen(stored)).toBe(true);
+  });
+
+  it("keeps a visitor's array selection across an unrelated rerender", () => {
+    const store = createFieldStore();
+    const view = render(
+      host({
+        store,
+        spec: MULTI_SPEC,
+        props: { name: "regions", value: ["north"], label: "Initial label" },
+      }),
+    );
+    act(() => {
+      store.write("n4", ["north", "west"]);
+    });
+
+    view.rerender(
+      host({
+        store,
+        spec: MULTI_SPEC,
+        props: { name: "regions", value: ["north"], label: "Updated label" },
+      }),
+    );
+
+    expect(store.collectSource("regions")).toEqual({
+      kind: "value",
+      value: ["north", "west"],
+    });
   });
 
   it("ignores an unreadable collected array instead of throwing", () => {

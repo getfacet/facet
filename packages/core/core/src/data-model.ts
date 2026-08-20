@@ -38,7 +38,7 @@
  * `evaluateCandidateModel` walks the candidate and rejects anything that is not
  * plain JSON data — a cycle, a `BigInt`, a function, a symbol, `undefined`, a
  * non-finite number, an exotic object, or a property whose getter throws. This
- * is a *rejection rule, not a bound*: it adds and adjusts no `B-01..B-25`
+ * is a *rejection rule, not a bound*: it adds and adjusts no `B-01..B-28`
  * value. It exists because the in-process publish paths hand **real JS objects**
  * in; without it `JSON.stringify` throws on a cycle and value counting never
  * terminates, which would break invariant 3's fail-safe fold from the inside.

@@ -33,9 +33,41 @@ function catalogRecord(): Record<string, unknown> {
           arg: { type: "string", guidance: "The event argument." },
         },
       }),
+      component("ActionButton", {
+        props: {
+          action: {
+            type: "string",
+            required: true,
+            action: true,
+            guidance: "The action reference.",
+          },
+        },
+      }),
+      component("Meter", {
+        props: {
+          amount: {
+            type: "number",
+            required: true,
+            minimum: 1,
+            maximum: 5,
+            guidance: "A bounded amount.",
+          },
+        },
+      }),
       component("Panel", {
         props: {},
         content: { mode: "children" },
+      }),
+      component("Image", {
+        props: {
+          asset: {
+            type: "string",
+            required: true,
+            assetKind: "image",
+            guidance: "The host-pinned image asset.",
+          },
+          alt: { type: "string", required: true, guidance: "Alternative text." },
+        },
       }),
       component("Split", {
         content: {
@@ -124,6 +156,9 @@ function baseSession(
 ): Session {
   const boot = bootstrapSession({
     catalog: catalogRecord() as unknown as FacetCatalog,
+    assetRegistry: {
+      hero: { kind: "image", src: "https://cdn.example.test/hero.png" },
+    },
     theme: validTestTheme(),
   });
   if (!boot.ok) {
@@ -195,6 +230,38 @@ describe("MemoryStageStore CAS", () => {
     await expect(loadSession(store, "session-a")).resolves.toMatchObject({
       session: { document: { nodes: { n3: { slot: "primary" } } } },
       issues: [],
+    });
+  });
+
+  it("preserves host-pinned assets and asset references through save and read-back", async () => {
+    const store = new MemoryStageStore();
+    const session = baseSession({
+      document: {
+        entry: "home",
+        screens: ["n1"],
+        nodes: {
+          n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+          n2: {
+            tag: "Image",
+            props: {
+              asset: { kind: "reference", scheme: "asset", target: "hero" },
+              alt: scalar("Hero"), // component-hard-cut: allowed-negative
+            },
+            children: [],
+          },
+        },
+      },
+    });
+
+    await store.save("session-assets", session, 0);
+    const restored = await loadSession(store, "session-assets");
+
+    expect(restored.issues).toEqual([]);
+    expect(restored.session.assetRegistry["hero"]?.src).toBe("https://cdn.example.test/hero.png");
+    expect(restored.session.document?.nodes["n2"]?.props["asset"]).toEqual({
+      kind: "reference",
+      scheme: "asset",
+      target: "hero",
     });
   });
 
@@ -354,6 +421,214 @@ describe("validatePersistedSession fail-safe restore", () => {
     expect(restored.session.document?.nodes["n1"]?.children).toEqual([]);
   });
 
+  it("drops structured children that omit their required slot", () => {
+    const stored = baseSession({
+      document: {
+        entry: "home",
+        screens: ["n1"],
+        nodes: {
+          n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+          n2: { tag: "Split", props: {}, children: ["n3"] },
+          n3: { tag: "Text", props: { value: scalar("Unslotted") }, children: [] },
+        },
+      },
+    });
+
+    const restored = validatePersistedSession(stored);
+
+    expect(restored.issues.map((entry) => entry.code)).toEqual(
+      expect.arrayContaining(["missing_child_slot", "missing_slot_children"]),
+    );
+    expect(restored.session.document?.nodes["n1"]?.children).toEqual([]);
+    expect(restored.session.document?.nodes["n2"]).toBeUndefined();
+    expect(restored.session.document?.nodes["n3"]).toBeUndefined();
+  });
+
+  it("drops named-slot children from an ordinary container", () => {
+    const stored = baseSession({
+      document: {
+        entry: "home",
+        screens: ["n1"],
+        nodes: {
+          n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+          n2: { tag: "Panel", props: {}, children: ["n3"] },
+          n3: {
+            tag: "Text",
+            slot: "primary",
+            props: { value: scalar("Misplaced") },
+            children: [],
+          },
+        },
+      },
+    });
+
+    const restored = validatePersistedSession(stored);
+
+    expect(restored.issues.map((entry) => entry.code)).toContain("slot_not_accepted");
+    expect(restored.session.document?.nodes["n2"]?.children).toEqual([]);
+    expect(restored.session.document?.nodes["n3"]).toBeUndefined();
+  });
+
+  it("enforces structured slot names, allowed tags, and maximum cardinality", () => {
+    const unknownSlot = validatePersistedSession(
+      baseSession({
+        document: {
+          entry: "home",
+          screens: ["n1"],
+          nodes: {
+            n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+            n2: { tag: "Split", props: {}, children: ["n3"] },
+            n3: {
+              tag: "Text",
+              slot: "secondary",
+              props: { value: scalar("Unknown slot") },
+              children: [],
+            },
+          },
+        },
+      }),
+    );
+    expect(unknownSlot.issues.map((entry) => entry.code)).toContain("unknown_slot");
+    expect(unknownSlot.session.document?.nodes["n2"]).toBeUndefined();
+
+    const wrongTag = validatePersistedSession(
+      baseSession({
+        document: {
+          entry: "home",
+          screens: ["n1"],
+          nodes: {
+            n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+            n2: { tag: "Split", props: {}, children: ["n3"] },
+            n3: { tag: "Panel", slot: "primary", props: {}, children: [] },
+          },
+        },
+      }),
+    );
+    expect(wrongTag.issues.map((entry) => entry.code)).toContain("slot_tag_not_allowed");
+    expect(wrongTag.session.document?.nodes["n2"]).toBeUndefined();
+
+    const tooMany = validatePersistedSession(
+      baseSession({
+        document: {
+          entry: "home",
+          screens: ["n1"],
+          nodes: {
+            n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+            n2: { tag: "Split", props: {}, children: ["n3", "n4"] },
+            n3: {
+              tag: "Text",
+              slot: "primary",
+              props: { value: scalar("First") },
+              children: [],
+            },
+            n4: {
+              tag: "Text",
+              slot: "primary",
+              props: { value: scalar("Second") },
+              children: [],
+            },
+          },
+        },
+      }),
+    );
+    expect(tooMany.issues.map((entry) => entry.code)).toContain("too_many_slot_children");
+    expect(tooMany.session.document?.nodes["n2"]?.children).toEqual(["n3"]);
+    expect(tooMany.session.document?.nodes["n4"]).toBeUndefined();
+  });
+
+  it("drops persisted event arguments that are references", () => {
+    const stored = baseSession({
+      document: {
+        entry: "home",
+        screens: ["n1"],
+        nodes: {
+          n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+          n2: {
+            tag: "Text",
+            props: {
+              value: scalar("Unsafe argument"),
+              arg: { kind: "reference", scheme: "agent", target: "admin" },
+            },
+            children: [],
+          },
+        },
+      },
+    });
+
+    const restored = validatePersistedSession(stored);
+
+    expect(restored.issues.map((entry) => entry.code)).toContain("event_arg_not_literal");
+    expect(restored.session.document?.nodes["n1"]?.children).toEqual([]);
+  });
+
+  it("bounds corrupt child and screen arrays during restoration", () => {
+    const children = Array.from(
+      { length: BOUNDS.nodesPerDocument + 100 },
+      (_, index) => `missing${index}`,
+    );
+    const started = Date.now();
+    const restored = validatePersistedSession(
+      baseSession({
+        document: {
+          entry: "home",
+          screens: Array.from({ length: BOUNDS.screensPerDocument + 1 }, () => "n1"),
+          nodes: {
+            n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+            n2: { tag: "Panel", props: {}, children },
+          },
+        },
+      }),
+    );
+
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(restored.issues.map((entry) => entry.code)).toContain("too_many_nodes");
+    expect(restored.issues.map((entry) => entry.code)).toContain("too_many_screens");
+    expect(restored.issues.length).toBeLessThanOrEqual(BOUNDS.nodesPerDocument + 70);
+  });
+
+  it("counts non-string child entries against the restoration node budget", () => {
+    const restored = validatePersistedSession(
+      baseSession({
+        document: {
+          entry: "home",
+          screens: ["n1"],
+          nodes: {
+            n1: {
+              tag: "Screen",
+              props: { name: scalar("home") },
+              children: new Array(BOUNDS.nodesPerDocument * 2).fill(null),
+            },
+          },
+        },
+      }),
+    );
+
+    expect(restored.issues.map((entry) => entry.code)).toContain("too_many_nodes");
+    expect(restored.issues.length).toBeLessThanOrEqual(BOUNDS.nodesPerDocument + 1);
+  });
+
+  it("drops an over-bound persisted scalar before it reaches a component", () => {
+    const restored = validatePersistedSession(
+      baseSession({
+        document: {
+          entry: "home",
+          screens: ["n1"],
+          nodes: {
+            n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+            n2: {
+              tag: "Text",
+              props: { value: scalar("x".repeat(BOUNDS.attributeValueChars + 1)) },
+              children: [],
+            },
+          },
+        },
+      }),
+    );
+
+    expect(restored.issues.map((entry) => entry.code)).toContain("attribute_value_too_long");
+    expect(restored.session.document?.nodes["n2"]).toBeUndefined();
+  });
+
   it("rejects a restored screen root assigned to a slot", () => {
     const stored = baseSession({
       document: {
@@ -426,6 +701,85 @@ describe("validatePersistedSession fail-safe restore", () => {
 
     expect(restored.issues.map((issue) => issue.code)).toEqual(["unknown_tag", "undeclared_prop"]);
     expect(restored.session.document?.nodes["n1"]?.children).toEqual([]);
+  });
+
+  it.each([
+    {
+      label: "an out-of-range number",
+      tag: "Meter",
+      props: { amount: scalar("6") },
+    },
+    {
+      label: "a data reference on a non-bindable prop",
+      tag: "Text",
+      props: { value: { kind: "reference", scheme: "data", target: "status" } },
+    },
+    {
+      label: "a scalar value on an action prop",
+      tag: "ActionButton",
+      props: { action: scalar("agent:run") },
+    },
+    {
+      label: "an agent reference on an ordinary string prop",
+      tag: "Text",
+      props: { value: { kind: "reference", scheme: "agent", target: "run" } },
+    },
+    {
+      label: "a nav reference on an ordinary string prop",
+      tag: "Text",
+      props: { value: { kind: "reference", scheme: "nav", target: "home" } },
+    },
+  ])("drops a restored node with $label", ({ tag, props }) => {
+    const restored = validatePersistedSession(
+      baseSession({
+        data: { status: "ready" },
+        document: {
+          entry: "home",
+          screens: ["n1"],
+          nodes: {
+            n1: { tag: "Screen", props: { name: scalar("home") }, children: ["n2"] },
+            n2: { tag, props, children: [] },
+          },
+        } as ComponentDocument,
+      }),
+    );
+
+    expect(restored.issues).toContainEqual(
+      expect.objectContaining({
+        code: "invalid_prop_value",
+        at: expect.stringMatching(/^document\.nodes\.n2\.props\./),
+      }),
+    );
+    expect(restored.session.document?.nodes["n1"]?.children).toEqual([]);
+    expect(restored.session.document?.nodes["n2"]).toBeUndefined();
+  });
+
+  it("preserves valid scalar, numeric, and action-reference counterparts", () => {
+    const restored = validatePersistedSession(
+      baseSession({
+        document: {
+          entry: "home",
+          screens: ["n1"],
+          nodes: {
+            n1: {
+              tag: "Screen",
+              props: { name: scalar("home") },
+              children: ["n2", "n3", "n4"],
+            },
+            n2: { tag: "Text", props: { value: scalar("Ready") }, children: [] },
+            n3: { tag: "Meter", props: { amount: scalar("5") }, children: [] },
+            n4: {
+              tag: "ActionButton",
+              props: { action: { kind: "reference", scheme: "agent", target: "run" } },
+              children: [],
+            },
+          },
+        },
+      }),
+    );
+
+    expect(restored.issues.map((issue) => issue.code)).not.toContain("invalid_prop_value");
+    expect(restored.session.document?.nodes["n1"]?.children).toEqual(["n2", "n3", "n4"]);
   });
 
   it("treats prototype-named props as undeclared own props during restore", () => {

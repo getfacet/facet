@@ -263,7 +263,7 @@ export const BOARD_COLUMN_SPEC: ComponentSpec = {
 export const CALENDAR_SPEC: ComponentSpec = {
   tag: "Calendar",
   whenToUse:
-    "Use Calendar when dated events must be understood or selected by month or agenda position. Prefer Timeline when sequence matters more than date navigation.",
+    "Use Calendar when visitors must scan or select one dated event from a compact grid or agenda list. Prefer Timeline for sequence or a custom component for date navigation.",
   props: {
     name: {
       type: "string",
@@ -290,12 +290,12 @@ export const CALENDAR_SPEC: ComponentSpec = {
       type: "string",
       enum: ["month", "agenda"],
       default: "month",
-      guidance: "Month grid or chronological agenda presentation.",
+      guidance: "Compact event grid or single-column list; source order is preserved.",
     },
     value: {
       type: "string",
       default: "",
-      guidance: "The initially selected event or date value.",
+      guidance: "The initially selected event id; use an id present in events.",
     },
   },
   content: { mode: "none" },

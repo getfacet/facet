@@ -58,13 +58,12 @@ function validateRegistry(value: unknown): FacetAssetRegistryValidationResult {
       "An asset registry must be a plain object.",
     );
   }
+  const keys = boundedEnumerableKeys(value, BOUNDS.dataModelObjectKeys);
+  if (keys === null) {
+    return reject("too_many_assets", REGISTRY_AT, "Asset registry size exceeds B-18.");
+  }
   if (Object.getOwnPropertySymbols(value).length > 0) {
     return reject("invalid_asset_key", REGISTRY_AT, "Asset keys must be string Facet identifiers.");
-  }
-
-  const keys = Object.getOwnPropertyNames(value).sort();
-  if (keys.length > BOUNDS.dataModelObjectKeys) {
-    return reject("too_many_assets", REGISTRY_AT, "Asset registry size exceeds B-18.");
   }
 
   const registry = Object.create(null) as Record<string, FacetAssetDescriptor>;
@@ -158,7 +157,7 @@ function validateDescriptor(
 export function resolveFacetAsset(
   registry: FacetAssetRegistry,
   reference: unknown,
-  expectedKind: unknown = "image",
+  expectedKind: FacetAssetDescriptor["kind"] = "image",
 ): FacetAssetDescriptor | null {
   try {
     if (!isPlainObject(registry) || expectedKind !== "image" || typeof reference !== "string") {
@@ -234,9 +233,25 @@ function firstUnknownKey(
   record: Readonly<Record<string, unknown>>,
   allowed: readonly string[],
 ): string | undefined {
-  return Object.getOwnPropertyNames(record)
-    .sort()
-    .find((key) => !allowed.includes(key));
+  const keys = boundedEnumerableKeys(record, BOUNDS.propsPerElement);
+  return keys?.find((key) => !allowed.includes(key));
+}
+
+function boundedEnumerableKeys(
+  record: Readonly<Record<string, unknown>>,
+  limit: number,
+): readonly string[] | null {
+  const keys: string[] = [];
+  for (const key in record) {
+    if (!Object.hasOwn(record, key)) {
+      break;
+    }
+    keys.push(key);
+    if (keys.length > limit) {
+      return null;
+    }
+  }
+  return Object.freeze(keys.sort());
 }
 
 function defineFrozenEntry<T>(record: Record<string, T>, key: string, value: T): void {

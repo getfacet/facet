@@ -1,5 +1,5 @@
 import { deriveComponentContentClass } from "@facet/core";
-import type { ComponentSpec } from "@facet/core";
+import type { ComponentSpec, PropSchema } from "@facet/core";
 
 import type { ComponentAuthoringGuide, ComponentSpecDetail } from "./types.js";
 
@@ -41,11 +41,49 @@ export const FACET_TOOL_NAMES = Object.freeze([
   "publish_data",
 ] as const);
 
-function componentAuthoringGuide(spec: ComponentSpec): ComponentAuthoringGuide {
+function quoteExample(value: string): string {
+  if (!value.includes('"')) {
+    return `"${value}"`;
+  }
+  if (!value.includes("'")) {
+    return `'${value}'`;
+  }
+  return '"..."';
+}
+
+function requiredPropExample(
+  name: string,
+  schema: PropSchema,
+  availableAssetKeys: readonly string[],
+): string {
+  if (schema.type === "boolean") {
+    return `${name}="true"`;
+  }
+  if (schema.type === "number") {
+    const example = schema.enum?.[0] ?? schema.minimum ?? schema.maximum ?? 0;
+    return `${name}=${quoteExample(String(example))}`;
+  }
+  if (schema.type === "string") {
+    if (schema.action === true) {
+      return `${name}=${quoteExample("agent:action")}`;
+    }
+    if (schema.assetKind === "image") {
+      const key = availableAssetKeys[0] ?? "HOST_PINNED_IMAGE_KEY";
+      return `${name}=${quoteExample(`asset:${key}`)}`;
+    }
+    return `${name}=${quoteExample(schema.enum?.[0] ?? "...")}`;
+  }
+  return `${name}=${quoteExample(`data:${name}`)}`;
+}
+
+function componentAuthoringGuide(
+  spec: ComponentSpec,
+  availableAssetKeys: readonly string[],
+): ComponentAuthoringGuide {
   const requiredProps = Object.keys(spec.props)
     .sort()
     .filter((name) => spec.props[name]?.required === true)
-    .map((name) => `${name}="..."`)
+    .map((name) => requiredPropExample(name, spec.props[name] as PropSchema, availableAssetKeys))
     .join(" ");
   const opening = `<${spec.tag}${requiredProps.length === 0 ? "" : ` ${requiredProps}`}`;
   if (spec.content.mode === "none") {
@@ -76,11 +114,14 @@ function componentAuthoringGuide(spec: ComponentSpec): ComponentAuthoringGuide {
 }
 
 /** Adds agent-facing class and syntax guidance derived from the validated contract. */
-export function componentSpecDetail(spec: ComponentSpec): ComponentSpecDetail {
+export function componentSpecDetail(
+  spec: ComponentSpec,
+  availableAssetKeys: readonly string[] = [],
+): ComponentSpecDetail {
   return Object.freeze({
     ...spec,
     contentClass: deriveComponentContentClass(spec.content),
-    authoringGuide: componentAuthoringGuide(spec),
+    authoringGuide: componentAuthoringGuide(spec, availableAssetKeys),
   });
 }
 

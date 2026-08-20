@@ -9,6 +9,9 @@ import type {
 } from "@facet/core";
 
 import type { QuickstartResolvedDesignExample } from "../design-overlay.js";
+import { SERVICE_PREVIEW_DISCOVERY } from "./service-preview-discovery.js";
+import { SERVICE_PREVIEW_OPERATIONS } from "./service-preview-operations.js";
+import { SERVICE_PREVIEW_WORK } from "./service-preview-work.js";
 
 export interface ComponentPreviewFixture {
   readonly tag: string;
@@ -57,6 +60,12 @@ export const QUICKSTART_PREVIEW_ASSET_REGISTRY: FacetAssetRegistry = Object.free
     height: 1,
   }),
 });
+
+export const QUICKSTART_SERVICE_PREVIEW_SOURCES = Object.freeze([
+  ...SERVICE_PREVIEW_DISCOVERY,
+  ...SERVICE_PREVIEW_WORK,
+  ...SERVICE_PREVIEW_OPERATIONS,
+]);
 
 const PREVIEW_DATA: DataModel = Object.freeze({
   previewRows: Object.freeze([

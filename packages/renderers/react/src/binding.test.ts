@@ -85,7 +85,7 @@ const SPEC: ComponentSpec = {
     dense: { type: "boolean", default: false, guidance: "A flag." },
     tone: { type: "string", enum: ["primary", "quiet"], default: "quiet", guidance: "A domain." },
     arg: { type: "string", guidance: "The event argument." },
-    action: { type: "string", guidance: "May carry an action reference." },
+    action: { type: "string", action: true, guidance: "May carry an action reference." },
     plain: { type: "string", guidance: "An ordinary optional string, no default." },
   },
   content: { mode: "none" },
@@ -288,6 +288,19 @@ describe("resolveProps hands a trusted component declared props only", () => {
     expect("limit" in overMaximum.props).toBe(false);
   });
 
+  it("refuses an over-bound scalar from a directly supplied document", () => {
+    const resolution = resolveProps(
+      node("Panel", {
+        caption: scalar("x".repeat(BOUNDS.attributeValueChars + 1)),
+      }),
+      SPEC,
+      MODEL,
+    );
+
+    expect(resolution.props["caption"]).toBeUndefined();
+    expect(issuesFor(resolution, "caption")).toEqual(["invalid_value"]);
+  });
+
   it("reports an exact lowercase resolved arg past B-23 as a node-scoped issue", () => {
     const overBound = "x".repeat(BOUNDS.collectedValueChars + 1);
     const resolution = resolveProps(
@@ -299,6 +312,17 @@ describe("resolveProps hands a trusted component declared props only", () => {
     expect(resolution.props["arg"]).toBe(overBound);
     expect(nodeIssues(resolution)).toEqual(["event_arg_too_long"]);
     expect(resolution.issues.filter((issue) => issue.scope === "prop")).toEqual([]);
+  });
+
+  it("refuses a persisted event argument written as a reference", () => {
+    const resolution = resolveProps(
+      node("Panel", { caption: scalar("x"), arg: reference("agent", "admin") }),
+      SPEC,
+      MODEL,
+    );
+
+    expect(issuesFor(resolution, "arg")).toEqual(["invalid_value"]);
+    expect("arg" in resolution.props).toBe(false);
   });
 
   it("does not substitute the declared default for a prop that failed", () => {
@@ -537,6 +561,30 @@ describe("resolveProps carries an action reference without acting on it", () => 
 
     expect(issuesFor(resolution, "total")).toEqual(["invalid_value"]);
     expect("total" in resolution.props).toBe(false);
+  });
+
+  it("refuses action references on ordinary string props", () => {
+    for (const scheme of ["nav", "agent"] as const) {
+      const resolution = resolveProps(
+        node("Panel", { caption: scalar("x"), plain: reference(scheme, "details") }),
+        SPEC,
+        MODEL,
+      );
+
+      expect(issuesFor(resolution, "plain")).toEqual(["invalid_value"]);
+      expect("plain" in resolution.props).toBe(false);
+    }
+  });
+
+  it("refuses scalar text on an action prop even when it looks like an action", () => {
+    const resolution = resolveProps(
+      node("Panel", { caption: scalar("x"), action: scalar("agent:refresh") }),
+      SPEC,
+      MODEL,
+    );
+
+    expect(issuesFor(resolution, "action")).toEqual(["invalid_value"]);
+    expect("action" in resolution.props).toBe(false);
   });
 });
 

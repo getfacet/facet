@@ -27,7 +27,7 @@ publication, screen/data reads, event forwarding, patch folding, and revisions.
 - `createMarkupBuffer` — streaming markup accumulation;
 - `executeFacetTool` — one tool-call executor against a `FacetToolSession`; and
 - `buildTurnObservation` — bounded state summary for the next model step; and
-- `formatCatalogIndex` — compact component discovery grouped by authoring role.
+- `formatCatalogIndex` — compact component discovery grouped by derived content class.
 
 ```ts check-docs
 import {
@@ -53,11 +53,12 @@ those independent `read_component_spec` requests in one tool-only response;
 the host remains responsible for bounded admission and execution of each call.
 
 Plan composition before component detail: identify the screen's job, decide the
-spatial relationship and reading order, choose the minimum layout components
-that express it, then fill that structure with surface, content, and interaction
-components. The role grouping is discovery guidance, not a validation rule. A
-simple screen may place visible components directly under `Screen`, and custom
-components without a role remain valid and appear as unclassified.
+spatial relationship and reading order, choose the minimum containers that
+express it, then fill that structure with task-relevant components. The catalog
+groups components as leaf, container, or structured by deriving the class from
+each content contract. This grouping is discovery guidance rather than a
+validation rule; a simple screen may place visible components directly under
+`Screen`.
 
 ## Rendering a page
 
@@ -88,6 +89,8 @@ bind declared component props to `data:` paths or read bounded projections with
 Trusted components report interactions to the renderer. `nav:` stays
 browser-local. `agent:` becomes a validated event with event name, source node,
 screen, stage revision, optional argument, and the requested collection fields.
+The source must resolve the event from a catalog prop marked `action: true`;
+an `agent:`-shaped value in a label or other ordinary prop grants no authority.
 
 Each collected field is explicit: value, omitted sensitive, or source
 unavailable. The agent never infers a missing field from an absent key.

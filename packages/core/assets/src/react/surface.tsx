@@ -1,6 +1,8 @@
 /** Trusted React implementations for the default task surfaces. */
 
+import { BOUNDS } from "@facet/core";
 import type { ComponentMountProps, MountedComponent } from "@facet/core";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import type { FlowStyle } from "./style.js";
@@ -664,23 +666,33 @@ function calendarEvents(props: Mount["props"]): readonly CalendarEvent[] {
   }
   if (!Array.isArray(raw)) return [];
 
-  return raw.flatMap((candidate): readonly CalendarEvent[] => {
+  const events: CalendarEvent[] = [];
+  const seen = new Set<string>();
+  for (const candidate of raw.slice(0, BOUNDS.renderedCollectionItems)) {
     const id = ownString(candidate, "id");
     const title = ownString(candidate, "title");
     const start = ownString(candidate, "start");
-    if (id === undefined || title === undefined || start === undefined) return [];
+    if (
+      id === undefined ||
+      title === undefined ||
+      start === undefined ||
+      id.length > BOUNDS.collectedValueChars ||
+      seen.has(id)
+    ) {
+      continue;
+    }
+    seen.add(id);
     const end = ownString(candidate, "end");
     const tone = ownString(candidate, "tone");
-    return [
-      {
-        id,
-        title,
-        start,
-        ...(end === undefined ? {} : { end }),
-        ...(tone === undefined ? {} : { tone }),
-      },
-    ];
-  });
+    events.push({
+      id,
+      title,
+      start,
+      ...(end === undefined ? {} : { end }),
+      ...(tone === undefined ? {} : { tone }),
+    });
+  }
+  return Object.freeze(events);
 }
 
 /** A bounded event calendar that reports the selected event through Facet collection. */
@@ -693,6 +705,14 @@ export const Calendar: MountedComponent<ReactNode, ReactNode> = ({
   const value = typeof props["value"] === "string" ? props["value"] : "";
   const view = enumProp(props, "view", CALENDAR_VIEWS, "month");
   const events = calendarEvents(props);
+  const valueIsAvailable = value === "" || events.some((event) => event.id === value);
+  const displayedValue = valueIsAvailable ? value : "";
+
+  useEffect(() => {
+    if (!valueIsAvailable) {
+      onValueChange?.("");
+    }
+  }, [onValueChange, value, valueIsAvailable]);
 
   return (
     <section
@@ -730,7 +750,7 @@ export const Calendar: MountedComponent<ReactNode, ReactNode> = ({
         })}
       >
         {events.map((event, index) => {
-          const selected = value === event.id;
+          const selected = displayedValue === event.id;
           const accent = event.tone === "accent" || selected;
           return (
             <li key={`${event.id}-${index}`} style={regionStyle()}>

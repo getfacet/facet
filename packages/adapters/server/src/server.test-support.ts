@@ -11,7 +11,7 @@ import type {
 import { validTestTheme } from "../../../../test-support/theme-fixture.js";
 import { createFacetServer, type FacetServer, type FacetServerOptions } from "./server.js";
 
-export const MARKUP = `<Facet entry="home"><Screen name="home"><Text value="Ready" /></Screen></Facet>`;
+export const MARKUP = `<Facet entry="home"><Screen name="home"><Text value="Ready" /><Action label="Submit" action="agent:submit" /></Screen></Facet>`;
 
 export function testCatalog(): FacetCatalog {
   const result = validateCatalog({
@@ -34,6 +34,20 @@ export function testCatalog(): FacetCatalog {
         props: {
           value: { type: "string", guidance: "Text value.", bindable: true },
           arg: { type: "string", guidance: "Event argument." },
+        },
+        content: { mode: "none" },
+      },
+      {
+        tag: "Action",
+        whenToUse: "Send one explicit visitor action.",
+        props: {
+          label: { type: "string", required: true, guidance: "Visible action label." },
+          action: {
+            type: "string",
+            required: true,
+            action: true,
+            guidance: "Agent action reference.",
+          },
         },
         content: { mode: "none" },
       },
@@ -62,7 +76,7 @@ export function visitorEvent(overrides: Partial<VisitorEvent> = {}): VisitorEven
   return {
     eventId: "event1",
     eventName: "submit",
-    sourceNodeId: "node1",
+    sourceNodeId: "n3",
     screen: "home",
     stageRevision: 0,
     collect: {},

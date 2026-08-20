@@ -109,6 +109,19 @@ describe("validateFacetAssetRegistry - closed bounded input", () => {
     expect(rejection(tooMany)).toEqual(["too_many_assets", "assetRegistry"]);
   });
 
+  it("stops collecting persisted registry keys as soon as B-18 is exceeded", () => {
+    const oversized = Object.fromEntries(
+      Array.from({ length: 100_000 }, (_unused, index) => [
+        `Asset${index}`,
+        image({ src: `https://cdn.example.test/${index}.png` }),
+      ]),
+    );
+
+    const started = Date.now();
+    expect(rejection(oversized)).toEqual(["too_many_assets", "assetRegistry"]);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   it("accepts a key at B-06 and rejects one character past it", () => {
     const atLimit = `A${"a".repeat(BOUNDS.identifierChars - 1)}`;
     const pastLimit = `A${"a".repeat(BOUNDS.identifierChars)}`;
@@ -196,7 +209,7 @@ describe("resolveFacetAsset", () => {
     expect(resolveFacetAsset(registry, "missing", "image")).toBeNull();
     expect(resolveFacetAsset(registry, "asset:", "image")).toBeNull();
     expect(resolveFacetAsset(registry, "https://example.com/image.png", "image")).toBeNull();
-    expect(resolveFacetAsset(registry, "hero", "video")).toBeNull();
+    expect(resolveFacetAsset(registry, "hero", "video" as never)).toBeNull();
     expect(resolveFacetAsset(registry, null, "image")).toBeNull();
   });
 

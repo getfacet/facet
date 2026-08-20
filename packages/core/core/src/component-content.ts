@@ -68,7 +68,7 @@ function validateContent(value: unknown): ContentValidationResult {
   if (unknownKey !== undefined) {
     return reject(
       "unknown_content_key",
-      `content.${unknownKey}`,
+      unknownKey === null ? "content" : `content.${unknownKey}`,
       "The component content branch is closed.",
     );
   }
@@ -97,7 +97,10 @@ function validateSlots(value: unknown): ContentValidationResult {
   if (!isRecord(value)) {
     return reject("invalid_slots", "content.slots", "Slots must be a plain object.");
   }
-  const names = Object.keys(value).sort();
+  const names = boundedEnumerableKeys(value, BOUNDS.dataModelObjectKeys);
+  if (names === null) {
+    return reject("too_many_slots", "content.slots", "Slot count exceeds B-18.");
+  }
   if (names.length === 0) {
     return reject("empty_slots", "content.slots", "Slots mode must declare a named slot.");
   }
@@ -128,7 +131,11 @@ function validateSlot(
   }
   const unknownKey = firstUnknownKey(value, SLOT_KEYS);
   if (unknownKey !== undefined) {
-    return reject("unknown_slot_key", `${at}.${unknownKey}`, "The slot spec is closed.");
+    return reject(
+      "unknown_slot_key",
+      unknownKey === null ? at : `${at}.${unknownKey}`,
+      "The slot spec is closed.",
+    );
   }
   const guidance = value["guidance"];
   if (typeof guidance !== "string" || guidance.length === 0) {
@@ -216,16 +223,33 @@ function isChildCount(value: unknown): value is number {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function firstUnknownKey(
   record: Readonly<Record<string, unknown>>,
   allowed: readonly string[],
-): string | undefined {
-  return Object.keys(record)
-    .sort()
-    .find((key) => !allowed.includes(key));
+): string | null | undefined {
+  const keys = boundedEnumerableKeys(record, BOUNDS.propsPerElement);
+  if (keys === null) return null;
+  return keys.find((key) => !allowed.includes(key));
+}
+
+function boundedEnumerableKeys(
+  record: Readonly<Record<string, unknown>>,
+  limit: number,
+): readonly string[] | null {
+  const keys: string[] = [];
+  for (const key in record) {
+    if (!Object.hasOwn(record, key)) {
+      break;
+    }
+    keys.push(key);
+    if (keys.length > limit) return null;
+  }
+  return Object.freeze(keys.sort());
 }
 
 function reject(code: string, at: string, detail: string): ContentRejection {

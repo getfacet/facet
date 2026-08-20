@@ -85,9 +85,20 @@ function describeCollect(value: unknown): string {
   for (const key of Object.keys(value).sort()) {
     const entry = value[key];
     if (!isRecord(entry) || typeof entry["kind"] !== "string") continue;
-    if (entry["kind"] === "value" && typeof entry["value"] === "string") {
-      entries.push(`${key}=${safeJsonString(entry["value"])}`);
-      continue;
+    if (entry["kind"] === "value") {
+      const collected = entry["value"];
+      if (typeof collected === "string") {
+        entries.push(`${key}=${safeJsonString(collected)}`);
+        continue;
+      }
+      if (typeof collected === "boolean") {
+        entries.push(`${key}=${String(collected)}`);
+        continue;
+      }
+      if (Array.isArray(collected) && collected.every((item) => typeof item === "string")) {
+        entries.push(`${key}=${JSON.stringify(collected)}`);
+        continue;
+      }
     }
     if (entry["kind"] === "omitted_sensitive" || entry["kind"] === "collect_source_unavailable") {
       entries.push(`${key}=${entry["kind"]}`);

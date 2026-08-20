@@ -1,6 +1,7 @@
 import type {
   ComponentDocument,
   DataModel,
+  FacetAssetRegistry,
   FacetCatalog,
   FacetTheme,
   FacetThemeExtensionDeclaration,
@@ -10,6 +11,7 @@ import type {
 
 export interface Session {
   readonly catalog: FacetCatalog;
+  readonly assetRegistry: FacetAssetRegistry;
   readonly theme: FacetTheme;
   readonly themeExtensions: readonly FacetThemeExtensionDeclaration[];
   readonly copy: NeutralCopy;

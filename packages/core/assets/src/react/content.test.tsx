@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
-import type { ComponentMountProps, MountedComponent } from "@facet/core";
+import { BOUNDS, type ComponentMountProps, type MountedComponent } from "@facet/core";
 import { cleanup, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import * as Content from "./content.js";
+import { ICON_SPEC } from "../specs-content.js";
 
 type Mount = ComponentMountProps<ReactNode>;
 
@@ -98,9 +99,25 @@ describe("trusted content and data React components", () => {
     expect(decorative.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     cleanup();
 
+    const message = renderComponent(Content.Icon, { props: { name: "message" } });
+    expect(message.querySelector("svg")).not.toBeNull();
+    cleanup();
+
     expect(
       renderComponent(Content.Icon, { props: { name: "unregistered" } }).querySelector("svg"),
     ).toBeNull();
+  });
+
+  it("renders every icon name admitted by the default spec", () => {
+    const schema = ICON_SPEC.props["name"];
+    const names = schema?.type === "string" ? (schema.enum ?? []) : [];
+
+    for (const name of names) {
+      expect(
+        renderComponent(Content.Icon, { props: { name } }).querySelector("svg"),
+      ).not.toBeNull();
+      cleanup();
+    }
   });
 
   it("renders Image only from a resolved safe descriptor", () => {
@@ -201,7 +218,7 @@ describe("trusted content and data React components", () => {
       "region",
       "revenue",
     ]);
-    expect(root.querySelectorAll("tbody tr")).toHaveLength(4);
+    expect(root.querySelectorAll("tbody tr")).toHaveLength(2);
     expect(root.textContent).not.toContain("object Object");
   });
 
@@ -222,6 +239,35 @@ describe("trusted content and data React components", () => {
       "region",
       "revenue",
     ]);
+  });
+
+  it("uses authored table columns and skips an empty first row during fallback", () => {
+    const selected = renderComponent(Content.Table, {
+      props: {
+        columns: "revenue, region, revenue",
+        rows: [{ region: "north", revenue: 120, internal: "hidden" }],
+      },
+    });
+    expect([...selected.querySelectorAll("th")].map((cell) => cell.textContent)).toEqual([
+      "revenue",
+      "region",
+    ]);
+    expect(selected.textContent).not.toContain("internal");
+
+    const fallback = renderComponent(Content.Table, {
+      props: { rows: [{}, { meta: {} }, { name: "Ada" }] },
+    });
+    expect([...fallback.querySelectorAll("th")].map((cell) => cell.textContent)).toEqual(["name"]);
+    expect(fallback.textContent).toContain("Ada");
+  });
+
+  it("caps data-backed table rows before creating DOM records", () => {
+    const rows = Array.from({ length: BOUNDS.renderedCollectionItems + 20 }, (_, index) => ({
+      name: `Record ${index}`,
+    }));
+    const root = renderComponent(Content.Table, { props: { rows } });
+
+    expect(root.querySelectorAll("tbody tr")).toHaveLength(BOUNDS.renderedCollectionItems);
   });
 
   it("renders bounded native bar, line, and area charts from usable records", () => {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyPatch } from "@facet/core";
+import { applyPatch, BOUNDS } from "@facet/core";
 import type {
   VisitorEvent,
   ConversationMessage,
@@ -106,6 +106,46 @@ describe("SseTransport", () => {
     expect(JSON.parse(init.body)).toEqual({ sessionKey: "session/a", event: event() });
   });
 
+  it("snapshots collected arrays when an event enters the send queue", async () => {
+    const transport = new SseTransport("http://s", "session/a");
+    transport.subscribe(() => {});
+    const selections = ["north"];
+    const sent = transport.send(
+      event({ collect: { regions: { kind: "value", value: selections } } }),
+    );
+
+    selections.push("west");
+    FakeEventSource.instances[0]?.onopen?.();
+    await sent;
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
+    expect(JSON.parse(init.body).event.collect.regions.value).toEqual(["north"]);
+  });
+
+  it("rejects invalid events and messages before queueing, then still sends valid input", async () => {
+    const transport = new SseTransport("http://s", "session/a");
+    transport.subscribe(() => {});
+    FakeEventSource.instances[0]?.onopen?.();
+
+    await expect(transport.send(event({ eventName: "not valid" }))).rejects.toThrow(
+      "invalid visitor event",
+    );
+    await expect(
+      transport.sendMessage({
+        messageId: "msg-oversized",
+        text: "x".repeat(BOUNDS.conversationMessageChars + 1),
+        screen: "home",
+        stageRevision: 0,
+      }),
+    ).rejects.toThrow("invalid visitor message");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(
+      transport.send(event({ eventId: "valid-after-rejection" })),
+    ).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("lets local hosts extend the POST timeout without changing the default", async () => {
     const signal = new AbortController().signal;
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(signal);
@@ -166,6 +206,56 @@ describe("SseTransport", () => {
       screen: "home",
       stageRevision: 0,
     });
+  });
+
+  it("snapshots visitor messages and never lets message fields override the transport session", async () => {
+    const transport = new SseTransport("http://s", "session/a");
+    transport.subscribe(() => {});
+    const message = {
+      messageId: "msg-1",
+      text: "original",
+      screen: "home",
+      stageRevision: 0,
+      sessionKey: "forged-session",
+    };
+    const sent = transport.sendMessage(message);
+
+    message.text = "mutated";
+    message.screen = "other";
+    FakeEventSource.instances[0]?.onopen?.();
+    await sent;
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
+    expect(JSON.parse(init.body)).toEqual({
+      sessionKey: "session/a",
+      messageId: "msg-1",
+      text: "original",
+      screen: "home",
+      stageRevision: 0,
+    });
+  });
+
+  it("reads each visitor-message field once before validation and queueing", async () => {
+    const transport = new SseTransport("http://s", "session/a");
+    transport.subscribe(() => {});
+    let textReads = 0;
+    const message = {
+      messageId: "msg-1",
+      get text(): string {
+        textReads += 1;
+        return textReads === 1 ? "validated" : "x".repeat(BOUNDS.conversationMessageChars + 1);
+      },
+      screen: "home",
+      stageRevision: 0,
+    };
+
+    const sent = transport.sendMessage(message);
+    FakeEventSource.instances[0]?.onopen?.();
+    await sent;
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
+    expect(textReads).toBe(1);
+    expect(JSON.parse(init.body).text).toBe("validated");
   });
 
   it("rejects the oldest queued send on overflow and flushes the bounded queue in order", async () => {

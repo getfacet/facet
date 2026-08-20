@@ -249,6 +249,10 @@ export function StageRenderer({
         if (spec === undefined) {
           return;
         }
+        const actionSchema = spec.props[prop];
+        if (actionSchema?.type !== "string" || actionSchema.action !== true) {
+          return;
+        }
         // Resolved again rather than remembered: the props a component was
         // mounted with are the props of the document and model in force, and
         // re-deriving them from those two is what keeps a captured handler from

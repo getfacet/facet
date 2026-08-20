@@ -1,10 +1,10 @@
 /**
  * The tool session port — the one handle every agent tool executor is given.
  *
- * A tool reads the session's catalog, its current document and its data model,
- * applies one whole-document authored render, applies one targeted authored
- * subtree mutation, or publishes one bounded value. That is the whole surface,
- * and this module is where its shape is written down.
+ * A tool reads the session's catalog, optional host-pinned asset index, current
+ * document and data model, applies one whole-document authored render, applies
+ * one targeted authored subtree mutation, or publishes one bounded value. That
+ * is the whole surface, and this module is where its shape is written down.
  *
  * **Why the port lives here, in a dependency-free package (D5, D-16).** Two
  * packages meet at this boundary: `@facet/agent-tools` writes the executors that
@@ -46,6 +46,7 @@
  */
 
 import type { FacetCatalog } from "./catalog.js";
+import type { FacetAssetRegistry } from "./asset-registry.js";
 import type { DataModel, PayloadEvaluation } from "./data-model.js";
 import type { AuthorValidationResult } from "./document-validation.js";
 import type { ComponentDocument } from "./document.js";
@@ -98,6 +99,8 @@ export type FacetTargetedMutationResult =
 export interface FacetToolSession {
   /** The immutable catalog resolved for this session at bootstrap. */
   readonly catalog: FacetCatalog;
+  /** Host-pinned assets available to authored asset references, when the adapter exposes them. */
+  readonly assetRegistry?: FacetAssetRegistry;
   /** The current document, or `null` while the session is preparing. */
   readonly document: ComponentDocument | null;
   /** The bounded hierarchical model the document's `data:` references read. */

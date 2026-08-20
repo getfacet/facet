@@ -69,6 +69,7 @@ export const NAVIGATION_ITEM_SPEC: ComponentSpec = {
       type: "string",
       guidance: "Literal nav: destination or agent: event activated by this item.",
       required: true,
+      action: true,
     },
     arg: {
       type: "string",
@@ -111,6 +112,7 @@ export const BUTTON_SPEC: ComponentSpec = {
       type: "string",
       guidance: "Literal nav: destination or agent: event activated by this button.",
       required: true,
+      action: true,
     },
     arg: {
       type: "string",

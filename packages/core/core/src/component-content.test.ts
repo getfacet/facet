@@ -121,6 +121,13 @@ describe("validateComponentContentSpec - closed branches", () => {
     expect(rejection({ mode: "slots", slots: {} })).toEqual(["empty_slots", "content.slots"]);
   });
 
+  it("rejects slot maps with inherited enumerable keys", () => {
+    const slots = { body: slot() };
+    Object.setPrototypeOf(slots, { inherited: slot() });
+
+    expect(rejection({ mode: "slots", slots })).toEqual(["invalid_slots", "content.slots"]);
+  });
+
   it("rejects unknown slot keys in sorted order", () => {
     const bad = {
       mode: "slots",
@@ -131,9 +138,33 @@ describe("validateComponentContentSpec - closed branches", () => {
     expect(rejection(bad)).toEqual(["unknown_slot_key", "content.slots.body.aaa"]);
     expect(validateComponentContentSpec(bad)).toEqual(validateComponentContentSpec(bad));
   });
+
+  it("rejects an oversized slot descriptor before sorting all unknown keys", () => {
+    const descriptor = Object.fromEntries(
+      Array.from({ length: 100_000 }, (_, index) => [`unknown${index}`, true]),
+    );
+    const started = performance.now();
+
+    expect(rejection({ mode: "slots", slots: { body: descriptor } })).toEqual([
+      "unknown_slot_key",
+      "content.slots.body",
+    ]);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
 });
 
 describe("validateComponentContentSpec - bounded slots", () => {
+  it("rejects a hostile slot map after the shared object-key bound", () => {
+    const slots = Object.fromEntries(
+      Array.from({ length: BOUNDS.dataModelObjectKeys + 1 }, (_, index) => [
+        `slot${index}`,
+        slot(),
+      ]),
+    );
+
+    expect(rejection({ mode: "slots", slots })).toEqual(["too_many_slots", "content.slots"]);
+  });
+
   it("requires Facet slot identifiers and reports sorted slot names first", () => {
     expect(
       rejection({

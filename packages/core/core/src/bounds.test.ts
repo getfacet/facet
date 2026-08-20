@@ -4,7 +4,7 @@ import { BOUNDS } from "./bounds.js";
 import { isFacetIdentifier, parseDataPath } from "./identifiers.js";
 
 /**
- * The bound registry. Every entry is one of B-01..B-25 with its approved
+ * The bound registry. Every entry is one of B-01..B-28 with its approved
  * verbatim value. This table is the anti-drift check: if a bound is renamed,
  * removed, or silently retuned, exactly one row here fails.
  */
@@ -170,6 +170,24 @@ const REGISTRY: ReadonlyArray<{
     actual: BOUNDS.conversationMessageChars,
     expected: 20_000,
   },
+  {
+    id: "B-26",
+    what: "records rendered by one data-backed component",
+    actual: BOUNDS.renderedCollectionItems,
+    expected: 100,
+  },
+  {
+    id: "B-27",
+    what: "normalized visitor event JSON (UTF-8 bytes)",
+    actual: BOUNDS.visitorEventJsonBytes,
+    expected: 4_000_000,
+  },
+  {
+    id: "B-28",
+    what: "visitor HTTP request body (UTF-8 bytes)",
+    actual: BOUNDS.visitorRequestBodyBytes,
+    expected: 5 * 1024 * 1024,
+  },
 ];
 
 /** Every leaf number in BOUNDS, flattened through the B-21 pair. */
@@ -192,14 +210,14 @@ describe("BOUNDS registry", () => {
     expect(actual).toBe(expected);
   });
 
-  it("declares all 25 bounds B-01..B-25 and nothing else", () => {
+  it("declares all 28 bounds B-01..B-28 and nothing else", () => {
     const declared = new Set(REGISTRY.map((entry) => entry.id));
-    const expectedIds = Array.from({ length: 25 }, (_, index) => {
+    const expectedIds = Array.from({ length: 28 }, (_, index) => {
       return `B-${String(index + 1).padStart(2, "0")}`;
     });
     expect(Array.from(declared).sort()).toEqual(expectedIds);
     // B-21 is a pair, so it contributes one key holding both halves.
-    expect(Object.keys(BOUNDS)).toHaveLength(25);
+    expect(Object.keys(BOUNDS)).toHaveLength(28);
   });
 
   it("expresses every bound as a positive integer character or structural count", () => {

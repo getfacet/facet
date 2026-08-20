@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
-import { validateComponentSpec } from "@facet/core";
+import {
+  parseMarkup,
+  validateAuthorMarkup,
+  validateCatalog,
+  validateComponentSpec,
+} from "@facet/core";
+import type { ComponentSpec } from "@facet/core";
 
 import {
   FACET_TOOL_NAMES,
@@ -215,5 +221,70 @@ describe("FACET_TOOL_SPECS", () => {
       directChildRule: "Use ordinary direct component children without a slot attribute.",
       allowedDirectChildSlots: [],
     });
+  });
+
+  it("uses valid examples for required numbers, structured data, and assets", () => {
+    const validated = validateComponentSpec({
+      tag: "Summary",
+      whenToUse: "Show a bounded data summary with one image.",
+      props: {
+        rank: {
+          type: "number",
+          required: true,
+          minimum: 1,
+          guidance: "Visible ranking position.",
+        },
+        rows: {
+          type: "array",
+          required: true,
+          bindable: true,
+          guidance: "Summary rows from the data model.",
+        },
+        image: {
+          type: "string",
+          required: true,
+          assetKind: "image",
+          guidance: "Host-approved summary image.",
+        },
+      },
+      content: { mode: "none" },
+    });
+    if (!validated.ok) throw new Error(`expected component acceptance, got ${validated.code}`);
+
+    expect(componentSpecDetail(validated.spec, ["hero"]).authoringGuide.elementSyntax).toBe(
+      '<Summary image="asset:hero" rank="1" rows="data:rows" />',
+    );
+  });
+
+  it("generates a required action example that passes the authoring contract", () => {
+    const screen = {
+      tag: "Screen",
+      whenToUse: "Root screen.",
+      props: { name: { type: "string", required: true, guidance: "Screen name." } },
+      content: { mode: "children" },
+    } as const;
+    const button = {
+      tag: "Button",
+      whenToUse: "Send one action.",
+      props: {
+        action: {
+          type: "string",
+          required: true,
+          action: true,
+          guidance: "Agent or navigation action.",
+        },
+        label: { type: "string", required: true, guidance: "Visible label." },
+      },
+      content: { mode: "none" },
+    } as const;
+    const catalog = validateCatalog({ components: [screen, button] });
+    if (!catalog.ok) throw new Error(`expected catalog acceptance, got ${catalog.code}`);
+    const detail = componentSpecDetail(catalog.catalog.components[1] as ComponentSpec);
+    const markup = `<Facet entry="home"><Screen name="home">${detail.authoringGuide.elementSyntax}</Screen></Facet>`;
+    const parsed = parseMarkup(markup);
+    if (!parsed.ok) throw new Error(`generated example did not parse: ${parsed.error.code}`);
+
+    expect(detail.authoringGuide.elementSyntax).toContain('action="agent:action"');
+    expect(validateAuthorMarkup(parsed.ast, catalog.catalog, {}).ok).toBe(true);
   });
 });

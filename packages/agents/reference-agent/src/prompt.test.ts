@@ -72,24 +72,24 @@ function scalar(value: string): { readonly kind: "scalar"; readonly value: strin
 function document(visibleText = "Visible", hiddenText = "Hidden"): ComponentDocument {
   return Object.freeze({
     entry: "home",
-    screens: Object.freeze(["s-home", "s-hidden"]),
+    screens: Object.freeze(["n1", "n3"]),
     nodes: Object.freeze({
-      "s-home": Object.freeze({
+      n1: Object.freeze({
         tag: "Screen",
         props: Object.freeze({ name: scalar("home") }),
-        children: Object.freeze(["n-visible"]),
+        children: Object.freeze(["n2"]),
       }),
-      "n-visible": Object.freeze({
+      n2: Object.freeze({
         tag: "Text",
         props: Object.freeze({ value: scalar(visibleText) }),
         children: Object.freeze([]),
       }),
-      "s-hidden": Object.freeze({
+      n3: Object.freeze({
         tag: "Screen",
         props: Object.freeze({ name: scalar("hidden") }),
-        children: Object.freeze(["n-hidden"]),
+        children: Object.freeze(["n4"]),
       }),
-      "n-hidden": Object.freeze({
+      n4: Object.freeze({
         tag: "Text",
         props: Object.freeze({ value: scalar(hiddenText) }),
         children: Object.freeze([]),
@@ -134,7 +134,7 @@ function event(overrides: Partial<VisitorEvent> = {}): VisitorEvent {
   return {
     eventId: "turn1",
     eventName: "submit",
-    sourceNodeId: "n-visible",
+    sourceNodeId: "n2",
     screen: "home",
     stageRevision: 7,
     collect: {},
@@ -235,7 +235,7 @@ describe("stage observation prompt", () => {
     expect(prompt).toContain("currentScreen=home");
     expect(prompt).toContain("screens=home, hidden");
     expect(prompt).toContain("- Text: Use Text when it fits.");
-    expect(prompt).toContain('<Text value="Visible" id="n-visible" />');
+    expect(prompt).toContain('<Text value="Visible" id="n2" />');
     expect(prompt).toContain("- rows: shape=array fields=name, secret count=1");
     expect(prompt).not.toContain("DO_NOT_LEAK_PROP_SCHEMA");
     expect(prompt).not.toContain("Ada");
@@ -330,7 +330,7 @@ describe("buildInitialMessages", () => {
     const current = messages.at(-1);
     expect(current?.role).toBe("user");
     expect(current && "content" in current ? current.content : "").toContain(
-      'event="submit" source="n-visible" screen="home"',
+      'event="submit" source="n2" screen="home"',
     );
     expect(current && "content" in current ? current.content : "").toContain(
       'email="ada@example.com"',
@@ -379,5 +379,22 @@ describe("describeEvent", () => {
     expect(() => describeEvent({ kind: "message", text: "legacy" })).not.toThrow();
     expect(describeEvent({ kind: "message", text: "legacy" })).toBe("(unknown event)");
     expect(describeEvent(null)).toBe("(unknown event)");
+  });
+
+  it("includes every validated collected value kind", () => {
+    const line = describeEvent({
+      ...event(),
+      collect: {
+        name: { kind: "value", value: "Ada" },
+        enabled: { kind: "value", value: true },
+        regions: { kind: "value", value: ["north", "west"] },
+        secret: { kind: "omitted_sensitive" },
+      },
+    });
+
+    expect(line).toContain('name="Ada"');
+    expect(line).toContain("enabled=true");
+    expect(line).toContain('regions=["north","west"]');
+    expect(line).toContain("secret=omitted_sensitive");
   });
 });

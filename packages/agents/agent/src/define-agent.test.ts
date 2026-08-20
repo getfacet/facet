@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 
-import { validateCatalog } from "@facet/core";
+import { deriveMessageId, validateCatalog } from "@facet/core";
 import type {
   VisitorEvent,
   AuthorValidationResult,
   CasOutcome,
   ComponentDocument,
+  ConversationMessage,
   DataPath,
   FacetCatalog,
   FacetTargetedMutationInput,
@@ -78,6 +79,24 @@ const event: VisitorEvent = Object.freeze({
   screen: "home",
   stageRevision: 0,
   collect: Object.freeze({}),
+});
+
+const runtimeEvent: VisitorEvent = Object.freeze({
+  eventId: "event1",
+  eventName: "message",
+  sourceNodeId: "visitor",
+  screen: "home",
+  stageRevision: 0,
+  collect: Object.freeze({}),
+});
+
+const visitorMessage: ConversationMessage = Object.freeze({
+  kind: "conversation",
+  messageId: deriveMessageId(runtimeEvent.eventId, "visitor"),
+  turnId: runtimeEvent.eventId,
+  role: "visitor",
+  text: "Start",
+  at: 1,
 });
 
 const DOCUMENT: ComponentDocument = Object.freeze({
@@ -236,7 +255,9 @@ describe("defineAgent", () => {
       },
     });
 
-    await expect(runtime.handle({ sessionKey: "session-a", event })).resolves.toMatchObject({
+    await expect(
+      runtime.handle({ sessionKey: "session-a", event: runtimeEvent, visitorMessage }),
+    ).resolves.toMatchObject({
       outcome: "accepted",
       receipt: { triggerId: "event1" },
     });
@@ -282,7 +303,7 @@ describe("defineAgent", () => {
       },
     });
 
-    const turn = runtime.handle({ sessionKey: "session-a", event });
+    const turn = runtime.handle({ sessionKey: "session-a", event: runtimeEvent, visitorMessage });
     await store.saveStarted;
     await expectStillPending(turn);
     store.release();
@@ -309,7 +330,7 @@ describe("defineAgent", () => {
       },
     });
 
-    const turn = runtime.handle({ sessionKey: "session-a", event });
+    const turn = runtime.handle({ sessionKey: "session-a", event: runtimeEvent, visitorMessage });
     await store.saveStarted;
     await expectStillPending(turn);
     store.release();

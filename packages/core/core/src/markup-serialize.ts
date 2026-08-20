@@ -47,6 +47,12 @@ const NAME_PROP = "name";
 /** The reserved read-only attribute this module adds and never reads back in. */
 const ID_PROP = "id";
 
+/** The structural region attribute, stored separately from authored props. */
+const SLOT_PROP = "slot";
+
+/** Facet-generated node ids are the letter n followed by a positive decimal. */
+const NODE_ID_PATTERN = /^n[1-9][0-9]*$/;
+
 /** The bounded stand-in for a subtree that could not be written out. */
 const PLACEHOLDER_TAG = "Unavailable";
 
@@ -136,7 +142,9 @@ function invalidDocument(): SerializeResult {
 }
 
 function placeholder(pad: string, id: string): string {
-  return `${pad}<${PLACEHOLDER_TAG} ${ID_PROP}="${id}" />`;
+  return NODE_ID_PATTERN.test(id)
+    ? `${pad}<${PLACEHOLDER_TAG} ${ID_PROP}="${id}" />`
+    : `${pad}<${PLACEHOLDER_TAG} />`;
 }
 
 /**
@@ -196,7 +204,7 @@ function quoteValue(text: string): string | null {
 
 /** Renders one `name="value"` pair, or `null` when it cannot be written. */
 function renderAttribute(name: string, value: unknown): string | null {
-  if (name === ID_PROP || !isFacetIdentifier(name)) {
+  if (name === ID_PROP || name === SLOT_PROP || !isFacetIdentifier(name)) {
     return null;
   }
   const text = renderValue(value);
@@ -219,6 +227,9 @@ function readOwn(container: Readonly<Record<string, unknown>>, key: string): unk
  */
 function readElement(nodes: Readonly<Record<string, unknown>>, id: string): ElementRead {
   try {
+    if (!NODE_ID_PATTERN.test(id)) {
+      return { kind: "invalid" };
+    }
     const node = readOwn(nodes, id);
     if (node === undefined) {
       return { kind: "missing" };
@@ -239,14 +250,19 @@ function readElement(nodes: Readonly<Record<string, unknown>>, id: string): Elem
     if (!isRecord(props) || !Array.isArray(rawChildren)) {
       return { kind: "invalid" };
     }
+    const issues: SerializeIssue[] = [];
     const children: string[] = [];
-    for (const child of rawChildren) {
+    const childLimit = Math.min(rawChildren.length, BOUNDS.nodesPerDocument);
+    for (let index = 0; index < childLimit; index += 1) {
+      const child = rawChildren[index];
       if (typeof child !== "string") {
         return { kind: "invalid" };
       }
       children.push(child);
     }
-    const issues: SerializeIssue[] = [];
+    if (rawChildren.length > BOUNDS.nodesPerDocument) {
+      issues.push({ reason: "too-many-nodes", at: id });
+    }
     const attributes: string[] = [];
     if (typeof slot === "string") {
       attributes.push(`slot="${slot}"`);
@@ -361,6 +377,9 @@ function readDocument(document: ComponentDocument): ReadDocument | null {
   const rawScreens = document["screens"];
   const nodes = document["nodes"];
   if (typeof entry !== "string" || !Array.isArray(rawScreens) || !isRecord(nodes)) {
+    return null;
+  }
+  if (rawScreens.length > BOUNDS.screensPerDocument) {
     return null;
   }
   const screens: string[] = [];

@@ -1,4 +1,4 @@
-import { executeFacetTool } from "@facet/agent-tools";
+import { executeFacetTool, FACET_TOOL_SPECS } from "@facet/agent-tools";
 import type { FacetToolSession, TurnOutcome } from "@facet/core";
 
 import type { ProviderStep, TurnMessage } from "../provider.js";
@@ -8,6 +8,10 @@ import type {
   ReferenceAgentDiagnosticEvent,
 } from "./diagnostic-observer.js";
 import { emitReferenceAgentTrace, type ReferenceAgentTrace } from "./trace.js";
+
+const MUTATION_TOOLS: ReadonlySet<string> = new Set(
+  FACET_TOOL_SPECS.filter((spec) => spec.mutatesStage).map((spec) => spec.name),
+);
 
 export interface ExecuteToolStepOptions {
   readonly session: FacetToolSession;
@@ -48,7 +52,7 @@ export async function executeToolStep(
     observations.push({ callId: call.id, content });
     options.messages.push({ role: "tool_result", callId: call.id, content });
 
-    const stageRevision = stageRevisionOf(result);
+    const stageRevision = mutationStageRevisionOf(call.name, result);
     if (stageRevision !== undefined) {
       fragments.push({ stageRevision, patches: [] });
     }
@@ -96,7 +100,8 @@ export function hasPatchBatch(fragments: readonly TurnOutcome[]): boolean {
   return fragments.some((fragment) => fragment.patches.length > 0);
 }
 
-function stageRevisionOf(result: unknown): number | undefined {
+function mutationStageRevisionOf(toolName: string, result: unknown): number | undefined {
+  if (!MUTATION_TOOLS.has(toolName)) return undefined;
   if (!isRecord(result) || result["ok"] !== true) return undefined;
   const stageRevision = result["stageRevision"];
   return typeof stageRevision === "number" && Number.isSafeInteger(stageRevision)

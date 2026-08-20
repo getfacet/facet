@@ -167,7 +167,12 @@ const TEST_CATALOG = catalogOf([
     content: { mode: "none" },
     props: {
       label: { type: "string", guidance: "What the action does.", required: true },
-      action: { type: "string", guidance: "The nav or agent reference to run.", required: true },
+      action: {
+        type: "string",
+        action: true,
+        guidance: "The nav or agent reference to run.",
+        required: true,
+      },
       arg: { type: "string", guidance: "The one explicit argument this event sends." },
       collect: { type: "string", guidance: "The field names this event carries, space separated." },
     },
@@ -491,6 +496,13 @@ describe("validateAuthorMarkup — the accepted document", () => {
     expect(outcome.ok).toBe(true);
   });
 
+  it("rejects an action reference carried by an ordinary string prop", () => {
+    expectAtomicReject(
+      documentOf('<Button label="agent:hidden" action="nav:home" />'),
+      "invalid-value",
+    );
+  });
+
   it("rejects a syntactically valid number that overflows before range checks", () => {
     const overflow = `1${"0".repeat(400)}`;
     const numericCatalog = catalogOf([
@@ -732,6 +744,18 @@ describe("validateAuthorMarkup — the adversarial rejection table", () => {
       expectAtomicReject(source, code);
     });
   }
+
+  it("names the component and prop in a non-bindable repair hint", () => {
+    const source =
+      '<Facet entry="home"><Screen name="home"><Stack gap="data:sales.gap" /></Screen></Facet>';
+    const failure = failureOf(author(source));
+
+    expect(failure.error).toMatchObject({
+      code: "binding-not-allowed",
+      cause: expect.stringContaining("Stack.gap") as string,
+      repair: expect.stringContaining("Stack.gap") as string,
+    });
+  });
 
   it("reports the same rejection twice for the same input", () => {
     const source = '<Facet entry="home"><Screen name="home"><Widget /></Screen></Facet>';
@@ -1442,7 +1466,7 @@ describe("validateAuthorMarkup — the collection request list", () => {
         "binding-not-allowed",
       );
       expect(
-        author(documentOf(fields(["email"]) + '<Button label="nav:home" action="agent:submit" />'))
+        author(documentOf(fields(["email"]) + '<Button label="Submit" action="agent:submit" />'))
           .ok,
       ).toBe(true);
     });
@@ -1545,7 +1569,12 @@ describe("validateAuthorMarkup — the collection request list", () => {
           content: { mode: "none" },
           props: {
             label: { type: "string", guidance: "What the action does.", required: true },
-            action: { type: "string", guidance: "The reference to run.", required: true },
+            action: {
+              type: "string",
+              action: true,
+              guidance: "The reference to run.",
+              required: true,
+            },
             collect: declaration,
           },
         },
@@ -1663,7 +1692,7 @@ describe("validateAuthorMarkup — the authored collection address", () => {
       home('<Field name="email" label="data:sales.label" />'),
       "binding-not-allowed",
     );
-    expect(author(home('<Field name="email" label="nav:home" />')).ok).toBe(true);
+    expect(author(home('<Field name="email" label="Email" />')).ok).toBe(true);
   });
 
   /** A missing address is the required-prop rule's answer, and stays there. */
@@ -1880,7 +1909,7 @@ describe("validateAuthorMarkup — the authored event argument", () => {
         documentOf('<Button label="data:sales.label" action="agent:submit" />'),
         "binding-not-allowed",
       );
-      expect(author(documentOf('<Button label="nav:home" action="agent:submit" />')).ok).toBe(true);
+      expect(author(documentOf('<Button label="Submit" action="agent:submit" />')).ok).toBe(true);
     });
   });
 
@@ -1904,7 +1933,12 @@ describe("validateAuthorMarkup — the authored event argument", () => {
           content: { mode: "none" },
           props: {
             label: { type: "string", guidance: "What the action does.", required: true },
-            action: { type: "string", guidance: "The reference to run.", required: true },
+            action: {
+              type: "string",
+              action: true,
+              guidance: "The reference to run.",
+              required: true,
+            },
             arg: declaration,
           },
         },
@@ -1970,7 +2004,7 @@ describe("validateAuthorMarkup — the authored event argument", () => {
         screenNode("home", [
           elementNode("Button", [
             propOf("label", scalar("Send")),
-            propOf("action", scalar("agent:submit")),
+            propOf("action", reference("agent", "submit")),
             propOf("arg", scalar(text)),
           ]),
         ]),
@@ -2082,7 +2116,7 @@ describe("validateAuthorMarkup — the authored event argument", () => {
           screenNode("home", [
             elementNode("Button", [
               propOf("label", scalar("Send")),
-              propOf("action", scalar("agent:submit")),
+              propOf("action", reference("agent", "submit")),
               propOf("arg", scalar("v".repeat(BOUNDS.collectedValueChars + 1))),
             ]),
           ]),
@@ -2116,6 +2150,10 @@ const ORIGIN = Object.freeze({ offset: 0, line: 1, column: 1 });
 
 function scalar(value: string): MarkupValue {
   return { kind: "scalar", value };
+}
+
+function reference(scheme: "agent" | "nav", target: string): MarkupValue {
+  return { kind: "reference", scheme, target };
 }
 
 function propOf(name: string, value: MarkupValue): unknown {

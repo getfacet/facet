@@ -1,5 +1,6 @@
 import type { IncomingMessage } from "node:http";
 import {
+  BOUNDS,
   deriveMessageId,
   validateVisitorEvent,
   validateTurnOutcome,
@@ -7,7 +8,7 @@ import {
 } from "@facet/core";
 import type { AgentControlFrame, VisitorEvent, ConversationMessage } from "@facet/core";
 
-const MAX_BODY_BYTES = 5 * 1024 * 1024;
+const MAX_BODY_BYTES = BOUNDS.visitorRequestBodyBytes;
 
 export function readJson(
   req: IncomingMessage,

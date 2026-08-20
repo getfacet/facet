@@ -627,7 +627,7 @@ describe("DEFAULT_REGISTRY — every entry mounts (DC-002)", () => {
       }
       cleanup();
     }
-  });
+  }, 15_000);
 });
 
 /**

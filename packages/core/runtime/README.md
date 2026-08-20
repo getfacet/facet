@@ -50,9 +50,15 @@ should be delivered for that turn. The agent may return a single batch or an
 async stream of batches. Runtime folds, persists, and emits each batch before
 pulling the next one, preserving revision order.
 
-`bootstrapSession` validates the catalog, theme, and optional `themeExtensions`
-together. Persisted sessions keep those extension declarations so restore checks
-theme data against the same active contract.
+`bootstrapSession` validates the catalog, theme, optional host-pinned image
+`assetRegistry`, and optional `themeExtensions` together. Persisted sessions
+keep the registry and extension declarations so restore checks both against the
+same active contract.
+
+Data publishing remains independent of the current document. A later value that
+no longer matches a bound component prop still commits when it satisfies the
+Data Model bounds; the renderer marks only that binding unavailable and keeps
+valid sibling subtrees mounted.
 
 ```ts
 import { defineAgent } from "@facet/agent";
@@ -107,6 +113,11 @@ patch fold, revision/CAS checks, redaction helpers, and bounded serialization
 contracts before persistence and delivery. Invalid author mutations reject as a
 turn outcome; corrupt persisted input is reduced to a bounded safe state rather
 than thrown into the transport layer.
+
+Host `publishData` input is validated and detached as bounded plain JSON before
+the first asynchronous store read. Exotic objects reject instead of being
+converted into plain data by cloning, and later caller mutation cannot change
+the accepted snapshot.
 
 The optional `deliver` callback receives committed outbox entries for
 observability or transport delivery. It is read-only: it can inspect what

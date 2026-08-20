@@ -88,7 +88,12 @@ function buildRetiredComponentContractPattern() {
     joined("Testi", "monial"),
     joined("Visual", "Panel"),
   ];
-  return symbols.map(exactIdentifierPattern).join("|");
+  return [
+    ...symbols.map(exactIdentifierPattern),
+    String.raw`\b[Cc]omponent\s+authoring\s+roles?\b`,
+    String.raw`\b[Cc]omposition\s+role\b`,
+    String.raw`\bScreen\s+root,\s+Layout,\s+Surface,\s+Content,\s+Interaction\b`,
+  ].join("|");
 }
 
 function buildRetiredToolNamesPattern() {
@@ -184,7 +189,6 @@ const PATTERN_GROUPS = [
   {
     name: "retired_component_contract",
     pattern: buildRetiredComponentContractPattern(),
-    sourceOnly: true,
   },
   { name: "retired_tool_names", pattern: buildRetiredToolNamesPattern() },
   { name: "deleted_package_names", pattern: buildDeletedPackagePattern() },

@@ -512,6 +512,46 @@ describe("B-22/B-23 are single-sourced", () => {
   });
 });
 
+describe("B-27 — aggregate visitor event JSON bytes", () => {
+  it("rejects an individually valid string array before it can exceed the transport body", () => {
+    const item = textOf(BOUNDS.collectedValueChars);
+    const oversized = new Array(3_000).fill(item);
+    const candidate = event({ collect: { tags: { kind: "value", value: oversized } } });
+
+    expect(Buffer.byteLength(JSON.stringify(candidate), "utf8")).toBeGreaterThan(
+      BOUNDS.visitorEventJsonBytes,
+    );
+    expect(rejection(candidate)).toBe("event_payload_too_large");
+    expect(rejectionAt(candidate)).toMatch(/^collect\.tags\.value\[\d+\]$/);
+  });
+
+  it("keeps a substantial bounded array valid below the aggregate limit", () => {
+    const item = textOf(BOUNDS.collectedValueChars);
+    const candidate = event({
+      collect: { tags: { kind: "value", value: new Array(1_000).fill(item) } },
+    });
+
+    expect(Buffer.byteLength(JSON.stringify(candidate), "utf8")).toBeLessThan(
+      BOUNDS.visitorEventJsonBytes,
+    );
+    expect(rejection(candidate)).toBe("accepted");
+  });
+
+  it("counts surrogate pairs, multibyte text, and escaped controls at the byte boundary", () => {
+    const wide = "🙂".repeat(1_000);
+    const exactTail = `${"\n".repeat(310)}x`;
+    const values = [...new Array<string>(999).fill(wide), exactTail];
+    const atBoundary = event({ collect: { tags: { kind: "value", value: values } } });
+    const oneByteOver = event({
+      collect: { tags: { kind: "value", value: [...values.slice(0, -1), `${exactTail}x`] } },
+    });
+
+    expect(rejection(atBoundary)).toBe("accepted");
+    expect(rejection(oneByteOver)).toBe("event_payload_too_large");
+    expect(rejectionAt(oneByteOver)).toBe("collect.tags.value[999]");
+  });
+});
+
 describe("validateVisitorEvent totality", () => {
   const throwingGetter: Record<string, unknown> = {};
   Object.defineProperty(throwingGetter, "eventId", {
