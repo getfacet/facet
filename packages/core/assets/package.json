@@ -1,6 +1,6 @@
 {
   "name": "@facet/assets",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Facet default asset data — the default theme and service-surface component catalog at the root entry, plus the trusted default React implementations behind the browser-safe ./react subpath (deps = @facet/core only).",
   "license": "MIT",
   "repository": {
