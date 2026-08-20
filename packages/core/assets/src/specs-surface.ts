@@ -104,7 +104,7 @@ export const NAVIGATION_ITEM_SPEC: ComponentSpec = {
 export const BUTTON_SPEC: ComponentSpec = {
   tag: "Button",
   whenToUse:
-    "Use Button for one explicit navigation or agent action with a clear outcome. Prefer NavigationItem for persistent destinations and Toggle for boolean settings.",
+    "Use Button for one explicit navigation or agent action with a clear outcome. Prefer NavigationItem for persistent destinations; set arg when an agent action carries a selected value.",
   props: {
     label: { type: "string", guidance: "Visible label naming the action.", required: true },
     action: {
