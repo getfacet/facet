@@ -104,7 +104,7 @@ export const NAVIGATION_ITEM_SPEC: ComponentSpec = {
 export const BUTTON_SPEC: ComponentSpec = {
   tag: "Button",
   whenToUse:
-    "Use Button for one explicit navigation or agent action with a clear outcome. Prefer NavigationItem for persistent destinations; set arg when an agent action carries a selected value.",
+    "Use Button for one explicit action; for accepted choices, make one Button per offered value and set arg to that exact value. Avoid replacing choices with an argument-free continue Button.",
   props: {
     label: { type: "string", guidance: "Visible label naming the action.", required: true },
     action: {
@@ -114,7 +114,8 @@ export const BUTTON_SPEC: ComponentSpec = {
     },
     arg: {
       type: "string",
-      guidance: "Optional explicit argument sent with an agent: event.",
+      guidance:
+        "Explicit argument sent with an agent: event. Required when the event contract declares accepted choice values; use one exact accepted value for each offered Button.",
     },
     collect: {
       type: "string",

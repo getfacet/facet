@@ -192,6 +192,13 @@ describe("default navigation and action specs", () => {
     }
   });
 
+  it("tells agents to preserve declared choice values in Button arguments", () => {
+    expect(BUTTON_SPEC.whenToUse).toContain("one Button per offered value");
+    expect(BUTTON_SPEC.whenToUse).toContain("Avoid replacing choices");
+    expect(BUTTON_SPEC.props["arg"]?.guidance).toContain("Required when the event contract");
+    expect(BUTTON_SPEC.props["arg"]?.guidance).toContain("one exact accepted value");
+  });
+
   it("contains no retired role or child-acceptance fields", () => {
     const retiredFields = [
       ["authoring", "Role"],
