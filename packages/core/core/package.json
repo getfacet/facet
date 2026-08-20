@@ -1,6 +1,6 @@
 {
   "name": "@facet/core",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Dependency-free contract for Facet — component markup grammar and parser, component catalog and prop schemas, bounded data model and bindings, component document validation and serialization, stage types, and authorized RFC 6902 patch logic.",
   "keywords": [
     "facet",
