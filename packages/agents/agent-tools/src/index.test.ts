@@ -18,6 +18,7 @@ const BARREL_EXPORT_CONTRACT = [
   "createMarkupBuffer",
   "MarkupBuffer",
   "CatalogIndex",
+  "ComponentAuthoringGuide",
   "RenderPageInput",
   "InsertSubtreeInput",
   "ReplaceSubtreeInput",

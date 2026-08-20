@@ -273,7 +273,7 @@ describe("createReferenceAgentWithDependencies", () => {
         agentId: "quickstart",
         summaryStore,
         budget: {
-          maxContextChars: 4_000,
+          maxContextChars: 6_000,
           maxHistoryTurns: 2,
           maxHistoryChars: 10_000,
           compactionTriggerRatio: 0.01,

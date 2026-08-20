@@ -1,7 +1,7 @@
 import { deriveComponentContentClass } from "@facet/core";
 import type { ComponentSpec } from "@facet/core";
 
-import type { ComponentSpecDetail } from "./types.js";
+import type { ComponentAuthoringGuide, ComponentSpecDetail } from "./types.js";
 
 export type FacetToolName = (typeof FACET_TOOL_NAMES)[number];
 
@@ -41,11 +41,46 @@ export const FACET_TOOL_NAMES = Object.freeze([
   "publish_data",
 ] as const);
 
-/** Adds the agent-facing class derived from the validated content contract. */
+function componentAuthoringGuide(spec: ComponentSpec): ComponentAuthoringGuide {
+  const requiredProps = Object.keys(spec.props)
+    .sort()
+    .filter((name) => spec.props[name]?.required === true)
+    .map((name) => `${name}="..."`)
+    .join(" ");
+  const opening = `<${spec.tag}${requiredProps.length === 0 ? "" : ` ${requiredProps}`}`;
+  if (spec.content.mode === "none") {
+    return Object.freeze({
+      elementSyntax: `${opening} />`,
+      contentMode: "none",
+      directChildRule: "Self-close this element. It accepts no children.",
+      allowedDirectChildSlots: Object.freeze([]),
+    });
+  }
+  if (spec.content.mode === "children") {
+    return Object.freeze({
+      elementSyntax: `${opening}>...</${spec.tag}>`,
+      contentMode: "children",
+      directChildRule: "Use ordinary direct component children without a slot attribute.",
+      allowedDirectChildSlots: Object.freeze([]),
+    });
+  }
+  const slots = Object.keys(spec.content.slots).sort();
+  return Object.freeze({
+    elementSyntax: `${opening}>...</${spec.tag}>`,
+    contentMode: "slots",
+    directChildRule: `Every direct child must include one declared slot attribute: ${slots
+      .map((name) => `slot="${name}"`)
+      .join(" | ")}.`,
+    allowedDirectChildSlots: Object.freeze(slots),
+  });
+}
+
+/** Adds agent-facing class and syntax guidance derived from the validated contract. */
 export function componentSpecDetail(spec: ComponentSpec): ComponentSpecDetail {
   return Object.freeze({
     ...spec,
     contentClass: deriveComponentContentClass(spec.content),
+    authoringGuide: componentAuthoringGuide(spec),
   });
 }
 

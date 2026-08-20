@@ -148,6 +148,13 @@ describe("FACET_TOOL_SPECS", () => {
     const detail = componentSpecDetail(validated.spec);
 
     expect(detail.contentClass).toBe("Structured");
+    expect(detail.authoringGuide).toEqual({
+      elementSyntax: '<Collection name="...">...</Collection>',
+      contentMode: "slots",
+      directChildRule:
+        'Every direct child must include one declared slot attribute: slot="actions" | slot="items".',
+      allowedDirectChildSlots: ["actions", "items"],
+    });
     expect(detail.content).toEqual({
       mode: "slots",
       slots: {
@@ -177,5 +184,36 @@ describe("FACET_TOOL_SPECS", () => {
     expect(detail.props["image"]).toMatchObject({ type: "string", assetKind: "image" });
     expect(detail.collect).toMatchObject({ valueProp: "value", valueKind: "boolean" });
     expect(Object.isFrozen(detail)).toBe(true);
+    expect(Object.isFrozen(detail.authoringGuide)).toBe(true);
+    expect(Object.isFrozen(detail.authoringGuide.allowedDirectChildSlots)).toBe(true);
+  });
+
+  it("derives self-closing and ordinary-child syntax without hand-authored examples", () => {
+    const leaf = validateComponentSpec({
+      tag: "Label",
+      whenToUse: "Use a label.",
+      props: { value: { type: "string", required: true, guidance: "Visible value." } },
+      content: { mode: "none" },
+    });
+    const container = validateComponentSpec({
+      tag: "Flow",
+      whenToUse: "Arrange a flow.",
+      props: {},
+      content: { mode: "children" },
+    });
+    if (!leaf.ok || !container.ok) throw new Error("expected component acceptance");
+
+    expect(componentSpecDetail(leaf.spec).authoringGuide).toEqual({
+      elementSyntax: '<Label value="..." />',
+      contentMode: "none",
+      directChildRule: "Self-close this element. It accepts no children.",
+      allowedDirectChildSlots: [],
+    });
+    expect(componentSpecDetail(container.spec).authoringGuide).toEqual({
+      elementSyntax: "<Flow>...</Flow>",
+      contentMode: "children",
+      directChildRule: "Use ordinary direct component children without a slot attribute.",
+      allowedDirectChildSlots: [],
+    });
   });
 });

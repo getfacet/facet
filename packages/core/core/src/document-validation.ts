@@ -655,6 +655,11 @@ function checkComponent(
           location: locationOf(child.location),
           cause: `Every direct child of \`<${spec.tag}>\` must name one declared slot.`,
           repair: "Add a literal slot attribute named by the parent component spec.",
+          repairContext: {
+            kind: "child_slot",
+            parentTag: spec.tag,
+            allowedSlots: Object.keys(spec.content.slots).sort(),
+          },
         });
       }
       if (!Object.hasOwn(spec.content.slots, slotName)) {
@@ -1158,6 +1163,12 @@ function checkScalar(
             location,
             cause: `\`${excerpt(text)}\` is not a value \`${spec.tag}.${prop.name}\` admits.`,
             repair: `Use one of: ${excerpt(schema.enum.join(", "))}.`,
+            repairContext: {
+              kind: "prop_value",
+              componentTag: spec.tag,
+              propName: prop.name,
+              allowedValues: schema.enum,
+            },
           });
   }
 }
@@ -1179,10 +1190,18 @@ function checkNumber(
     );
   }
   if (schema.enum !== undefined && !schema.enum.includes(amount)) {
-    return invalid(
-      `\`${excerpt(text)}\` is not a value \`${spec.tag}.${prop.name}\` admits.`,
-      `Use one of: ${excerpt(schema.enum.join(", "))}.`,
-    );
+    return authorError({
+      code: "invalid-value",
+      location,
+      cause: `\`${excerpt(text)}\` is not a value \`${spec.tag}.${prop.name}\` admits.`,
+      repair: `Use one of: ${excerpt(schema.enum.join(", "))}.`,
+      repairContext: {
+        kind: "prop_value",
+        componentTag: spec.tag,
+        propName: prop.name,
+        allowedValues: schema.enum,
+      },
+    });
   }
   if (schema.minimum !== undefined && amount < schema.minimum) {
     return invalid(

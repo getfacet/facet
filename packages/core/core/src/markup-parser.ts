@@ -553,6 +553,10 @@ function parseTokens(tokens: readonly Token[]): ParseMarkupResult {
         location: locate(nameToken),
         cause: `\`${tag}\` is a raw HTML element. Markup admits registered component tags only.`,
         repair: "Use a registered component tag, which starts with a capital letter.",
+        repairContext: {
+          kind: "component_tag",
+          expected: "registered_component",
+        },
       });
     }
     nodeCount += 1;

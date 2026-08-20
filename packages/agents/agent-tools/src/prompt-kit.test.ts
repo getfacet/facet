@@ -83,6 +83,7 @@ describe("FACET_PROMPT_KIT", () => {
     expect(FACET_PROMPT_KIT).toContain("fill that structure");
     expect(FACET_PROMPT_KIT).toContain("Content classes are discovery guidance only");
     expect(FACET_PROMPT_KIT).toContain("Structured uses declared named slots");
+    expect(FACET_PROMPT_KIT).toContain("follow authoringGuide.elementSyntax and directChildRule");
     expect(FACET_PROMPT_KIT).toContain("slot cardinalities and allowed tags");
     expect(FACET_PROMPT_KIT).toContain("structured prop shapes");
     expect(FACET_PROMPT_KIT).toContain("asset kinds");

@@ -68,4 +68,12 @@ export interface TurnObservation {
 
 export type ComponentSpecDetail = ComponentSpec & {
   readonly contentClass: ComponentContentClass;
+  readonly authoringGuide: ComponentAuthoringGuide;
 };
+
+export interface ComponentAuthoringGuide {
+  readonly elementSyntax: string;
+  readonly contentMode: ComponentSpec["content"]["mode"];
+  readonly directChildRule: string;
+  readonly allowedDirectChildSlots: readonly string[];
+}

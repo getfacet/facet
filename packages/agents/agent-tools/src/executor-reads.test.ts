@@ -129,6 +129,12 @@ describe("read executors", () => {
       spec: {
         tag: "Text",
         contentClass: "Leaf",
+        authoringGuide: {
+          elementSyntax: "<Text />",
+          contentMode: "none",
+          directChildRule: "Self-close this element. It accepts no children.",
+          allowedDirectChildSlots: [],
+        },
         content: { mode: "none" },
         props: { value: { guidance: "Visible text." } },
       },

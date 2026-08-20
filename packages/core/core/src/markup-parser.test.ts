@@ -318,6 +318,17 @@ describe("parseMarkup — the eight forbidden constructs, each exactly one error
     }
   });
 
+  it("returns a safe component-tag repair coordinate without the raw tag", () => {
+    const result = parseMarkup("<div />");
+    if (result.ok) throw new Error("expected raw HTML rejection");
+
+    expect(result.error.repairContext).toEqual({
+      kind: "component_tag",
+      expected: "registered_component",
+    });
+    expect(JSON.stringify(result.error.repairContext)).not.toContain("div");
+  });
+
   it("rejects the innerHTML escape hatch prop", () => {
     expectSingleError(parseMarkup(`<Text dangerouslySetInnerHTML="<b>x</b>" />`), "dangerous-prop");
   });

@@ -100,7 +100,12 @@ export type { DataPath } from "./identifiers.js";
 export { createBoundedMap } from "./lru-map.js";
 export type { BoundedMap } from "./lru-map.js";
 
-export type { AuthorError, AuthorErrorCode, SourceLocation } from "./markup-errors.js";
+export type {
+  AuthorError,
+  AuthorErrorCode,
+  AuthorRepairContext,
+  SourceLocation,
+} from "./markup-errors.js";
 
 export { parseMarkup } from "./markup-parser.js";
 export type { MarkupAst, MarkupNode, ParseMarkupResult } from "./markup-parser.js";

@@ -409,9 +409,16 @@ const AUTHOR_ERROR_KEYS: readonly string[] = ["cause", "code", "location", "repa
  */
 function expectSingleStructuredError(failure: Failure): void {
   const error = failure.error as unknown as Record<string, unknown>;
-  expect(Object.keys(error).sort()).toEqual(AUTHOR_ERROR_KEYS);
-  for (const value of Object.values(error)) {
+  expect(
+    Object.keys(error)
+      .filter((key) => key !== "repairContext")
+      .sort(),
+  ).toEqual(AUTHOR_ERROR_KEYS);
+  for (const value of AUTHOR_ERROR_KEYS.map((key) => error[key])) {
     expect(Array.isArray(value)).toBe(false);
+  }
+  if (error["repairContext"] !== undefined) {
+    expect(error["repairContext"]).toEqual(expect.objectContaining({ kind: expect.any(String) }));
   }
   expect(error["document"]).toBeUndefined();
 }
@@ -585,6 +592,20 @@ describe("validateAuthorMarkup — structured slots", () => {
   ])("rejects an invalid structured assignment with %s", (markup, code) => {
     expect(failureOf(author(markup)).error.code).toBe(code);
   });
+
+  it("identifies the structured parent and allowed slots without echoing rejected markup", () => {
+    const failure = failureOf(
+      author(
+        '<Facet entry="home"><Screen name="home"><Split><Card /><Card slot="secondary" /></Split></Screen></Facet>',
+      ),
+    );
+
+    expect(failure.error.repairContext).toEqual({
+      kind: "child_slot",
+      parentTag: "Split",
+      allowedSlots: ["primary", "secondary"],
+    });
+  });
 });
 
 describe("validateAuthorMarkup — the adversarial rejection table", () => {
@@ -732,6 +753,23 @@ describe("validateAuthorMarkup — the adversarial rejection table", () => {
 
     expect(outcome.ok).toBe(false);
     expect(outcome.ok ? null : outcome.failure.error.code).toBe("undeclared-prop");
+  });
+});
+
+describe("validateAuthorMarkup — safe repair coordinates", () => {
+  it("identifies an enum prop and its catalog-declared values", () => {
+    const failure = failureOf(
+      author(
+        '<Facet entry="home"><Screen name="home"><Text value="x" tone="neon" /></Screen></Facet>',
+      ),
+    );
+
+    expect(failure.error.repairContext).toEqual({
+      kind: "prop_value",
+      componentTag: "Text",
+      propName: "tone",
+      allowedValues: ["muted", "strong"],
+    });
   });
 });
 

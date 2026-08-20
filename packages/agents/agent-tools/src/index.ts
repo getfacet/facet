@@ -8,6 +8,7 @@ export type { FacetToolResult } from "./executor.js";
 export type { FacetToolName, FacetToolSpec } from "./specs.js";
 export type {
   CatalogIndex,
+  ComponentAuthoringGuide,
   InsertSubtreeInput,
   PublishDataInput,
   ReadComponentSpecInput,

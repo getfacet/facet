@@ -44,6 +44,11 @@ use only the layout components that express them, then fill the structure.
 Surface, Content, Interaction, and Unclassified groups. These groups guide
 discovery only; they do not require a layout wrapper.
 
+`read_component_spec` also derives an `authoringGuide` from the validated
+contract. It gives the element form, required-prop syntax, and the exact direct
+child rule, including every declared `slot="..."` value for Structured
+components. Hosts do not need to maintain handwritten markup examples.
+
 ```ts check-docs
 import {
   FACET_PROMPT_KIT,

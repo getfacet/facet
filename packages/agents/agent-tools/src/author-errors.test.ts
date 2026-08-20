@@ -45,4 +45,25 @@ describe("renderAuthorError", () => {
     expect(projected.error.cause).toHaveLength(BOUNDS.frameworkCopyChars);
     expect(projected.error.repair).toHaveLength(BOUNDS.frameworkCopyChars);
   });
+
+  it("preserves catalog-derived repair context without echoing authored values", () => {
+    const projected = renderAuthorError(
+      error({
+        code: "invalid-value",
+        repairContext: {
+          kind: "prop_value",
+          componentTag: "Property",
+          propName: "tone",
+          allowedValues: ["default", "muted"],
+        },
+      }),
+    );
+
+    expect(projected.error.repairContext).toEqual({
+      kind: "prop_value",
+      componentTag: "Property",
+      propName: "tone",
+      allowedValues: ["default", "muted"],
+    });
+  });
 });
